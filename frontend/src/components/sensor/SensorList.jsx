@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from '../../context/authContext'
 import { Link, useNavigate } from "react-router-dom";
 import { Battery } from "../chart/Chart";
-import RealTimeLineChart, { addDataSensor, connectMqtt, Table } from "../chart/Chart";
+import RealTimeLineChart, { addDataSensor, connectMqtt, Table, TimeComparison } from "../chart/Chart";
 import Date from "../chart/Date";
 import ModalData from "../chart/Modal";
 import { sensorListGet } from "../../api/index"
@@ -12,7 +12,7 @@ import SettingsButton from "../setting/Setting";
 export let changeData
 export let intervalRep = 15
 
-export function generateLabelsAndData(interval) {
+function generateLabelsAndData(interval) {
   const labels = [];
   const totalSecondsInDay = 24 * 60 * 60;
 
@@ -26,7 +26,6 @@ export function generateLabelsAndData(interval) {
     }
     else if (interval === 15) {
       labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`);
-
     }
     else {
       labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
@@ -37,19 +36,21 @@ export function generateLabelsAndData(interval) {
 };
 
 function SensorList() {
+  const init_interval = Number(localStorage.getItem("interval")) || 15;
   const { user } = useAuth()
   const [sensorLoading, setSensorLoading] = useState(false);
   const [dateData, setDateData] = useState([])
   const [dataPressure, setDataPressure] = useState(null)
   const [filteredDevices, setFilteredDevices] = useState(user.sen_id);
   const [showModal, setShowModal] = useState(false);
-  const [interval, setInterval] = useState(15);
-  const [label, setLabel] = useState(generateLabelsAndData(15));
+  const [interval, setInterval] = useState(init_interval);
+  const [label, setLabel] = useState(generateLabelsAndData(init_interval));
+  const [isVisible, setIsVisible] = useState(true);
   const navigate = useNavigate();
 
   const fetchSensors = async (interval) => {
     try {
-      const res = await sensorListGet(localStorage.getItem("token"), { total: user.total, interval: interval });
+      const res = await sensorListGet(localStorage.getItem("token"), { total: user.total, interval: interval, tracking: user.tracking });
       if (res.data.success) {
         const data = res.data.sensors
         data.forEach((sensor, index) => {
@@ -88,6 +89,7 @@ function SensorList() {
     const value = parseInt(e.target.value, 10);
     intervalRep = value
     setInterval(value);
+    localStorage.setItem("interval", value)
     setLabel(generateLabelsAndData(value))
     fetchSensors(value)
   };
@@ -111,17 +113,17 @@ function SensorList() {
               className="border rounded"
               onChange={filterSensor}
             />
-            {/* <Link
+            <Link
               to="/admin-dashboard/add-sensors"
               className="px-4 py-1 bg-teal-600 rounded text-white"
             >
               Thêm cảm biến
-            </Link> */}
+            </Link>
             <Date handleData={handleData} />
             <Dropdown />
-            <SettingsButton interval={user.interval} value={interval} handle={handleIntervalChange} />
+            <SettingsButton interval={user.interval} value={interval} handle={handleIntervalChange} setAp={setIsVisible} tracking={user.tracking} trackingB={user.trackingB}/>
           </div>
-          <ul className="mt-5 flex flex-wrap justify-center gap-4">
+          <ul className="mt-5 flex flex-wrap justify-center gap-4 w-full">
             {!dataPressure ? (
               <div className="flex justify-center items-center h-screen">
                 <div>Loading...</div>
@@ -137,6 +139,7 @@ function SensorList() {
                     Đổi tên
                   </button>
                 </div>
+                {isVisible? <TimeComparison step={device.id} /> : null}
                 <RealTimeLineChart name={device} label={label} data={dataPressure} />
                 <Table step={device.id} data={dataPressure} />
               </li>

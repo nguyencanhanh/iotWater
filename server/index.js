@@ -3,8 +3,10 @@ import cors from 'cors'
 import authRouter from './routes/auth.js'
 import sensorRouter from './routes/sensor.js'
 import connectToDatabase from './db/db.js'
+import connectMqtt from './mqtt/mqtt.js'
 
 connectToDatabase()
+connectMqtt()
 const app = express()
 app.use(cors())
 app.use(express.json())

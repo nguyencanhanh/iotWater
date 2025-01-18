@@ -8,7 +8,8 @@ const userSchema = new mongoose.Schema({
   profileImage: { type: String },
   total: { type: Number, default: 0 },
   interval: { type: Number },
-  display: { type: Number },
+  tracking: { type: Number },
+  trackingB: { type: Number },
   sen_id: [{ name: String, id: Number }],
   createAt: { type: Date, default: Date.now },
 })

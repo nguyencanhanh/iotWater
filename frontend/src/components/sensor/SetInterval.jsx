@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { client } from '../chart/Chart';
 import { intervalUpdatePut } from '../../api/index';
 
@@ -46,9 +46,9 @@ function SetInterval(interval) {
   };
 
   return (
-    <div className="flex justify-center">
+    <div className="ml-1 flex justify-between justify-center">
       <div className='text-white rounded'>Thời gian lấy mẫu:</div>
-      <select className="px-1 py-1 bg-teal-600 rounded text-white"
+      <select className="bg-teal-600 rounded text-white"
         value={value}
         onChange={handleSelect}
       >

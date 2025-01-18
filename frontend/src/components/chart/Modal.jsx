@@ -5,13 +5,34 @@ import RealTimeLineChart, { Table } from "../chart/Chart";
 import { DatePicker, Form } from 'antd';
 import { rangePresets } from './Date';
 import dayjs from 'dayjs';
-import { generateLabelsAndData } from '../sensor/SensorList';
 const { RangePicker } = DatePicker;
 
+function generateLabelsAndData(interval, dateData) {
+  const labels = [];
+  const totalSecondsInDay = 24 * 60 * 60;
+
+  for (let i = 0; i < totalSecondsInDay; i += interval) {
+    const totalSeconds = i;
+    const hour = Math.floor(totalSeconds / 3600);
+    const minute = Math.floor((totalSeconds % 3600) / 60);
+    const second = totalSeconds % 60;
+    if (interval === 3600) {
+      labels.push(`${String(hour).padStart(2, "0")}`);
+    }
+    else if (interval === 15) {
+      labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`);
+    }
+    else {
+      labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+
+    }
+  }
+  return labels;
+};
 
 const ModalData = (props) => {
   const [dataModal, setDataModal] = useState([]);
-  const [label, setLabel] = useState(generateLabelsAndData(15));
+  const [label, setLabel] = useState(generateLabelsAndData(15, props.dateData));
   const [interval, setInterval] = useState(15);
 
   const fetchSensors = async (interval) => {

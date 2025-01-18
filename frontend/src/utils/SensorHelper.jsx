@@ -1,7 +1,7 @@
 export const columnsT = [
   {
     name: "Áp lực nước",
-    selector: (row) => row.Pressure, 
+    selector: (row) => row.Pressure.toFixed(1), 
     width: "20%"
   },
   {

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { changeData } from "../sensor/SensorList"
-import { saveDataPost } from "../../api/index"
 import DataTable from "react-data-table-component";
 import { columnsT } from "../../utils/SensorHelper";
+import { useAuth } from '../../context/authContext'
 import mqtt from 'mqtt';
 import { Sema } from 'async-sema'
 import { Line } from "react-chartjs-2";
@@ -85,7 +85,6 @@ export const connectMqtt = () => {
           };
           battery[sen_name] = message.battery;
           await addData(sen_name, realTime, intervalRep, newDate, realTime.Pressure);
-          const res = await saveDataPost(localStorage.getItem("token"), { index: sen_name, data: message })
         }
         else if (msg_id === 2) {
           respondInterval = message.resp;
@@ -107,10 +106,10 @@ export const connectMqtt = () => {
 }
 
 export const addData = async (indexSensor, data, interval, newDate, dataPressure) => {
-  if (!listDataSensor[indexSensor]) {
+  if (!listDataSensor[indexSensor] || listDataSensor[indexSensor].legend * interval > 86400) {
     listDataSensor[indexSensor] = [];
   }
-  if(!listDataTable[indexSensor]){
+  if (!listDataTable[indexSensor]) {
     listDataTable[indexSensor] = []
   }
   listDataSensor[indexSensor][Math.floor(convertTime(newDate) / interval)] = dataPressure
@@ -217,21 +216,21 @@ const RealTimeLineChart = (profs) => {
       labels: profs.label
     }));
   }, [profs.label])
-  if(profs.dataModal){
+  if (profs.dataModal) {
     useEffect(() => {
       setData((prevData) => ({
         ...prevData,
         datasets: prevData.datasets.map((dataset) => {
-            return {
-              ...dataset,
-              data: profs.dataModal[profs.name.id].dataPressure,
-            };
+          return {
+            ...dataset,
+            data: profs.dataModal[profs.name.id].dataPressure,
+          };
         }),
       }));
-                                                                                                
+
     }, [profs.dataModal[profs.name.id]]);
   }
-  else{
+  else {
     useEffect(() => {
       setData((prevData) => ({
         ...prevData,
@@ -242,7 +241,7 @@ const RealTimeLineChart = (profs) => {
               data: listDataSensor[profs.name.id] ? listDataSensor[profs.name.id] : profs.data[profs.name.id]?.dataPressure
             };
           }
-          else{
+          else {
             return {
               ...dataset,
               data: profs.data[profs.name.id]?.sensorYRest
@@ -250,7 +249,7 @@ const RealTimeLineChart = (profs) => {
           }
         }),
       }));
-                                                                                                
+
     }, [changeData, profs.data[profs.name.id]]);
   }
   return (
@@ -260,7 +259,7 @@ const RealTimeLineChart = (profs) => {
   );
 };
 
-export const Battery = ({step}) => {
+export const Battery = ({ step }) => {
   const [batteryLevel, setBatteryLevel] = useState(100);
 
   useEffect(() => {
@@ -312,6 +311,54 @@ export const Table = ({ step, data, dataModal }) => {
     />
   );
 };
+
+export const TimeComparison = () => {
+  const {user} = useAuth()
+  const morningGreaterThan = 15; // Thời gian lớn hơn trong buổi sáng
+  const morningLessThan = 5;    // Thời gian bé hơn trong buổi sáng
+  const afternoonGreaterThan = 30; // Thời gian lớn hơn trong buổi chiều
+  const afternoonLessThan = 10;    // Thời gian bé hơn trong buổi chiều
+
+  return (
+    <div className="flex flex-col items-center">
+      {/* Bảng hiển thị cho buổi sáng */}
+      <div className="flex w-full justify-center">
+        <div className="flex items-center w-80 border-b-2 border-gray-300 py-2">
+          <h2 className="text-lg font-semibold text-teal-600">Buổi sáng</h2>
+          <div className="flex justify-between w-full">
+            <div className="flex flex-col items-center w-1/2">
+              <span className="text-sm font-medium text-gray-700">Lớn hơn {user.tracking} (bar)</span>
+              <span className="text-lg font-bold text-teal-700">{morningGreaterThan} phút</span>
+            </div>
+            <div className="flex flex-col items-center w-1/2">
+              <span className="text-sm font-medium text-gray-700">Bé hơn {user.trackingB} (bar)</span>
+              <span className="text-lg font-bold text-teal-700">{morningLessThan} phút</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bảng hiển thị cho buổi chiều */}
+      <div className="flex w-full justify-center">
+        <div className="flex items-center w-80 py-2">
+          <h2 className="text-lg font-semibold text-purple-600">Buổi chiều</h2>
+          <div className="flex justify-between w-full">
+            <div className="flex flex-col items-center w-1/2">
+              <span className="text-sm font-medium text-gray-700">Lớn hơn {user.tracking} (bar)</span>
+              <span className="text-lg font-bold text-purple-700">{afternoonGreaterThan} phút</span>
+            </div>
+            <div className="flex flex-col items-center w-1/2">
+              <span className="text-sm font-medium text-gray-700">Bé hơn {user.trackingB} (bar)</span>
+              <span className="text-lg font-bold text-purple-700">{afternoonLessThan} phút</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 
 
 export default RealTimeLineChart;

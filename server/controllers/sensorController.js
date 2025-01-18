@@ -1,10 +1,9 @@
 import Sensor from "../models/Sensor.js"
 import Info from "../models/User.js";
-
 import ExcelJS from 'exceljs';
 
 function convertTime(timeConvert) {
-  return timeConvert.getHours() * 3600 + timeConvert.getMinutes() * 60 + timeConvert.getSeconds() 
+  return timeConvert.getHours() * 3600 + timeConvert.getMinutes() * 60 + timeConvert.getSeconds()
 }
 
 const exportFakeDataToExcel = async (sensors, info) => {
@@ -53,7 +52,17 @@ export const exportSensors = async (req, res) => {
 
 export const upInterval = async (req, res) => {
   try {
-    const { interval } = req.body;
+    const { interval, tracking, trackingB } = req.body;
+    if (tracking) {
+      console.log(tracking)
+      const info = await Info.findOneAndUpdate({}, { $set: { tracking: tracking } }, { new: true })
+      return res.status(200).json({ success: true, tracking })
+    }
+    if (trackingB) {
+      console.log(tracking)
+      const info = await Info.findOneAndUpdate({}, { $set: { trackingB: trackingB } }, { new: true })
+      return res.status(200).json({ success: true, trackingB })
+    }
     const info = await Info.findOneAndUpdate({}, { $set: { interval: interval } }, { new: true })
     return res.status(200).json({ success: true, interval })
   } catch (error) {
@@ -65,6 +74,7 @@ export const getSensors = async (req, res) => {
   try {
     const profs = req.body;
     const sensors = []
+    let timeTracking = 0
     if (profs.timeGet) {
       for (let i = 0; i < Number(profs.total); i++) {
         const sensor = await Sensor.find({
@@ -74,14 +84,14 @@ export const getSensors = async (req, res) => {
         const dataPressure = []
         sensor.forEach((sensor) => {
           const index = Math.floor(convertTime(sensor.createAt) / (profs.interval ? profs.interval : 15))
-          if(dataPressure[index]){
+          if (dataPressure[index]) {
             dataPressure[index] = (dataPressure[index] + sensor.Pressure) / 2
           }
-          else{
+          else {
             dataPressure[index] = sensor.Pressure
           }
         })
-        sensors[i] = {sensor, dataPressure}
+        sensors[i] = { sensor, dataPressure }
       }
       return res.status(200).json({ success: true, sensors })
     }
@@ -106,25 +116,29 @@ export const getSensors = async (req, res) => {
       const dataPressure = []
       sensorY.forEach((sensor) => {
         const index = Math.floor(convertTime(sensor.createAt) / (profs.interval ? profs.interval : 15))
-        if(sensorYRest[index]){
+        if (sensorYRest[index]) {
           sensorYRest[index] = (sensorYRest[index] + sensor.Pressure) / 2
         }
-        else{
+        else {
           sensorYRest[index] = sensor.Pressure
         }
         sensorYRest[index].toFixed(1)
       })
-      sensorN.forEach((sensor) => {
+      sensorN.forEach((sensor, step) => {
+        if(step > 0){
+          timeTracking += sensor.createAt - sensorN[index - 1].createAt
+          console.log(timeTracking)
+        }
         const index = Math.floor(convertTime(sensor.createAt) / (profs.interval ? profs.interval : 15))
-        if(dataPressure[index]){
+        if (dataPressure[index]) {
           dataPressure[index] = (dataPressure[index] + sensor.Pressure) / 2
         }
-        else{
+        else {
           dataPressure[index] = sensor.Pressure
         }
         dataPressure[index].toFixed(1)
       })
-      sensors[i] = {sensorYRest, sensorT, dataPressure}
+      sensors[i] = { sensorYRest, sensorT, dataPressure }
     }
     return res.status(200).json({ success: true, sensors })
   } catch (error) {
@@ -139,10 +153,11 @@ export const addSensor = async (req, res) => {
     if (!sen_name || !description) {
       return res.status(400).json({ success: false, error: "All fields are required." });
     }
+    const infoName = await Info.findOne({});
     const info = await Info.findOneAndUpdate({},
       {
         $push: {
-          sen_id: sen_name
+          sen_id: { name: sen_name, id: infoName.total }
         },
         $inc: { total: 1 },
       },
@@ -196,21 +211,3 @@ export const deleteSensor = async (req, res) => {
     return res.status(500).json({ success: false, error: "Sensor delete failed due to some reason" });
   }
 };
-
-export const saveDataPost = async (req, res) => {
-  const { index, data } = req.body;
-  try {
-    if (!data) {
-      return res.status(400).json({ success: false, error: "All fields are required." });
-    }
-    const newSensor = new Sensor({
-      index: Number(index),
-      battery: data.battery,
-      Pressure: data.Pressure,
-    });
-    await newSensor.save();
-    return res.status(201).json({ success: true, message: "Save data successfully." });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: "Sensor not found" })
-  }
-}

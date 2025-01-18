@@ -41,6 +41,7 @@ export const sensorListGet = (token, total) => {
 }
 
 export const sensorAddPost = (token, sensor) => {
+    console.log(sensor)
     return axios.post(`${URL_SENSOR}/add`,
         sensor,
         {
@@ -82,16 +83,6 @@ export const exportDataPost = (token, options) => {
     return axios.post(
         `${URL_SENSOR}/export`,
         options,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        }
-    );
-}
-
-export const saveDataPost = (token, data) => {
-    return axios.post(
-        `${URL_SENSOR}/save`,
-        data,
         {
             headers: { Authorization: `Bearer ${token}` },
         }

@@ -1,0 +1,20 @@
+{
+  "dependencies": {
+    "cron": "^3.3.2",
+    "mqtt": "^5.10.3"
+  },
+  "name": "mqtt",
+  "version": "1.0.0",
+  "main": "mqtt.js",
+  "type": "module",
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "scripts": {
+    "start": "nodemon mqtt.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

@@ -21,18 +21,22 @@ const connectMqtt = () => {
     client.subscribe(topic)
   });
 
-  client.on("message", async (topic, message) => {
+  client.on("message", (topic, messageData) => {
     try {
-      message = JSON.parse(message.toString());
-      const msg_id = Number(message.msg_id);
-      if (msg_id === 1) {
-        const newSensor = new Sensor({
-          index: message.sen_name,
-          battery: message.battery,
-          Pressure: message.Pressure,
-        });
-        await newSensor.save();
-      }
+      messageData = JSON.parse(messageData.toString());
+      const sen_name = Number(messageData.sen_name);
+      const msg_id = Number(messageData.msg_id)
+      messageData.data.forEach(async (message) => {
+        if (msg_id === 1) {
+          const newSensor = new Sensor({
+            index: sen_name,
+            battery: message.battery,
+            Pressure: message.Pressure,
+            createAt: message.createAt
+          });
+          await newSensor.save();
+        }
+      })
     } catch (error) {
       if (error.res && !error.res.data.success) {
         alert(error.res.data.error);

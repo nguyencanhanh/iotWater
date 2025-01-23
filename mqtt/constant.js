@@ -1,6 +1,6 @@
 const appConstant = {
   EVERY_10S: "*/15 * * * * *",
-  EVERY_1MINUTE: "*/1 * * * *",
+  EVERY_10MINUTE: "*/10 * * * *",
   EVERY_HOUR: "0 * * * *",
   EVERY_6HOUR: "0 */6 * * *",
   EVERY_DAY: "0 0 * * *",

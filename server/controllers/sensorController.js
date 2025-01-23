@@ -3,7 +3,7 @@ import Info from "../models/User.js";
 import ExcelJS from 'exceljs';
 
 function convertTime(timeConvert) {
-  return timeConvert.getHours() * 3600 + timeConvert.getMinutes() * 60 + timeConvert.getSeconds()
+  return timeConvert.getHours() * 60 + timeConvert.getMinutes()
 }
 
 const exportFakeDataToExcel = async (sensors, info) => {
@@ -52,16 +52,18 @@ export const exportSensors = async (req, res) => {
 
 export const upInterval = async (req, res) => {
   try {
-    const { interval, tracking, trackingB } = req.body;
+    const { interval, tracking, trackingB, sample } = req.body;
     if (tracking) {
-      console.log(tracking)
       const info = await Info.findOneAndUpdate({}, { $set: { tracking: tracking } }, { new: true })
       return res.status(200).json({ success: true, tracking })
     }
     if (trackingB) {
-      console.log(tracking)
       const info = await Info.findOneAndUpdate({}, { $set: { trackingB: trackingB } }, { new: true })
       return res.status(200).json({ success: true, trackingB })
+    }
+    if(sample){
+      const info = await Info.findOneAndUpdate({}, { $set: { sample: sample } }, { new: true })
+      return res.status(200).json({ success: true, sample })
     }
     const info = await Info.findOneAndUpdate({}, { $set: { interval: interval } }, { new: true })
     return res.status(200).json({ success: true, interval })
@@ -74,7 +76,7 @@ export const getSensors = async (req, res) => {
   try {
     const profs = req.body;
     const sensors = []
-    let timeTracking = 0
+    const timeTrackingRet = []
     if (profs.timeGet) {
       for (let i = 0; i < Number(profs.total); i++) {
         const sensor = await Sensor.find({
@@ -83,7 +85,7 @@ export const getSensors = async (req, res) => {
         })
         const dataPressure = []
         sensor.forEach((sensor) => {
-          const index = Math.floor(convertTime(sensor.createAt) / (profs.interval ? profs.interval : 15))
+          const index = Math.floor(convertTime(sensor.createAt))
           if (dataPressure[index]) {
             dataPressure[index] = (dataPressure[index] + sensor.Pressure) / 2
           }
@@ -109,38 +111,39 @@ export const getSensors = async (req, res) => {
         index: i,
         createAt: { $gte: startOfToday },
       });
-      const sensorT = await Sensor.find({
-        index: i,
-      });
+      const sensorT = []
       const sensorYRest = []
       const dataPressure = []
+      let timeTracking = 0
+      let currentStart = null;
+
+
       sensorY.forEach((sensor) => {
-        const index = Math.floor(convertTime(sensor.createAt) / (profs.interval ? profs.interval : 15))
-        if (sensorYRest[index]) {
-          sensorYRest[index] = (sensorYRest[index] + sensor.Pressure) / 2
-        }
-        else {
-          sensorYRest[index] = sensor.Pressure
-        }
-        sensorYRest[index].toFixed(1)
+        const index = Math.floor(convertTime(sensor.createAt))
+        sensorYRest[index] = sensor.Pressure
       })
-      sensorN.forEach((sensor, step) => {
-        if(step > 0){
-          timeTracking += sensor.createAt - sensorN[index - 1].createAt
-          console.log(timeTracking)
+      sensorN.forEach((sensor) => {
+        if(profs.tracking){
+          if(sensor.Pressure > profs.tracking){
+            if(!currentStart){
+              currentStart = sensor.createAt
+            }
+          }
+          else{
+            if (currentStart){
+              timeTracking += Math.floor((sensor.createAt - currentStart) / 1000)
+              currentStart = null;
+            }
+          }
+          timeTrackingRet[i] = Math.round(timeTracking / 60)
         }
-        const index = Math.floor(convertTime(sensor.createAt) / (profs.interval ? profs.interval : 15))
-        if (dataPressure[index]) {
-          dataPressure[index] = (dataPressure[index] + sensor.Pressure) / 2
-        }
-        else {
-          dataPressure[index] = sensor.Pressure
-        }
-        dataPressure[index].toFixed(1)
+        const index = Math.floor(convertTime(sensor.createAt))
+        sensorT[index] = sensor
+        dataPressure[index] = sensor.Pressure
       })
       sensors[i] = { sensorYRest, sensorT, dataPressure }
     }
-    return res.status(200).json({ success: true, sensors })
+    return res.status(200).json({ success: true, sensors, timeTrackingRet })
   } catch (error) {
     return res.status(500).json({ success: false, error: "Sensor not found" })
   }

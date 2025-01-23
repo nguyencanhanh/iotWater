@@ -1,25 +1,22 @@
 export const columnsT = [
   {
     name: "Áp lực nước",
-    selector: (row) => row.Pressure.toFixed(1), 
+    selector: (row) => row.Pressure ? row.Pressure.toFixed(1) : "N/A", 
     width: "20%"
   },
   {
     name: "Phần trăm pin",
-    selector: (row) => row.battery,
+    selector: (row) => row.battery ? row.battery : "N/A",
     width: "20%"
   },
   {
     name: "Nhiệt độ",
-    selector: (row) => row.temperature,
+    selector: (row) => row.temperature ? row.temperature : "N/A",
     width: "20%"
   },
   {
     name: "Thời gian lấy mẫu",
     selector: (row) => new Date(row.createAt).toLocaleString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',

@@ -8,55 +8,45 @@ import ModalData from "../chart/Modal";
 import { sensorListGet } from "../../api/index"
 import Dropdown from "./DropBar";
 import SettingsButton from "../setting/Setting";
+import ScrollableTable from "../chart/Table";
 
 export let changeData
-export let intervalRep = 15
 
-function generateLabelsAndData(interval) {
+function generateLabelsAndData() {
   const labels = [];
-  const totalSecondsInDay = 24 * 60 * 60;
 
-  for (let i = 0; i < totalSecondsInDay; i += interval) {
+  for (let i = 0; i < 1440; i++) {
     const totalSeconds = i;
-    const hour = Math.floor(totalSeconds / 3600);
-    const minute = Math.floor((totalSeconds % 3600) / 60);
-    const second = totalSeconds % 60;
-    if (interval === 3600) {
-      labels.push(`${String(hour).padStart(2, "0")}`);
-    }
-    else if (interval === 15) {
-      labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`);
-    }
-    else {
-      labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
-
-    }
+    const hour = Math.floor(totalSeconds / 60);
+    const minute = i % 60
+    labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
   }
   return labels;
 };
 
 function SensorList() {
-  const init_interval = Number(localStorage.getItem("interval")) || 15;
   const { user } = useAuth()
   const [sensorLoading, setSensorLoading] = useState(false);
   const [dateData, setDateData] = useState([])
   const [dataPressure, setDataPressure] = useState(null)
   const [filteredDevices, setFilteredDevices] = useState(user.sen_id);
   const [showModal, setShowModal] = useState(false);
-  const [interval, setInterval] = useState(init_interval);
-  const [label, setLabel] = useState(generateLabelsAndData(init_interval));
+  const [timeTracking, setTimeTracking] = useState([]);
+  const label = generateLabelsAndData();
   const [isVisible, setIsVisible] = useState(true);
+  const [scrollPosition, setScrollPosition] = useState(Array(user.total).fill(0));
   const navigate = useNavigate();
 
-  const fetchSensors = async (interval) => {
+  const fetchSensors = async (total, tracking) => {
     try {
-      const res = await sensorListGet(localStorage.getItem("token"), { total: user.total, interval: interval, tracking: user.tracking });
+      const res = await sensorListGet(localStorage.getItem("token"), { total: total, tracking: tracking });
       if (res.data.success) {
         const data = res.data.sensors
         data.forEach((sensor, index) => {
           addDataSensor(index, sensor.sensorT, sensor.dataPressure)
         })
         setDataPressure(data)
+        setTimeTracking(res.data.timeTrackingRet)
       } else {
         alert("Failed to fetch sensors");
       }
@@ -71,10 +61,10 @@ function SensorList() {
   };
 
   useEffect(() => {
-    fetchSensors();
+    fetchSensors(user.total, user.tracking);
   }, []);
 
-  changeData = connectMqtt(interval)
+  changeData = connectMqtt()
   const filterSensor = (e) => {
     const records = user.sen_id.filter((dep) => dep.name.toLowerCase().includes(e.target.value.toLowerCase()))
     setFilteredDevices(records)
@@ -84,15 +74,6 @@ function SensorList() {
     setShowModal(true);
     setDateData(data)
   }
-
-  const handleIntervalChange = (e) => {
-    const value = parseInt(e.target.value, 10);
-    intervalRep = value
-    setInterval(value);
-    localStorage.setItem("interval", value)
-    setLabel(generateLabelsAndData(value))
-    fetchSensors(value)
-  };
 
   return (
     <>
@@ -121,7 +102,7 @@ function SensorList() {
             </Link>
             <Date handleData={handleData} />
             <Dropdown />
-            <SettingsButton interval={user.interval} value={interval} handle={handleIntervalChange} setAp={setIsVisible} tracking={user.tracking} trackingB={user.trackingB}/>
+            <SettingsButton interval={user.interval} sample={user.sample} setAp={setIsVisible} tracking={user.tracking} trackingB={user.trackingB} fetchData={fetchSensors}/>
           </div>
           <ul className="mt-5 flex flex-wrap justify-center gap-4 w-full">
             {!dataPressure ? (
@@ -129,7 +110,7 @@ function SensorList() {
                 <div>Loading...</div>
               </div>
             ) : (filteredDevices.map((device) => (
-              <li className="flex flex-col items-center w-full sm:w-[600px] md:w-[600px] bg-gray-200 p-4 rounded-lg shadow" key={device.id}>
+              <li className="flex flex-col items-center w-full sm:w-[560px] md:w-[600px] bg-gray-200 p-4 rounded-lg shadow" key={device.id}>
                 <div className="flex w-full justify-between items-center mb-4" >
                   <Battery step={device.id} />
                   <button
@@ -139,9 +120,10 @@ function SensorList() {
                     Đổi tên
                   </button>
                 </div>
-                {isVisible? <TimeComparison step={device.id} /> : null}
-                <RealTimeLineChart name={device} label={label} data={dataPressure} />
-                <Table step={device.id} data={dataPressure} />
+                {isVisible ? <TimeComparison step={device.id} init={timeTracking}/> : null}
+                <RealTimeLineChart name={device} label={label} data={dataPressure} scrollPosition={scrollPosition}/>
+                {/* <Table step={device.id} /> */}
+                <ScrollableTable step={device.id} handle={setScrollPosition}/>
               </li>
             )))
             }

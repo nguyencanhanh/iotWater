@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import SetInterval from "../sensor/SetInterval";
+import SetInterval from "./SetInterval";
+import SetSample from "./SetSample";
 import { intervalUpdatePut } from '../../api/index';
 
 const SettingsButton = (profs) => {
@@ -8,7 +9,7 @@ const SettingsButton = (profs) => {
   const [valueB, setValueB] = useState(profs.trackingB); 
   const [isEditing, setIsEditing] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
   const [isEditingB, setIsEditingB] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
-
+  
   const handleInputChange = (event) => {
     setValue(event.target.value);  // Cập nhật giá trị khi người dùng nhập
   };
@@ -66,34 +67,12 @@ const SettingsButton = (profs) => {
         >
           <ul className="py-3 px-4 space-y-3">
             {/* Cài đặt thời gian hiển thị */}
-            <li>
-              <div className="flex justify-between items-center">
-                <div className="text-white">Thời gian hiển thị:</div>
-                <select
-                  className="bg-teal-600 rounded text-white"
-                  value={profs.value}
-                  onChange={profs.handle}
-                >
-                  <option value={15}>15 giây</option>
-                  <option value={60}>1 phút</option>
-                  <option value={300}>5 phút</option>
-                  <option value={600}>10 phút</option>
-                  <option value={900}>15 phút</option>
-                  <option value={1800}>30 phút</option>
-                  <option value={3600}>1 giờ</option>
-                </select>
-              </div>
-            </li>
-
-            {/* Cài đặt interval */}
-            <li><SetInterval interval={profs.interval} setClose={setIsOpen} /></li>
-
-            {/* Cài đặt giá trị theo dõi */}
+            <li><SetSample interval={profs.interval} sample={profs.sample}/></li>
+            <li><SetInterval interval={profs.interval} sample={profs.sample}/></li>
             <li>
               <div className="flex justify-between items-center">
                 <label htmlFor="input-value" className="text-white">Giá trị trên:</label>
                 <div className="flex items-center space-x-2">
-                  {/* Nếu đang trong chế độ chỉnh sửa, hiển thị ô nhập */}
                   {isEditing ? (
                     <>
                       <input

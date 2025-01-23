@@ -2,24 +2,14 @@ import React, { useState } from 'react';
 import { client } from '../chart/Chart';
 import { intervalUpdatePut } from '../../api/index';
 
-function SetInterval(interval) {
-  const [value, setValue] = useState(interval.interval);
-  const options = [
-    { "15 giay": 15 },
-    { "1 phut": 60 },
-    { "5 phut": 300 },
-    { "10 phut": 600 },
-    { "15 phut": 900 },
-    { "30 phut": 1800 },
-    { "1 gio": 3600 },
-  ];
-
+function SetSample(sample) {
+  const [value, setValue] = useState(sample.sample);
+  const interval = sample.interval
   const updateInterval = async (value, setValue) => {
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { interval: value })
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { sample: value })
       if (res.data.success) {
-        console.log(res.data)
-        setValue(Number(res.data.interval))
+        setValue(Number(res.data.sample))
       }
     } catch (error) {
       if (error.res && !error.res.data.success) {
@@ -31,9 +21,13 @@ function SetInterval(interval) {
   const handleSelect = async (event) => {
     event.preventDefault();
     const valueX = Number(event.target.value);
+    if(valueX > interval || (interval % valueX)){
+      alert('Chọn không hợp lệ');
+      return;
+    }
     client.publish(
-      'watter/setInterval',
-      JSON.stringify({ sen_name: valueX }),
+      'watterChange@2024',
+      JSON.stringify({ sample: valueX }),
       (error) => {
         if (error) {
           alert('Xuất bản thất bại:', error.message);
@@ -52,7 +46,6 @@ function SetInterval(interval) {
         value={value}
         onChange={handleSelect}
       >
-        <option value={15}>15 giay</option>
         <option value={60}>1 phut</option>
         <option value={300}>5 phut</option>
         <option value={600}>10 phut</option>
@@ -64,4 +57,4 @@ function SetInterval(interval) {
   );
 }
 
-export default SetInterval;
+export default SetSample;

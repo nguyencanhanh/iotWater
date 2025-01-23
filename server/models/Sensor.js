@@ -6,8 +6,6 @@ const sensorSchema = new mongoose.Schema({
     battery: { type: Number },
     createAt: {
         type: Date,
-        default: Date.now,
-        index: { expires: "7d" }
     },
 });
 

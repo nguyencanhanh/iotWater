@@ -1,5 +1,5 @@
 import mqtt from 'mqtt'
-import { CronJob} from 'cron'
+import { CronJob } from 'cron'
 import appConstant from './constant.js';
 
 
@@ -25,25 +25,39 @@ function sleep(ms) {
 }
 
 new CronJob(
-  appConstant.EVERY_1MINUTE,
+  appConstant.EVERY_10MINUTE,
   async function () {
-    const time = new Date();
-    const timeStamp = Math.floor(time.getTime() / 1000);
-    console.log("publish success")
+    let time = Date.now() - 9 * 60000;
+    console.log("published")
+    const data = []
+    for (let i = 0; i < 10; i++) {
+      data.push({
+        createAt: time + i * 60000,
+        Pressure: Math.random() * 3,
+        battery: Math.random() * 100 | 0,
+      })
+    }
     client.publish(topic, JSON.stringify({
       sen_name: 0,
-      createAt: timeStamp,
-      Pressure: Math.random() * 1000,
-      battery: Math.random() * 100 | 0,
       msg_id: 1,
+      data: data
     }))
     await sleep(400)
+    time = Date.now()
     client.publish(topic, JSON.stringify({
       sen_name: 1,
-      createAt: timeStamp,
-      Pressure: Math.random() * 1000,
-      battery: Math.random() * 100 | 0,
       msg_id: 1,
+      data: [{
+        createAt: time - 60000 * 5,
+        Pressure: Math.random() * 3,
+        battery: Math.random() * 100 | 0,
+      },
+      {
+        createAt: time,
+        Pressure: Math.random() * 3,
+        battery: Math.random() * 100 | 0,
+      },
+      ]
     }))
   },
   null,  // cb when job stop

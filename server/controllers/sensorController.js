@@ -61,7 +61,7 @@ export const upInterval = async (req, res) => {
       const info = await Info.findOneAndUpdate({}, { $set: { trackingB: trackingB } }, { new: true })
       return res.status(200).json({ success: true, trackingB })
     }
-    if(sample){
+    if (sample) {
       const info = await Info.findOneAndUpdate({}, { $set: { sample: sample } }, { new: true })
       return res.status(200).json({ success: true, sample })
     }
@@ -111,7 +111,7 @@ export const getSensors = async (req, res) => {
         index: i,
         createAt: { $gte: startOfToday },
       });
-      const sensorT = []
+      const sensorT = Array(1440).fill(null)
       const sensorYRest = []
       const dataPressure = []
       let timeTracking = 0
@@ -123,14 +123,14 @@ export const getSensors = async (req, res) => {
         sensorYRest[index] = sensor.Pressure
       })
       sensorN.forEach((sensor) => {
-        if(profs.tracking){
-          if(sensor.Pressure > profs.tracking){
-            if(!currentStart){
+        if (profs.tracking) {
+          if (sensor.Pressure > profs.tracking) {
+            if (!currentStart) {
               currentStart = sensor.createAt
             }
           }
-          else{
-            if (currentStart){
+          else {
+            if (currentStart) {
               timeTracking += Math.floor((sensor.createAt - currentStart) / 1000)
               currentStart = null;
             }

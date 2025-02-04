@@ -358,7 +358,8 @@ return (
 
 export const TimeComparison = (profs) => {
   const morningLessThan = 5;    // Thời gian bé hơn trong buổi sáng
-
+  const [timeMoreThan, setTimeMoreThan] = useState(profs.init[profs.step])
+  
   return (
     <div className="flex flex-col items-center">
       <div className="flex w-full justify-center">
@@ -367,7 +368,7 @@ export const TimeComparison = (profs) => {
           <div className="flex justify-between w-full">
             <div className="flex flex-col items-center w-1/2">
               <span className="text-sm font-medium text-gray-700">Lớn hơn</span>
-              <span className="text-lg font-bold text-teal-700">{profs.init[profs.step]} phút</span>
+              <span className="text-lg font-bold text-teal-700">{Number(timeMoreThan / 60)}H {Number(timeMoreThan % 60)}P</span>
             </div>
             <div className="flex flex-col items-center w-1/2">
               <span className="text-sm font-medium text-gray-700">Bé hơn</span>

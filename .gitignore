@@ -1,4 +1,5 @@
 # add gitignore for me
 frontend/node_modules/
 server/node_modules/
+mqtt/node_modules/
 .vscode/

@@ -51,22 +51,39 @@ export const exportSensors = async (req, res) => {
 };
 
 export const upInterval = async (req, res) => {
+  const profs = req.body;
   try {
-    const { interval, tracking, trackingB, sample } = req.body;
-    if (tracking) {
-      const info = await Info.findOneAndUpdate({}, { $set: { tracking: tracking } }, { new: true })
-      return res.status(200).json({ success: true, tracking })
+    // const { interval, tracking, trackingB, temp, sample } = req.body;
+    if (profs.Coor != null) {
+      const updateCoor = await Info.findOneAndUpdate({},
+        {
+          $set: {
+            [`sen_id.${profs.Coor}.lat`]: parseFloat(profs.lat),
+            [`sen_id.${profs.Coor}.lng`]: parseFloat(profs.lng)
+          }
+        },
+        { new: true }
+      )
+      return res.status(200).json({ success: true })
     }
-    if (trackingB) {
-      const info = await Info.findOneAndUpdate({}, { $set: { trackingB: trackingB } }, { new: true })
-      return res.status(200).json({ success: true, trackingB })
+    if (profs.tracking != null) {
+      const info = await Info.findOneAndUpdate({}, { $set: { tracking: profs.tracking } }, { new: true })
+      return res.status(200).json({ success: true })
     }
-    if (sample) {
-      const info = await Info.findOneAndUpdate({}, { $set: { sample: sample } }, { new: true })
-      return res.status(200).json({ success: true, sample })
+    if (profs.trackingB != null) {
+      const info = await Info.findOneAndUpdate({}, { $set: { trackingB: profs.trackingB } }, { new: true })
+      return res.status(200).json({ success: true })
     }
-    const info = await Info.findOneAndUpdate({}, { $set: { interval: interval } }, { new: true })
-    return res.status(200).json({ success: true, interval })
+    if (profs.temp != null) {
+      const info = await Info.findOneAndUpdate({}, { $set: { temp: profs.temp } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    if (profs.sample != null) {
+      const info = await Info.findOneAndUpdate({}, { $set: { sample: profs.sample } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    const info = await Info.findOneAndUpdate({}, { $set: { interval: profs.interval } }, { new: true })
+    return res.status(200).json({ success: true })
   } catch (error) {
     return res.status(500).json({ success: false, error: "Sensor not found" })
   }
@@ -77,25 +94,83 @@ export const getSensors = async (req, res) => {
     const profs = req.body;
     const sensors = []
     const timeTrackingRet = []
+    const timeTrackingRetB = []
+    if (profs.totalMap) {
+      for (let i = 0; i < Number(profs.totalMap); i++) {
+        const sensor = await Sensor.findOne({ index: i }).sort({ $natural: -1 });
+        sensors[i] = sensor
+      }
+      return res.status(200).json({ success: true, sensors })
+    }
     if (profs.timeGet) {
+      const yesterday = new Date(profs.timeGet[0]);
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
       for (let i = 0; i < Number(profs.total); i++) {
+        timeTrackingRet[i] = 0
+        timeTrackingRetB[i] = 0;
         const sensor = await Sensor.find({
           index: i,
           createAt: { $gte: profs.timeGet[0].valueOf(), $lte: profs.timeGet[1].valueOf() }
         })
+        const sensorY = await Sensor.find({
+          index: i,
+          createAt: { $gte: yesterday, $lte: profs.timeGet[0].valueOf() },
+        });
+        const sensorT = Array(1440).fill(null)
         const dataPressure = []
-        sensor.forEach((sensor) => {
+        const sensorYRest = []
+        let timeTracking = 0
+        let currentStart = null;
+        let timeTrackingB = 0
+        let currentStartB = null;
+        sensorY.forEach((sensor) => {
           const index = Math.floor(convertTime(sensor.createAt))
-          if (dataPressure[index]) {
-            dataPressure[index] = (dataPressure[index] + sensor.Pressure) / 2
-          }
-          else {
-            dataPressure[index] = sensor.Pressure
-          }
+          sensorYRest[index] = sensor.Pressure
         })
-        sensors[i] = { sensor, dataPressure }
+        sensor.forEach((sensor) => {
+          if (profs.tracking) {
+            if (sensor.Pressure >= profs.tracking) {
+              if (!currentStart) {
+                currentStart = sensor.createAt
+              }
+            }
+            else {
+              if (currentStart) {
+                const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
+                if (timeAdd < 2000) {
+                  timeTracking += timeAdd
+                }
+                currentStart = null;
+              }
+            }
+          }
+          if (profs.trackingB) {
+            if (sensor.Pressure <= profs.trackingB) {
+              if (!currentStartB) {
+                currentStartB = sensor.createAt
+              }
+            }
+            else {
+              if (currentStartB) {
+                const timeAdd = Math.floor((sensor.createAt - currentStartB) / 1000)
+                if (timeAdd < 2000) {
+                  timeTrackingB += timeAdd
+                }
+                currentStartB = null;
+              }
+            }
+          }
+          const index = Math.floor(convertTime(sensor.createAt))
+          timeTrackingRet[i] = Math.round(timeTracking / 60)
+          timeTrackingRetB[i] = Math.round(timeTrackingB / 60)
+          dataPressure[index] = sensor.Pressure
+          sensorT[index] = sensor
+        })
+        sensors[i] = { sensorT, sensorYRest, dataPressure }
       }
-      return res.status(200).json({ success: true, sensors })
+      console.log(timeTrackingRet, timeTrackingRetB)
+      return res.status(200).json({ success: true, sensors, timeTrackingRet, timeTrackingRetB })
     }
     const startOfToday = new Date();
     const yesterday = new Date(startOfToday);
@@ -103,6 +178,8 @@ export const getSensors = async (req, res) => {
     yesterday.setHours(0, 0, 0, 0);
     startOfToday.setHours(0, 0, 0, 0);
     for (let i = 0; i < Number(profs.total); i++) {
+      timeTrackingRet[i] = 0;
+      timeTrackingRetB[i] = 0;
       const sensorY = await Sensor.find({
         index: i,
         createAt: { $gte: yesterday, $lte: startOfToday },
@@ -116,7 +193,8 @@ export const getSensors = async (req, res) => {
       const dataPressure = []
       let timeTracking = 0
       let currentStart = null;
-
+      let timeTrackingB = 0
+      let currentStartB = null;
 
       sensorY.forEach((sensor) => {
         const index = Math.floor(convertTime(sensor.createAt))
@@ -124,26 +202,46 @@ export const getSensors = async (req, res) => {
       })
       sensorN.forEach((sensor) => {
         if (profs.tracking) {
-          if (sensor.Pressure > profs.tracking) {
+          if (sensor.Pressure >= profs.tracking) {
             if (!currentStart) {
               currentStart = sensor.createAt
             }
           }
           else {
             if (currentStart) {
-              timeTracking += Math.floor((sensor.createAt - currentStart) / 1000)
+              const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
+              if (timeAdd < 2000) {
+                timeTracking += timeAdd
+              }
               currentStart = null;
             }
           }
-          timeTrackingRet[i] = Math.round(timeTracking / 60)
+        }
+        if (profs.trackingB) {
+          if (sensor.Pressure <= profs.trackingB) {
+            if (!currentStartB) {
+              currentStartB = sensor.createAt
+            }
+          }
+          else {
+            if (currentStartB) {
+              const timeAdd = Math.floor((sensor.createAt - currentStartB) / 1000)
+              if (timeAdd < 2000) {
+                timeTrackingB += timeAdd
+              }
+              currentStartB = null;
+            }
+          }
         }
         const index = Math.floor(convertTime(sensor.createAt))
         sensorT[index] = sensor
         dataPressure[index] = sensor.Pressure
       })
+      timeTrackingRet[i] = Math.round(timeTracking / 60)
+      timeTrackingRetB[i] = Math.round(timeTrackingB / 60)
       sensors[i] = { sensorYRest, sensorT, dataPressure }
     }
-    return res.status(200).json({ success: true, sensors, timeTrackingRet })
+    return res.status(200).json({ success: true, sensors, timeTrackingRet, timeTrackingRetB })
   } catch (error) {
     return res.status(500).json({ success: false, error: "Sensor not found" })
   }
@@ -189,7 +287,12 @@ export const updateSensor = async (req, res) => {
     const { id } = req.params
     const { sen_name } = req.body;
     const updateSen = await Info.findOneAndUpdate({},
-      { $set: { [`sen_id.${id}`]: { name: sen_name, id: id } } },
+      { 
+        $set: { 
+          [`sen_id.${id}.name`]: sen_name,
+          [`sen_id.${id}.id`]: id
+        } 
+      },
       { new: true }
     )
     return res.status(200).json({ success: true, message: "Edit data successfully." })

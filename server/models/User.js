@@ -11,7 +11,8 @@ const userSchema = new mongoose.Schema({
   sample: { type: Number },
   tracking: { type: Number },
   trackingB: { type: Number },
-  sen_id: [{ name: String, id: Number }],
+  temperature: { type: Number },
+  sen_id: [{ name: String, id: Number, lat: Number, lng: Number }],
   createAt: { type: Date, default: Date.now },
 })
 

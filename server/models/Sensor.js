@@ -4,6 +4,7 @@ const sensorSchema = new mongoose.Schema({
     index: { type: Number, required: true },
     Pressure: { type: Number },
     battery: { type: Number },
+    temperature: { type: Number },
     createAt: {
         type: Date,
     },

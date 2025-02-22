@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { changeData } from "../sensor/SensorList";
-import { listDataTable } from "./Chart";
-
+import { listDataTable, TimeComparison } from "./Chart";
 const ScrollableTable = (device) => {
   const [tableData, setTableData] = useState(listDataTable[device.step]);
-
+  const [timeTracking, setTimeTracking] = useState([]);
   // Hàm xử lý cuộn
   const handleScroll = () => {
-    const scrollContainer = document.getElementById("device" + device.step);
+    let mode = ""
+    if(device.dataModal){
+      mode = "M"
+    }
+    const scrollContainer = document.getElementById(mode + device.step);
     const scrollTop = scrollContainer.scrollTop; // Lấy vị trí cuộn
     const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
     device.handle((prevStates) => {
@@ -16,14 +19,20 @@ const ScrollableTable = (device) => {
       return updatedStates; // Trả về mảng mới
     });
   };
-
-  useEffect(() => {
-    setTableData(listDataTable[device.step])
-  }, [changeData])
+  if (!device.dataModal) {
+    useEffect(() => {
+      setTableData(listDataTable[device.step])
+    }, [changeData])
+  }
+  else{
+    useEffect(() => {
+      setTableData(device.dataModal[device.step].sensorT)
+    }, []);
+  }
 
   return (
     <div
-      id={"device" + device.step}
+      id={device.dataModal? "M" + device.step : "" + device.step}
       onScroll={handleScroll}
       className="max-h-60 overflow-y-scroll border border-gray-300 w-full" // Đặt chiều cao đủ cho 5 dòng
     >
@@ -37,16 +46,19 @@ const ScrollableTable = (device) => {
           </tr>
         </thead>
         <tbody>
-          {tableData.map((row, index) => (
-            <tr key={index}>
-              <td className="border border-gray-300 px-4 py-2">{`${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`}</td>
-              <td className="border border-gray-300 px-4 py-2 text-center">{row?.pressure ?? ""}</td>
-              <td className="border border-gray-300 px-4 py-2 text-center">{row?.temperature ?? ""}</td>
-              <td className="border border-gray-300 px-4 py-2 text-center">
-                {row?.battery != null ? `${row.battery}%` : ""}
-              </td>
-            </tr>
-          ))}
+          {!tableData ? (
+            <h1>Loading...</h1>
+          ) : (
+            tableData.map((row, index) => (
+              <tr key={index}>
+                <td className="border border-gray-300 px-4 py-2">{`${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`}</td>
+                <td className="border border-gray-300 px-4 py-2 text-center">{row?.Pressure.toFixed(2) ?? ""}</td>
+                <td className="border border-gray-300 px-4 py-2 text-center">{row?.temperature ?? ""}</td>
+                <td className="border border-gray-300 px-4 py-2 text-center">
+                  {row?.battery != null ? `${row.battery}%` : ""}
+                </td>
+              </tr>
+            )))}
         </tbody>
       </table>
     </div>

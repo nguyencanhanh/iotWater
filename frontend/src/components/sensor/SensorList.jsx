@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from '../../context/authContext'
 import { Link, useNavigate } from "react-router-dom";
 import { Battery } from "../chart/Chart";
-import RealTimeLineChart, { addDataSensor, connectMqtt, Table, TimeComparison } from "../chart/Chart";
+import RealTimeLineChart, { addDataSensor, connectMqtt, TimeComparison } from "../chart/Chart";
 import Date from "../chart/Date";
 import ModalData from "../chart/Modal";
 import { sensorListGet } from "../../api/index"
@@ -12,7 +12,7 @@ import ScrollableTable from "../chart/Table";
 
 export let changeData
 
-function generateLabelsAndData() {
+export function generateLabelsAndData() {
   const labels = [];
 
   for (let i = 0; i < 1440; i++) {
@@ -32,14 +32,15 @@ function SensorList() {
   const [filteredDevices, setFilteredDevices] = useState(user.sen_id);
   const [showModal, setShowModal] = useState(false);
   const [timeTracking, setTimeTracking] = useState([]);
+  const [timeTrackingB, setTimeTrackingB] = useState([]);
   const label = generateLabelsAndData();
   const [isVisible, setIsVisible] = useState(true);
   const [scrollPosition, setScrollPosition] = useState(Array(user.total).fill(0));
   const navigate = useNavigate();
 
-  const fetchSensors = async (total, tracking) => {
+  const fetchSensors = async (total, tracking, trackingB) => {
     try {
-      const res = await sensorListGet(localStorage.getItem("token"), { total: total, tracking: tracking });
+      const res = await sensorListGet(localStorage.getItem("token"), { total: total, tracking: tracking, trackingB: trackingB });
       if (res.data.success) {
         const data = res.data.sensors
         data.forEach((sensor, index) => {
@@ -47,6 +48,7 @@ function SensorList() {
         })
         setDataPressure(data)
         setTimeTracking(res.data.timeTrackingRet)
+        setTimeTrackingB(res.data.timeTrackingRetB)
       } else {
         alert("Failed to fetch sensors");
       }
@@ -61,10 +63,10 @@ function SensorList() {
   };
 
   useEffect(() => {
-    fetchSensors(user.total, user.tracking);
+    fetchSensors(user.total, user.tracking, user.trackingB);
   }, []);
 
-  changeData = connectMqtt()
+  changeData = connectMqtt(timeTracking, user.tracking, timeTrackingB, user.trackingB)
   const filterSensor = (e) => {
     const records = user.sen_id.filter((dep) => dep.name.toLowerCase().includes(e.target.value.toLowerCase()))
     setFilteredDevices(records)
@@ -102,7 +104,7 @@ function SensorList() {
             </Link>
             <Date handleData={handleData} />
             <Dropdown />
-            <SettingsButton interval={user.interval} sample={user.sample} setAp={setIsVisible} tracking={user.tracking} trackingB={user.trackingB} fetchData={fetchSensors}/>
+            <SettingsButton total={user.total} interval={user.interval} sample={user.sample} setAp={setIsVisible} tracking={user.tracking} trackingB={user.trackingB} temperature = {user.temperature} fetchData={fetchSensors}/>
           </div>
           <ul className="mt-5 flex flex-wrap justify-center gap-4 w-full">
             {!dataPressure ? (
@@ -120,14 +122,13 @@ function SensorList() {
                     Đổi tên
                   </button>
                 </div>
-                {isVisible ? <TimeComparison step={device.id} init={timeTracking}/> : null}
+                {isVisible ? <TimeComparison step={device.id} init={timeTracking} initB={timeTrackingB}/> : null}
                 <RealTimeLineChart name={device} label={label} data={dataPressure} scrollPosition={scrollPosition}/>
-                {/* <Table step={device.id} /> */}
                 <ScrollableTable step={device.id} handle={setScrollPosition}/>
               </li>
             )))
             }
-            {showModal ? <ModalData dateData={dateData} listInfor={user.sen_id} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}
+            {showModal ? <ModalData dateData={dateData} listInfor={user.sen_id} tracking={user.tracking} trackingB={user.trackingB} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}
           </ul>
         </div>
       )}

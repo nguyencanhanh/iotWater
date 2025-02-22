@@ -7,15 +7,21 @@ const SettingsButton = (profs) => {
   const [isOpen, setIsOpen] = useState(false);
   const [value, setValue] = useState(profs.tracking);  // Lưu giá trị người dùng nhập
   const [valueB, setValueB] = useState(profs.trackingB); 
+  const [valueT, setValueT] = useState(profs.temperature); 
   const [isEditing, setIsEditing] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
   const [isEditingB, setIsEditingB] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
-  
+  const [isEditingT, setIsEditingT] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
+
   const handleInputChange = (event) => {
     setValue(event.target.value);  // Cập nhật giá trị khi người dùng nhập
   };
 
   const handleInputChangeB = (event) => {
     setValueB(event.target.value);  // Cập nhật giá trị khi người dùng nhập
+  };
+
+  const handleInputChangeT = (event) => {
+    setValueT(event.target.value);  // Cập nhật giá trị khi người dùng nhập
   };
 
   const handleSubmit = async () => {
@@ -28,6 +34,9 @@ const SettingsButton = (profs) => {
       if (error.res && !error.res.data.success) {
         alert(error.res.data.error);
       }
+    }
+    finally{
+      profs.fetchSensors(profs.total, value, valueB)
     }
   };
 
@@ -42,7 +51,22 @@ const SettingsButton = (profs) => {
         alert(error.res.data.error);
       }
     }
-    console.log(valueB)
+    finally{
+      profs.fetchSensors(profs.total, value, valueB)
+    }
+  };
+
+  const handleSubmitT = async () => {
+    try {
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { temp: valueT })
+      if (res.data.success) {
+        setIsEditingT(false);
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
   };
 
   const toggleVisibilityM = () => {
@@ -71,7 +95,7 @@ const SettingsButton = (profs) => {
             <li><SetInterval interval={profs.interval} sample={profs.sample}/></li>
             <li>
               <div className="flex justify-between items-center">
-                <label htmlFor="input-value" className="text-white">Giá trị trên:</label>
+                <label htmlFor="input-value" className="text-white">Giá trị áp trên:</label>
                 <div className="flex items-center space-x-2">
                   {isEditing ? (
                     <>
@@ -108,7 +132,7 @@ const SettingsButton = (profs) => {
 
             <li>
               <div className="flex justify-between items-center">
-                <label htmlFor="input-value" className="text-white">Giá trị dưới:</label>
+                <label htmlFor="input-value" className="text-white">Giá trị áp dưới:</label>
                 <div className="flex items-center space-x-2">
                   {/* Nếu đang trong chế độ chỉnh sửa, hiển thị ô nhập */}
                   {isEditingB ? (
@@ -134,6 +158,44 @@ const SettingsButton = (profs) => {
                       <span className="text-white">{valueB || 1.5} Bar</span>
                       <button
                         onClick={() => setIsEditingB(true)} // Chuyển sang chế độ chỉnh sửa
+                        className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
+                      >
+                        Chỉnh sửa
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div className="flex justify-between items-center">
+                <label htmlFor="input-value" className="text-white">Ngưỡng nhiệt độ:</label>
+                <div className="flex items-center space-x-2">
+                  {/* Nếu đang trong chế độ chỉnh sửa, hiển thị ô nhập */}
+                  {isEditingT ? (
+                    <>
+                      <input
+                        id="input-value"
+                        type="text"
+                        value={valueT}
+                        onChange={handleInputChangeT}
+                        placeholder="Nhập giá trị"
+                        className="px-2 py-1 rounded-lg text-black w-20"
+                      />
+                      <button
+                        onClick={handleSubmitT}
+                        className="px-4 py-2 bg-teal-500 text-white rounded-lg"
+                      >
+                        OK
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Nếu không chỉnh sửa, hiển thị giá trị */}
+                      <span className="text-white">{valueT || 45} ℃</span>
+                      <button
+                        onClick={() => setIsEditingT(true)} // Chuyển sang chế độ chỉnh sửa
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
                       >
                         Chỉnh sửa

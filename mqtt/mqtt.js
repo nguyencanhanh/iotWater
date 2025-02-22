@@ -35,6 +35,7 @@ new CronJob(
         createAt: time + i * 60000,
         Pressure: Math.random() * 3,
         battery: Math.random() * 100 | 0,
+        temperature: Math.random() * 100 | 0,
       })
     }
     client.publish(topic, JSON.stringify({
@@ -51,11 +52,13 @@ new CronJob(
         createAt: time - 60000 * 5,
         Pressure: Math.random() * 3,
         battery: Math.random() * 100 | 0,
+        temperature: Math.random() * 100 | 0,
       },
       {
         createAt: time,
         Pressure: Math.random() * 3,
         battery: Math.random() * 100 | 0,
+        temperature: Math.random() * 100 | 0,
       },
       ]
     }))

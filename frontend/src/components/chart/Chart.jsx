@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { changeData } from "../sensor/SensorList"
-import DataTable from "react-data-table-component";
-import { columnsT } from "../../utils/SensorHelper";
 import mqtt from 'mqtt';
 import { Sema } from 'async-sema'
 import annotationPlugin from "chartjs-plugin-annotation";
@@ -33,6 +31,8 @@ ChartJS.register(
 
 
 let battery = [];
+let timeReach = [];
+let timeReachB = [];
 export let respondInterval;
 export let client;
 export const listDataSensor = []
@@ -48,13 +48,15 @@ export const addDataSensor = (indexSensors, data, dataPressure) => {
   listDataSensor[indexSensors] = dataPressure
 }
 
-export const connectMqtt = () => {
+export const connectMqtt = (timeTrackingRet, conditionTrack, timeTrackingRetB, conditionTrackB) => {
   const [data, setData] = useState();
   const host = 'broker.hivemq.com';
   const port = 8884;
   const clientId = `mqtt_${Math.random().toString(16).slice(3)}`;
   const connectUrl = `wss://${host}:${port}/mqtt`;
-
+  const topic = 'iotwatter@2024';
+  timeReach = timeTrackingRet;
+  timeReachB = timeTrackingRetB;
   const options = {
     clientId,
     clean: true,
@@ -65,13 +67,14 @@ export const connectMqtt = () => {
 
   useEffect(() => {
 
-    const topic = 'iotwatter@2024';
     const semaphore = new Sema(1);
     client.on('connect', () => {
       console.log('Connected to MQTT broker');
     });
 
     client.on('message', async (topic, messageData) => {
+      let currentStart = null;
+      let currentStartB = null;
       await semaphore.acquire();
       try {
         messageData = JSON.parse(messageData.toString());
@@ -81,6 +84,28 @@ export const connectMqtt = () => {
         battery[sen_name] = lastValue.battery;
         messageData.data.forEach(async (message) => {
           if (msg_id === 1) {
+            if (message.Pressure >= conditionTrack) {
+              if (!currentStart) {
+                currentStart = message.createAt
+              }
+            }
+            else {
+              if (currentStart) {
+                timeReach[sen_name] += Math.floor((message.createAt - currentStart) / 60000)
+                currentStart = null;
+              }
+            }
+            if (message.Pressure <= conditionTrackB) {
+              if (!currentStartB) {
+                currentStartB = message.createAt
+              }
+            }
+            else {
+              if (currentStartB) {
+                timeReachB[sen_name] += Math.floor((message.createAt - currentStartB) / 60000)
+                currentStartB = null;
+              }
+            }
             await addData(sen_name, message, message.createAt, message.Pressure);
           }
           else if (msg_id === 2) {
@@ -118,6 +143,9 @@ export const addData = async (indexSensor, data, newDate, dataPressure) => {
 
 const RealTimeLineChart = (profs) => {
   const chartRef = useRef(null);
+  if(profs.dataModal){
+    console.log(profs.dataModal[profs.name.id].sensorYRest)
+  }
   const [chartData, setData] = useState({
     labels: profs.label,
     datasets: profs.dataModal ? [
@@ -125,21 +153,21 @@ const RealTimeLineChart = (profs) => {
         label: "Áp suất (Bar)",
         data: profs.dataModal[profs.name.id].dataPressure,
         borderColor: "rgb(34, 197, 94)", // Màu xanh lá
-        tension: 0.3, // Độ cong của đường
-        pointRadius: 5, // Độ lớn điểm
+        tension: 0.1, // Độ cong của đường
+        pointRadius: 2, // Độ lớn điểm
         pointBackgroundColor: "rgb(34, 197, 94)", // Màu điểm
         spanGaps: true
       },
-    ] : [
       {
         label: "Áp suất hôm qua (Bar)",
-        data: profs.data[profs.name.id].sensorYRest,
+        data: profs.dataModal[profs.name.id].sensorYRest,
         borderColor: "rgb(59, 130, 246)", // Màu xanh
         tension: 0.1, // Độ cong của đường
         pointRadius: 2, // Độ lớn điểm
         pointBackgroundColor: "rgb(59, 130, 246)", // Màu điểm
         spanGaps: true
-      },
+      }
+    ] : [
       {
         label: "Áp suất hôm nay (Bar)",
         data: profs.data[profs.name.id].dataPressure,
@@ -147,6 +175,15 @@ const RealTimeLineChart = (profs) => {
         tension: 0.1, // Độ cong của đường
         pointRadius: 2, // Độ lớn điểm
         pointBackgroundColor: "rgb(34, 197, 94)", // Màu điểm
+        spanGaps: true
+      },
+      {
+        label: "Áp suất hôm qua (Bar)",
+        data: profs.data[profs.name.id].sensorYRest,
+        borderColor: "rgb(59, 130, 246)", // Màu xanh
+        tension: 0.1, // Độ cong của đường
+        pointRadius: 2, // Độ lớn điểm
+        pointBackgroundColor: "rgb(59, 130, 246)", // Màu điểm
         spanGaps: true
       },
     ],
@@ -226,11 +263,19 @@ const RealTimeLineChart = (profs) => {
     useEffect(() => {
       setData((prevData) => ({
         ...prevData,
-        datasets: prevData.datasets.map((dataset) => {
-          return {
-            ...dataset,
-            data: profs.dataModal[profs.name.id].dataPressure,
-          };
+        datasets: prevData.datasets.map((dataset, index) => {
+          if(index === 1){
+            return {
+              ...dataset,
+              data: profs.dataModal[profs.name.id].dataPressure,
+            };
+          }
+          else{
+            return {
+              ...dataset,
+              data: profs.dataModal[profs.name.id].sensorYRest,
+            };
+          }
         }),
       }));
 
@@ -258,20 +303,20 @@ const RealTimeLineChart = (profs) => {
 
     }, [changeData]);
   }
-
   useEffect(() => {
     if (chartRef.current) {
       const chart = chartRef.current; // Truy cập biểu đồ
       const annotation = chart.options.plugins.annotation;
-  
+
       // Cập nhật giá trị xMin và xMax
       annotation.annotations[0].xMin = profs.scrollPosition[profs.name.id];
       annotation.annotations[0].xMax = profs.scrollPosition[profs.name.id] + 5;
-  
+
       chart.update(); // Cập nhật biểu đồ mà không reset trạng thái
     }
   }, [profs.scrollPosition[profs.name.id]]);
-  
+
+
   return (
     <div className="w-full h-80 mb-3">
       <Line ref={chartRef} data={chartData} options={options} />
@@ -307,59 +352,19 @@ export const Battery = ({ step }) => {
   )
 };
 
-export const Table = ({ step, dataModal }) => {
-  const [mockData, setMockData] = useState([]);
-  const listDataTable1 = [
-    { Pressure: 1.5, battery: 85, temperature: 25, createAt: "2025-01-18T15:00:00Z" },
-    { Pressure: 2.3, battery: null, temperature: 27, createAt: null },
-    null,
-    { Pressure: 0.8, battery: 75, temperature: null, createAt: "2025-01-18T14:00:00Z" },
-  ];
-
-  if (dataModal) {
-    useEffect(() => {
-      // setMockData(dataModal[step].sensor);
-    }, [])
-  }
-  else {
-    useEffect(() => {
-      const startTime = new Date();
-      let tmp = {
-        Pressure: 0,
-        battery: 0,
-        temperature: 0,
-      }
-      setMockData(listDataTable[step].map((item, index) => {
-        startTime.setHours(0, 0, 0, 0);
-        if (item === null) {
-          return {
-            Pressure: tmp.Pressure,
-            battery: tmp.battery,
-            temperature: null,
-            createAt: startTime.setMinutes(index),
-          };
-        }
-        tmp = item
-        return item;
-      }))
-  }, [changeData]);
-}
-
-return (
-  <DataTable columns={columnsT}
-    data={mockData}
-    keyField="_id"
-    fixedHeader
-    fixedHeaderScrollHeight="250px"
-    striped
-  />
-);
-};
-
 export const TimeComparison = (profs) => {
   const morningLessThan = 5;    // Thời gian bé hơn trong buổi sáng
   const [timeMoreThan, setTimeMoreThan] = useState(profs.init[profs.step])
-  
+  const [timeLessThan, setTimeLessThan] = useState(profs.initB[profs.step])
+  if (!profs.dataModal) {
+    useEffect(() => {
+      setTimeMoreThan(timeReach[profs.step]);
+      setTimeLessThan(timeReachB[profs.step]);
+    }, [changeData]);
+  }
+  else{
+    console.log(timeMoreThan, timeLessThan)
+  }
   return (
     <div className="flex flex-col items-center">
       <div className="flex w-full justify-center">
@@ -368,11 +373,11 @@ export const TimeComparison = (profs) => {
           <div className="flex justify-between w-full">
             <div className="flex flex-col items-center w-1/2">
               <span className="text-sm font-medium text-gray-700">Lớn hơn</span>
-              <span className="text-lg font-bold text-teal-700">{Number(timeMoreThan / 60)}H {Number(timeMoreThan % 60)}P</span>
+              <span className="text-lg font-bold text-teal-700">{Math.floor(timeMoreThan / 60)}H {timeMoreThan % 60}P</span>
             </div>
             <div className="flex flex-col items-center w-1/2">
               <span className="text-sm font-medium text-gray-700">Bé hơn</span>
-              <span className="text-lg font-bold text-teal-700">{morningLessThan} phút</span>
+              <span className="text-lg font-bold text-teal-700">{Math.floor(timeLessThan / 60)}H {timeLessThan % 60}P</span>
             </div>
           </div>
         </div>

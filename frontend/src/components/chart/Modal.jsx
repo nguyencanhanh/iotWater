@@ -1,47 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { Modal } from 'antd';
 import { sensorListGet } from "../../api/index"
-// import RealTimeLineChart, { Table } from "../chart/Chart";
 import { DatePicker, Form } from 'antd';
-// import { rangePresets } from './Date';
-// import dayjs from 'dayjs';
-// const { RangePicker } = DatePicker;
-
-function generateLabelsAndData(interval, dateData) {
-  const labels = [];
-  const totalSecondsInDay = 24 * 60 * 60;
-
-  for (let i = 0; i < totalSecondsInDay; i += interval) {
-    const totalSeconds = i;
-    const hour = Math.floor(totalSeconds / 3600);
-    const minute = Math.floor((totalSeconds % 3600) / 60);
-    const second = totalSeconds % 60;
-    if (interval === 3600) {
-      labels.push(`${String(hour).padStart(2, "0")}`);
-    }
-    else if (interval === 15) {
-      labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`);
-    }
-    else {
-      labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
-
-    }
-  }
-  return labels;
-};
+import RealTimeLineChart, {TimeComparison} from './Chart';
+import { generateLabelsAndData } from '../sensor/SensorList';
+import ScrollableTable from './Table';
 
 const ModalData = (props) => {
-  const [dataModal, setDataModal] = useState([]);
-  const [label, setLabel] = useState(generateLabelsAndData(15, props.dateData));
-  const [interval, setInterval] = useState(15);
+  const dateData = [props.dateData.startOf('day'), props.dateData.endOf('day')];
+  const total = props.listInfor.length;
+  const [dataModal, setDataModal] = useState(null);
+  const [timeTracking, setTimeTracking] = useState([]);
+  const [timeTrackingB, setTimeTrackingB] = useState([]);
+  const label = generateLabelsAndData();
+  const [scrollPosition, setScrollPosition] = useState(Array(total).fill(0));
 
-  const fetchSensors = async (interval) => {
+  const fetchSensors = async (date) => {
     try {
-      console.log(props.dateData)
-      const res = await sensorListGet(localStorage.getItem("token"), { total: props.listInfor.length, interval: interval, timeGet: [props.dateData.startOf('day'), props.dateData.endOf('day')] });
+      const res = await sensorListGet(localStorage.getItem("token"), { total: total, timeGet: date, tracking: props.tracking, trackingB: props.trackingB });
       if (res.data.success) {
         const data = res.data.sensors
         setDataModal(data)
+        setTimeTracking(res.data.timeTrackingRet)
+        setTimeTrackingB(res.data.timeTrackingRetB)
       } else {
         alert("Failed to fetch sensors");
       }
@@ -54,12 +35,13 @@ const ModalData = (props) => {
   };
 
   useEffect(() => {
-    fetchSensors();
+    fetchSensors(dateData);
   }, []);
 
   const handleDateChange = (date) => {
     if (date) {
-      
+      const dateToGetData = [date.startOf('day'), date.endOf('day')];
+      fetchSensors(dateToGetData)
     }
   };
 
@@ -89,17 +71,17 @@ const ModalData = (props) => {
         </Form>
       </div>
       <ul className="mt-5 flex flex-wrap justify-center gap-4">
-        {dataModal.length === 0 ? (
+        {!dataModal ? (
           <h1>Loading...</h1>
         ) : (
-          console.log(dataModal),
           props.listInfor.map((device) => (
             <li
               className="flex flex-col items-center w-full sm:w-[600px] md:w-[600px] bg-gray-200 p-4 rounded-lg shadow"
               key={device.id}
             >
-              {/* <RealTimeLineChart name={device} label={label} dataModal={dataModal} /> */}
-              {/* <Table step={device.id} dataModal={dataModal} /> */}
+              <TimeComparison step={device.id} init={timeTracking} initB={timeTrackingB} dataModal={1}/>
+              <RealTimeLineChart name={device} label={label} dataModal={dataModal} scrollPosition={scrollPosition}/>
+              <ScrollableTable step={device.id} handle={setScrollPosition} dataModal={dataModal}/>
             </li>
           ))
         )}

@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
-import { client } from '../chart/Chart';
+import React from 'react';
 import { intervalUpdatePut } from '../../api/index';
+import { produce } from "immer";
 
-function SetSample(sample) {
-  const [value, setValue] = useState(sample.sample);
-  const interval = sample.interval
-  const updateInterval = async (value, setValue) => {
+function SetSample(info) {
+  const interval = info.info[info.step].interval
+  const updateInterval = async (value) => {
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { sample: value })
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { sample: value, sen_id: info.info[info.step].id })
       if (res.data.success) {
-        setValue(Number(res.data.sample))
+        info.setdataInfo(prevData =>
+          produce(prevData, draft => {
+            draft[info.info[info.step].id].sample = value;
+          })
+        );
       }
     } catch (error) {
       if (error.res && !error.res.data.success) {
@@ -25,25 +28,14 @@ function SetSample(sample) {
       alert('Chọn không hợp lệ');
       return;
     }
-    client.publish(
-      'watterChange@2024',
-      JSON.stringify({ sample: valueX }),
-      (error) => {
-        if (error) {
-          alert('Xuất bản thất bại:', error.message);
-        } else {
-          updateInterval(valueX, setValue)
-          alert('Xuất bản thành công.');
-        }
-      }
-    )
+    updateInterval(valueX)
   };
 
   return (
     <div className="ml-1 flex justify-between justify-center">
       <div className='text-white rounded'>Thời gian lấy mẫu:</div>
       <select className="bg-teal-600 rounded text-white"
-        value={value}
+        value={info.info[info.step].sample}
         onChange={handleSelect}
       >
         <option value={60}>1 phut</option>

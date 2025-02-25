@@ -1,4 +1,5 @@
 import User from '../models/User.js';
+import Info from '../models/Info.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken'
 
@@ -25,3 +26,17 @@ export const login = async (req, res) => {
 export const verify = (req, res) => {
   return res.status(200).json({ success: true, user: req.user })
 }
+
+export const info = async (req, res) => {
+  try {
+    const info = await Info.find()
+    if (!info) {
+      return res.status(404).json({ success: false, error: "Info not found" })
+    }
+    return res.status(200).json({ success: true, info })
+  } catch (error) {
+    console.log('info error', error)
+    return res.status(500).json({ success: false, error: error.message })
+  }
+}
+

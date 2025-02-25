@@ -1,16 +1,20 @@
-import React, { useState } from 'react';
-import { client } from '../chart/Chart';
+import React from 'react';
 import { intervalUpdatePut } from '../../api/index';
+import { produce } from "immer";
 
-function SetInterval(interval) {
-  const display = interval.sample
-  const [value, setValue] = useState(interval.interval);
+function SetInterval(info) {
+  const display = info.info[info.step].sample
 
-  const updateInterval = async (value, setValue) => {
+  const updateInterval = async (value) => {
+    const valueIn = value
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { interval: value })
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { interval: valueIn, sen_id: info.info[info.step].id })
       if (res.data.success) {
-        setValue(Number(res.data.interval))
+        info.setdataInfo(prevData =>
+          produce(prevData, draft => {
+            draft[info.info[info.step].id].interval = valueIn;
+          })
+        );
       }
     } catch (error) {
       if (error.res && !error.res.data.success) {
@@ -26,25 +30,14 @@ function SetInterval(interval) {
       alert('Chọn không hợp lệ');
       return;
     }
-    client.publish(
-      'watterChange@2024',
-      JSON.stringify({ interval: valueX }),
-      (error) => {
-        if (error) {
-          alert('Xuất bản thất bại:', error.message);
-        } else {
-          updateInterval(valueX, setValue)
-          alert('Xuất bản thành công.');
-        }
-      }
-    )
+    updateInterval(valueX)
   };
 
   return (
     <div className="ml-1 flex justify-between justify-center">
       <div className='text-white rounded'>Thời gian hiển thị:</div>
       <select className="bg-teal-600 rounded text-white"
-        value={value}
+        value={info.info[info.step].interval}
         onChange={handleSelect}
       >
         <option value={60}>1 phut</option>

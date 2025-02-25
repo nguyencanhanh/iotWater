@@ -11,14 +11,27 @@ function Dropdown() {
   ];
 
   const handleSelect = async (event) => {
-    if(event.target.value === 'Xuất Excel'){
+    if (event.target.value === 'Xuất Excel') {
       return;
     }
     event.preventDefault();
     try {
-      const res = await exportDataPost(localStorage.getItem("token"), {type: event.target.value});
+      const res = await exportDataPost(localStorage.getItem("token"), { type: event.target.value });
       if (res.data.success) {
+        const response = res.data;
         // Handle success
+        const url = window.URL.createObjectURL(new Blob([response.excelBuffer]));
+
+        // Tạo thẻ <a> để tải file
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", "export.xlsx");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Giải phóng bộ nhớ
+        window.URL.revokeObjectURL(url);
       }
     } catch (error) {
       if (error.res && !error.res.data.success) {

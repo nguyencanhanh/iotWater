@@ -30,6 +30,8 @@ new CronJob(
     let time = Date.now() - 9 * 60000;
     console.log("published")
     const data = []
+    const data2 = []
+    const data3 = []
     for (let i = 0; i < 10; i++) {
       data.push({
         createAt: time + i * 60000,
@@ -43,24 +45,34 @@ new CronJob(
       msg_id: 1,
       data: data
     }))
-    await sleep(400)
-    time = Date.now()
+    await sleep(100)
+    time = Date.now() - 9 * 60000;
+    for (let i = 0; i < 10; i++) {
+      data2.push({
+        createAt: time + i * 60000,
+        Pressure: Math.random() * 3,
+        battery: Math.random() * 100 | 0,
+        temperature: Math.random() * 100 | 0,
+      })
+    }
     client.publish(topic, JSON.stringify({
       sen_name: 1,
       msg_id: 1,
-      data: [{
-        createAt: time - 60000 * 5,
+      data: data2
+    }))
+    time = Date.now() - 9 * 60000;
+    for (let i = 0; i < 10; i++) {
+      data3.push({
+        createAt: time + i * 60000,
         Pressure: Math.random() * 3,
         battery: Math.random() * 100 | 0,
         temperature: Math.random() * 100 | 0,
-      },
-      {
-        createAt: time,
-        Pressure: Math.random() * 3,
-        battery: Math.random() * 100 | 0,
-        temperature: Math.random() * 100 | 0,
-      },
-      ]
+      })
+    }
+    client.publish(topic, JSON.stringify({
+      sen_name: 2,
+      msg_id: 1,
+      data: data3
     }))
   },
   null,  // cb when job stop

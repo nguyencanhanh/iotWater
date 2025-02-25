@@ -27,7 +27,7 @@ function App() {
           <Route index element={<AdminSummary/>}></Route>
           <Route path='/admin-dashboard/sensors' element={<SensorList/>}></Route>
           <Route path='/admin-dashboard/add-sensors' element={<AddSensor/>}></Route>
-          <Route path='/admin-dashboard/sensor/:id' element={<EditComponent/>}></Route>
+          {/* <Route path='/admin-dashboard/sensor/:id' element={<EditComponent/>}></Route> */}
           {/* <Route path='/admin-dashboard/table' element={<TableList/>}></Route> */}
 
         </Route>

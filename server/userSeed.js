@@ -16,10 +16,11 @@ const userRegister = async () => {
       sample: 300,
       tracking: 1.5,
       trackingB: 1.3,
+      temperature: 30,
       sen_id: [
-        { name: "bacgiang1", id: 0 },
-        { name: "bacgiang2", id: 1 },
-        { name: "bacgiang3", id: 2 },
+        { name: "bacgiang1", id: 0, lat: 21.074073, lng: 105.779155 },
+        { name: "bacgiang2", id: 1, lat: 21.037577, lng: 105.820118 },
+        { name: "bacgiang3", id: 2, lat: 21.2769, lng: 106.194 },
       ],
     })
     await info.save()

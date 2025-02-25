@@ -1,66 +1,88 @@
-import React, { useEffect, useState } from "react";
-import { changeData } from "../sensor/SensorList";
-import { listDataTable, TimeComparison } from "./Chart";
+import React, { useEffect, useState, useRef } from "react";
+import { listDataTable } from "./Chart";
+
 const ScrollableTable = (device) => {
   const [tableData, setTableData] = useState(listDataTable[device.step]);
-  const [timeTracking, setTimeTracking] = useState([]);
-  // Hàm xử lý cuộn
-  const handleScroll = () => {
-    let mode = ""
-    if(device.dataModal){
-      mode = "M"
+  const tableContainerRef = useRef(null);
+  const headerRef = useRef(null);
+
+  useEffect(() => {
+    if (!device.dataModal) {
+      setTableData(listDataTable[device.step]);
+    } else {
+      setTableData(device.dataModal[device.step]?.sensorT || []);
     }
+  }, [device.step, device.dataModal]);
+
+  useEffect(() => {
+    // Đồng bộ thanh cuộn
+    const syncScrollBar = () => {
+      if (tableContainerRef.current && headerRef.current) {
+        const container = tableContainerRef.current;
+        const scrollWidth = container.offsetWidth - container.clientWidth;
+        headerRef.current.style.paddingRight = `${scrollWidth}px`;
+        container.scrollTop = (container.scrollHeight - container.clientHeight) * device.currentTimeDate - 95;
+      }
+    };
+    syncScrollBar();
+  }, []);
+
+  const handleScroll = () => {
+    let mode = device.dataModal ? "M" : "";
     const scrollContainer = document.getElementById(mode + device.step);
-    const scrollTop = scrollContainer.scrollTop; // Lấy vị trí cuộn
+    const scrollTop = scrollContainer.scrollTop;
     const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+
     device.handle((prevStates) => {
-      const updatedStates = [...prevStates]; // Sao chép mảng cũ
-      updatedStates[device.step] = Math.floor(scrollTop / (maxScroll / 1435)); // Cập nhật phần tử tại index
-      return updatedStates; // Trả về mảng mới
+      const updatedStates = [...prevStates];
+      updatedStates[device.step] = Math.floor(scrollTop / (maxScroll / 1435));
+      return updatedStates;
     });
   };
-  if (!device.dataModal) {
-    useEffect(() => {
-      setTableData(listDataTable[device.step])
-    }, [changeData])
-  }
-  else{
-    useEffect(() => {
-      setTableData(device.dataModal[device.step].sensorT)
-    }, []);
-  }
 
   return (
-    <div
-      id={device.dataModal? "M" + device.step : "" + device.step}
-      onScroll={handleScroll}
-      className="max-h-60 overflow-y-scroll border border-gray-300 w-full" // Đặt chiều cao đủ cho 5 dòng
-    >
-      <table className="border-collapse w-full">
-        <thead className="bg-gray-200 sticky top-0">
-          <tr>
-            <th className="border border-gray-300 px-4 py-2">Thời gian</th>
-            <th className="border border-gray-300 px-4 py-2">Áp suất (Bar)</th>
-            <th className="border border-gray-300 px-4 py-2">Nhiệt độ (°C)</th>
-            <th className="border border-gray-300 px-4 py-2">Pin (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {!tableData ? (
-            <h1>Loading...</h1>
-          ) : (
-            tableData.map((row, index) => (
-              <tr key={index}>
-                <td className="border border-gray-300 px-4 py-2">{`${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`}</td>
-                <td className="border border-gray-300 px-4 py-2 text-center">{row?.Pressure.toFixed(2) ?? ""}</td>
-                <td className="border border-gray-300 px-4 py-2 text-center">{row?.temperature ?? ""}</td>
-                <td className="border border-gray-300 px-4 py-2 text-center">
+    <div className="border border-gray-300 w-full">
+      {/* Header cố định */}
+      <div ref={headerRef} className="bg-gray-200">
+        <table className="border-collapse w-full">
+          <thead>
+            <tr>
+              <th className="border border-gray-300 px-4 py-2 w-1/4">Thời gian</th>
+              <th className="border border-gray-300 px-4 py-2 w-1/4">Áp suất (Bar)</th>
+              <th className="border border-gray-300 px-4 py-2 w-1/4">Nhiệt độ (°C)</th>
+              <th className="border border-gray-300 px-4 py-2 w-1/4">Pin (%)</th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+
+      {/* Body cuộn, chỉ hiển thị 5 hàng */}
+      <div
+        ref={tableContainerRef}
+        id={device.dataModal ? "M" + device.step : "" + device.step}
+        onScroll={handleScroll}
+        className="overflow-y-auto"
+        style={{ maxHeight: "calc(5 * 40px)" }} // Giới hạn chiều cao cho đúng 5 hàng
+      >
+        <table className="border-collapse w-full">
+          <tbody>
+            {tableData.map((row, index) => (
+              <tr key={index} className="h-5 text-xs">
+                <td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
+                  {`${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`}
+                </td><td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
+                  {row?.Pressure?.toFixed(2) ?? ""}
+                </td><td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
+                  {row?.temperature ?? ""}
+                </td><td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
                   {row?.battery != null ? `${row.battery}%` : ""}
                 </td>
               </tr>
-            )))}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+
+        </table>
+      </div>
     </div>
   );
 };

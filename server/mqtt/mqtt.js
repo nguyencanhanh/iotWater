@@ -1,10 +1,7 @@
 import mqtt from "mqtt"
 import Sensor from "../models/Sensor.js"
-import Info from "../models/User.js";
-import dotenv from 'dotenv';
+import Info from "../models/Info.js";
 import axios from 'axios';
-
-dotenv.config({ path: '../.env' });
 
 const host = 'broker.hivemq.com';
 const port = 1883;
@@ -13,6 +10,7 @@ const clientId = `mqtt_${Math.random().toString(16).slice(3)}`
 const connectUrl = `mqtt://${host}:${port}`
 
 const topic = 'iotwatter@2024'
+export let client = null
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -22,26 +20,26 @@ async function sendTelegramMessage(token, chatId, message, retries = 3) {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-          const response = await axios.get(url, {
-              params: {
-                  chat_id: chatId,
-                  text: message
-              }
-          });
-          return response.data;
-      } catch (error) {
-          console.error(`❌ Lỗi khi gửi tin nhắn (Lần ${attempt}):`, error.response ? error.response.data : error.message);
-          if (attempt === retries) {
-              return null;
-          }
-          await sleep(3000); // Chờ 3 giây trước khi thử lại
+    try {
+      const response = await axios.get(url, {
+        params: {
+          chat_id: chatId,
+          text: message
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`❌ Lỗi khi gửi tin nhắn (Lần ${attempt}):`, error.response ? error.response.data : error.message);
+      if (attempt === retries) {
+        return null;
       }
+      await sleep(3000); // Chờ 3 giây trước khi thử lại
+    }
   }
 }
 
 const connectMqtt = async () => {
-  const client = mqtt.connect(connectUrl, {
+  client = mqtt.connect(connectUrl, {
     clientId,
     clean: true,
     connectTimeout: 4000,
@@ -52,7 +50,7 @@ const connectMqtt = async () => {
     client.subscribe(topic)
   });
 
-  const info = await Info.findOne({});
+  const info = await Info.find();
 
   client.on("message", (topic, messageData) => {
     try {
@@ -60,8 +58,16 @@ const connectMqtt = async () => {
       messageData = JSON.parse(messageData.toString());
       const sen_name = Number(messageData.sen_name);
       const msg_id = Number(messageData.msg_id)
-      messageData.data.forEach(async (message) => {
+      const dateNow = Date.now() - messageData.data.length * 60000;
+      messageData.data.forEach(async (message, index) => {
         if (msg_id === 1) {
+          if (sen_name === 0) {
+            message.createAt = dateNow + (index + 1) * 60000;
+          }
+          else {
+            message.createAt = message.createAt * 1000
+          }
+          message.Pressure = message.Pressure * 0.7093 + 0.7411
           const newSensor = new Sensor({
             index: sen_name,
             battery: message.battery,
@@ -69,7 +75,8 @@ const connectMqtt = async () => {
             Pressure: message.Pressure,
             createAt: message.createAt
           });
-          if(message.temperature >= info.temperature && check.length === 0){
+          await newSensor.save();
+          if (message.temperature >= info[sen_name].temperature && check.length === 0) {
             check[0] = message.temperature
             check[1] = new Date(message.createAt).toLocaleString('en-GB', {
               hour: '2-digit',
@@ -77,11 +84,10 @@ const connectMqtt = async () => {
               hour12: false // Buộc không dùng định dạng 12 giờ
             })
           }
-          await newSensor.save();
         }
       })
-      if(check.length > 0){
-        sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo nhiệt độ cao ${check[0]}°C tại cảm biến ${info.sen_id[sen_name].name} vào lúc ${check[1]}`)
+      if (check.length > 0) {
+        sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo nhiệt độ cao ${check[0]}°C tại cảm biến ${info[sen_name].name} vào lúc ${check[1]}`)
         check = []
       }
     } catch (error) {

@@ -29,12 +29,14 @@ ChartJS.register(
   annotationPlugin
 );
 
+//define
+const pointLage = 0.5
+//end define
 
 let battery = [];
 let timeReach = [];
 let timeReachB = [];
 export let respondInterval;
-export let client;
 export const listDataSensor = []
 export const listDataTable = []
 
@@ -48,7 +50,7 @@ export const addDataSensor = (indexSensors, data, dataPressure) => {
   listDataSensor[indexSensors] = dataPressure
 }
 
-export const connectMqtt = (timeTrackingRet, conditionTrack, timeTrackingRetB, conditionTrackB) => {
+export const connectMqtt = (timeTrackingRet, info, timeTrackingRetB) => {
   const [data, setData] = useState();
   const host = 'broker.hivemq.com';
   const port = 8884;
@@ -63,7 +65,7 @@ export const connectMqtt = (timeTrackingRet, conditionTrack, timeTrackingRetB, c
     connectTimeout: 4000,
     reconnectPeriod: 5000,
   }
-  client = mqtt.connect(connectUrl, options);
+  const client = mqtt.connect(connectUrl, options);
 
   useEffect(() => {
 
@@ -73,8 +75,6 @@ export const connectMqtt = (timeTrackingRet, conditionTrack, timeTrackingRetB, c
     });
 
     client.on('message', async (topic, messageData) => {
-      let currentStart = null;
-      let currentStartB = null;
       await semaphore.acquire();
       try {
         messageData = JSON.parse(messageData.toString());
@@ -82,30 +82,24 @@ export const connectMqtt = (timeTrackingRet, conditionTrack, timeTrackingRetB, c
         const sen_name = Number(messageData.sen_name);
         const msg_id = Number(messageData.msg_id);
         battery[sen_name] = lastValue.battery;
-        messageData.data.forEach(async (message) => {
+        const dateNow = Date.now() - messageData.data.length * 60000;
+        let currentStart = dateNow;
+        messageData.data.forEach(async (message, index) => {
           if (msg_id === 1) {
-            if (message.Pressure >= conditionTrack) {
-              if (!currentStart) {
-                currentStart = message.createAt
-              }
+            if(sen_name === 0){
+              message.createAt = dateNow + index * 60000 + 60000;
             }
-            else {
-              if (currentStart) {
-                timeReach[sen_name] += Math.floor((message.createAt - currentStart) / 60000)
-                currentStart = null;
-              }
+            else{
+              message.createAt = message.createAt * 1000
             }
-            if (message.Pressure <= conditionTrackB) {
-              if (!currentStartB) {
-                currentStartB = message.createAt
-              }
+            message.Pressure = message.Pressure * 0.7093 + 0.7411
+            if (message.Pressure >= info[sen_name].tracking) {
+              timeReach[sen_name] += Math.floor((message.createAt - currentStart) / 60000)
             }
-            else {
-              if (currentStartB) {
-                timeReachB[sen_name] += Math.floor((message.createAt - currentStartB) / 60000)
-                currentStartB = null;
-              }
+            if (message.Pressure <= info[sen_name].trackingB) {
+              timeReachB[sen_name] += Math.floor((message.createAt - currentStart) / 60000)
             }
+            currentStart = message.createAt
             await addData(sen_name, message, message.createAt, message.Pressure);
           }
           else if (msg_id === 2) {
@@ -143,47 +137,48 @@ export const addData = async (indexSensor, data, newDate, dataPressure) => {
 
 const RealTimeLineChart = (profs) => {
   const chartRef = useRef(null);
-  if(profs.dataModal){
-    console.log(profs.dataModal[profs.name.id].sensorYRest)
-  }
   const [chartData, setData] = useState({
     labels: profs.label,
     datasets: profs.dataModal ? [
       {
         label: "Áp suất (Bar)",
         data: profs.dataModal[profs.name.id].dataPressure,
-        borderColor: "rgb(34, 197, 94)", // Màu xanh lá
+        borderColor: profs.colorN, // Màu xanh lá
         tension: 0.1, // Độ cong của đường
-        pointRadius: 2, // Độ lớn điểm
-        pointBackgroundColor: "rgb(34, 197, 94)", // Màu điểm
+        borderWidth: 1,
+        pointRadius: pointLage, // Độ lớn điểm
+        pointBackgroundColor: profs.colorN, // Màu điểm
         spanGaps: true
       },
       {
-        label: "Áp suất hôm qua (Bar)",
+        label: "Áp suất cùng kì (Bar)",
         data: profs.dataModal[profs.name.id].sensorYRest,
-        borderColor: "rgb(59, 130, 246)", // Màu xanh
+        borderColor: profs.colorY, // Màu xanh
         tension: 0.1, // Độ cong của đường
-        pointRadius: 2, // Độ lớn điểm
-        pointBackgroundColor: "rgb(59, 130, 246)", // Màu điểm
+        pointRadius: pointLage, // Độ lớn điểm
+        borderWidth: 1,
+        pointBackgroundColor: profs.colorY, // Màu điểm
         spanGaps: true
       }
     ] : [
       {
         label: "Áp suất hôm nay (Bar)",
         data: profs.data[profs.name.id].dataPressure,
-        borderColor: "rgb(34, 197, 94)", // Màu xanh lá
+        borderColor: profs.colorN, // Màu xanh lá
         tension: 0.1, // Độ cong của đường
-        pointRadius: 2, // Độ lớn điểm
-        pointBackgroundColor: "rgb(34, 197, 94)", // Màu điểm
+        pointRadius: pointLage, // Độ lớn điểm
+        borderWidth: 1,
+        pointBackgroundColor: profs.colorN, // Màu điểm
         spanGaps: true
       },
       {
-        label: "Áp suất hôm qua (Bar)",
+        label: "Áp suất cùng kì (Bar)",
         data: profs.data[profs.name.id].sensorYRest,
-        borderColor: "rgb(59, 130, 246)", // Màu xanh
+        borderColor: profs.colorY, // Màu xanh
         tension: 0.1, // Độ cong của đường
-        pointRadius: 2, // Độ lớn điểm
-        pointBackgroundColor: "rgb(59, 130, 246)", // Màu điểm
+        pointRadius: pointLage, // Độ lớn điểm
+        borderWidth: 1,
+        pointBackgroundColor: profs.colorY, // Màu điểm
         spanGaps: true
       },
     ],
@@ -200,16 +195,6 @@ const RealTimeLineChart = (profs) => {
       },
       tooltip: {
         enabled: true,
-      },
-      title: {
-        display: true, // Hiển thị tiêu đề
-        text: profs.name.name, // Tên đồ thị
-        font: {
-          size: 12, // Kích thước chữ
-          weight: "bold", // Độ dày chữ
-        },
-        color: "#333", // Màu chữ
-        align: "center", // Căn giữa tiêu đề
       },
       zoom: {
         pan: {
@@ -241,14 +226,14 @@ const RealTimeLineChart = (profs) => {
     scales: {
       x: {
         min: 0,
-        max: 60,
+        max: 1440,
         grid: {
           display: false,
         },
       },
       y: {
         min: 0,
-        max: 5,
+        max: 7,
         ticks: {
           stepSize: 0.1,
         },
@@ -264,13 +249,13 @@ const RealTimeLineChart = (profs) => {
       setData((prevData) => ({
         ...prevData,
         datasets: prevData.datasets.map((dataset, index) => {
-          if(index === 1){
+          if (index === 1) {
             return {
               ...dataset,
               data: profs.dataModal[profs.name.id].dataPressure,
             };
           }
-          else{
+          else {
             return {
               ...dataset,
               data: profs.dataModal[profs.name.id].sensorYRest,
@@ -286,7 +271,7 @@ const RealTimeLineChart = (profs) => {
       setData((prevData) => ({
         ...prevData,
         datasets: prevData.datasets.map((dataset, index) => {
-          if (index === 1) {
+          if (index !== 1) {
             return {
               ...dataset,
               data: listDataSensor[profs.name.id]
@@ -316,6 +301,31 @@ const RealTimeLineChart = (profs) => {
     }
   }, [profs.scrollPosition[profs.name.id]]);
 
+  useEffect(() => {
+    if (chartRef.current) {
+      const chart = chartRef.current;
+
+      // Cập nhật màu của dataset
+      chart.data.datasets[0].pointBackgroundColor = profs.colorN;
+      chart.data.datasets[0].borderColor = profs.colorN;
+
+      chart.update(); // Cập nhật biểu đồ mà không reset trạng thái
+    }
+  }, [profs.colorN]);
+
+  useEffect(() => {
+    if (chartRef.current) {
+      const chart = chartRef.current;
+
+      // Cập nhật màu của dataset
+      chart.data.datasets[1].pointBackgroundColor = profs.colorY;
+      chart.data.datasets[1].borderColor = profs.colorY;
+
+      chart.update(); // Cập nhật biểu đồ mà không reset trạng thái
+    }
+  }, [profs.colorY]);
+
+
 
   return (
     <div className="w-full h-80 mb-3">
@@ -324,11 +334,11 @@ const RealTimeLineChart = (profs) => {
   );
 };
 
-export const Battery = ({ step }) => {
-  const [batteryLevel, setBatteryLevel] = useState(100);
+export const Battery = ({ step, data }) => {
+  const [batteryLevel, setBatteryLevel] = useState(data[step]);
 
   useEffect(() => {
-    setBatteryLevel(battery[step]);
+    setBatteryLevel(battery[step] || data[step]);
   }, [changeData]);
   const getBatteryColor = (percentage) => {
     if (percentage > 50) return "bg-green-500"; // Pin đầy
@@ -362,24 +372,20 @@ export const TimeComparison = (profs) => {
       setTimeLessThan(timeReachB[profs.step]);
     }, [changeData]);
   }
-  else{
+  else {
     console.log(timeMoreThan, timeLessThan)
   }
   return (
-    <div className="flex flex-col items-center">
-      <div className="flex w-full justify-center">
-        <div className="flex items-center w-80 border-b-2 border-gray-300 py-2">
-          <h2 className="text-lg font-semibold text-teal-600">Thời gian đạt được</h2>
-          <div className="flex justify-between w-full">
-            <div className="flex flex-col items-center w-1/2">
-              <span className="text-sm font-medium text-gray-700">Lớn hơn</span>
-              <span className="text-lg font-bold text-teal-700">{Math.floor(timeMoreThan / 60)}H {timeMoreThan % 60}P</span>
-            </div>
-            <div className="flex flex-col items-center w-1/2">
-              <span className="text-sm font-medium text-gray-700">Bé hơn</span>
-              <span className="text-lg font-bold text-teal-700">{Math.floor(timeLessThan / 60)}H {timeLessThan % 60}P</span>
-            </div>
-          </div>
+    <div className="flex items-center w-80 py-2">
+      <h2 className="text-lg font-semibold text-teal-600">Thời gian đạt được</h2>
+      <div className="flex justify-between w-full">
+        <div className="flex flex-col items-center w-1/2">
+          <span className="text-sm font-medium text-gray-700">Lớn hơn</span>
+          <span className="text-lg font-bold text-teal-700">{Math.floor(timeMoreThan / 60)}H {timeMoreThan % 60}P</span>
+        </div>
+        <div className="flex flex-col items-center w-1/2">
+          <span className="text-sm font-medium text-gray-700">Bé hơn</span>
+          <span className="text-lg font-bold text-teal-700">{Math.floor(timeLessThan / 60)}H {timeLessThan % 60}P</span>
         </div>
       </div>
     </div>

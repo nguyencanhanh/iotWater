@@ -1,10 +1,16 @@
 import axios from 'axios';
 import { URL_AUTH, URL_DASHBOARD, URL_SENSOR } from '../utils/host';
 
+const axiosConfig = (token) => ({
+    headers: {
+        'Authorization': `Bearer ${token}`,
+    }
+});
+
 export const verifyGet = (token) => {
     return axios.get(
         `${URL_AUTH}/verify`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+        axiosConfig(token)
     )
 }
 
@@ -12,12 +18,16 @@ export const loginPost = (user) => {
     return axios.post(`${URL_AUTH}/login`, user)
 }
 
+export const infoGet = (token) => {
+    return axios.get(
+        `${URL_AUTH}/info`,
+        axiosConfig(token)
+    )
+}
 
 export const dashboardSummaryGet = (token) => {
     return axios.get(`${URL_DASHBOARD}/summary`,
-        {
-            headers: { 'Authorization': `Bearer ${token}` }
-        }
+        axiosConfig(token)
     )
 }
 
@@ -25,57 +35,40 @@ export const intervalUpdatePut = (token, interval) => {
     return axios.post(
         `${URL_SENSOR}/data/intervalUp`,
         interval,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        }
+        axiosConfig(token)
     );
 }
 
 export const sensorListGet = (token, total) => {
     return axios.post(URL_SENSOR, total,
-        {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        });
+        axiosConfig(token)
+    );
 }
 
 export const sensorAddPost = (token, sensor) => {
     console.log(sensor)
     return axios.post(`${URL_SENSOR}/add`,
         sensor,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        }
+        axiosConfig(token)
     );
 }
 
 export const sensorDelete = (token, id) => {
     return axios.delete(
         `${URL_SENSOR}/${id}`,
-        {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        }
+        axiosConfig(token)
     );
 }
 
 export const sensorUpdateGet = (token, id) => {
-    return axios.get(`${URL_SENSOR}/data/${id}`, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
+    return axios.post(`${URL_SENSOR}/viewSen`,id ,axiosConfig(token));
 }
 
-export const sensorUpdatePut = (token, id, sensor) => {
-    return axios.put(
-        `${URL_SENSOR}/data/${id}`,
+export const sensorUpdatePut = (token, sensor) => {
+    return axios.post(
+        `${URL_SENSOR}/updateSen`,
         sensor,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        }
+        axiosConfig(token)
     );
 }
 
@@ -83,8 +76,7 @@ export const exportDataPost = (token, options) => {
     return axios.post(
         `${URL_SENSOR}/export`,
         options,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        }
+        axiosConfig(token),
+        { responseType: 'blob' }
     );
 }

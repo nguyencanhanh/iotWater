@@ -1,10 +1,16 @@
 import mongoose from "mongoose";
 
 const infoSchema = new mongoose.Schema({
-    total: {type: Number, default: 0},
+    tracking: {type: Number},
+    trackingB: {type: Number},
     interval: {type: Number},
     display: {type: Number},
-    sen_id: [{name: String, id: Number}],
+    id: {type: Number},
+    name: {type: String},
+    lat: {type: Number},
+    lng: {type: Number},
+    sample: {type: Number},
+    temperature: {type: Number},
 })
 
 const Info = mongoose.model("Info", infoSchema)

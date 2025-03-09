@@ -10,7 +10,6 @@ const userSchema = new mongoose.Schema({
   interval: { type: Number },
   sample: { type: Number },
   tracking: { type: Number },
-  trackingB: { type: Number },
   temperature: { type: Number },
   sen_id: [{ name: String, id: Number, lat: Number, lng: Number }],
   createAt: { type: Date, default: Date.now },

@@ -3,46 +3,23 @@ import SetInterval from "./SetInterval";
 import SetSample from "./SetSample";
 import { produce } from "immer";
 import { intervalUpdatePut } from '../../api/index';
-import DateM from '../chart/Date'
 
-const colors = [
-  "#FF0000",
-  "#00FF00",
-  "#0000FF",
-  "#FFFF00",
-  "#FF00FF",
-  "#00FFFF",
-  "#FFA500",
-  "#800080",
-  "#008000",
-  "#800000",
-  "#008080",
-  "#000080",
-  "#808000",
-  "#808080",
-  "#C0C0C0",
-  "#FFD700",
-  "#FF4500",
-  "#FF6347",
-];
+function minutesToTime(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
 
 
 const SettingsButton = (profs) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
-  const [isEditingB, setIsEditingB] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
+  const [isEditingAdj, setIsEditingAdj] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
   const [isEditingT, setIsEditingT] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
+  const [isEditingWP, setIsEditingWP] = useState(false);
+  const [isEditingWPTime, setIsEditingWPTime] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-
-  useEffect(() => {
-    if (!fromDate || !toDate) {
-      return;
-    }
-    const fromTimestamp = new Date(fromDate).getTime();
-    const toTimestamp = new Date(toDate).getTime();
-
-  }, [fromDate, toDate]);
 
   const handleInputChange = (event) => {
     profs.setdataInfo(prevData =>
@@ -52,18 +29,34 @@ const SettingsButton = (profs) => {
     );
   };
 
-  const handleInputChangeB = (event) => {
+  const handleInputChangeAdj = (event) => {
     profs.setdataInfo(prevData =>
       produce(prevData, draft => {
-        draft[profs.info[profs.step].id].trackingB = event.target.value;
+        draft[profs.info[profs.step].id].adj = event.target.value;
       })
-    );  // Cập nhật giá trị khi người dùng nhập
+    );
   };
 
   const handleInputChangeT = (event) => {
     profs.setdataInfo(prevData =>
       produce(prevData, draft => {
         draft[profs.info[profs.step].id].temperature = event.target.value;
+      })
+    );
+  };
+
+  const handleInputChangeWP = (event) => {
+    profs.setdataInfo(prevData =>
+      produce(prevData, draft => {
+        draft[profs.info[profs.step].id].wPress = event.target.value;
+      })
+    );
+  };
+
+  const handleInputChangeWPTime = (event) => {
+    profs.setdataInfo(prevData =>
+      produce(prevData, draft => {
+        draft[profs.info[profs.step].id].wPressTime = event.target.value;
       })
     );
   };
@@ -79,16 +72,13 @@ const SettingsButton = (profs) => {
         alert(error.res.data.error);
       }
     }
-    finally {
-      // profs.fetchSensors(profs.total, value, valueB)
-    }
   };
 
-  const handleSubmitB = async () => {
+  const handleSubmitAdj = async () => {
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { trackingB: profs.info[profs.step].trackingB, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { adj: profs.info[profs.step].adj, sen_id: profs.info[profs.step].id })
       if (res.data.success) {
-        setIsEditingB(false);
+        setIsEditingAdj(false);
       }
     } catch (error) {
       if (error.res && !error.res.data.success) {
@@ -110,9 +100,135 @@ const SettingsButton = (profs) => {
     }
   };
 
-  const handleChangeColor = (event) => {
-    profs.setColorN(event.target.value);
-    localStorage.setItem("colorN", event.target.value);
+  const handleSubmitWP = async () => {
+    try {
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { wPress: profs.info[profs.step].wPress, sen_id: profs.info[profs.step].id })
+      if (res.data.success) {
+        setIsEditingWP(false);
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
+  };
+
+  const handleSubmitWPTime = async () => {
+    try {
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { wPressTime: profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id })
+      if (res.data.success) {
+        setIsEditingWPTime(false);
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
+  };
+
+  const handleTimeChangeTime = async (event) => {
+    const value = event.target.value
+    const [hours, minutes] = timeStr.split(":").map(Number);
+    try {
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { timeAlarm: hours * 60 + minutes, sen_id: profs.info[profs.step].id })
+      if (res.data.success) {
+        profs.setdataInfo(prevData =>
+          produce(prevData, draft => {
+            draft[profs.info[profs.step].id].timeAlarm = value;
+          })
+        );
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
+  };
+
+  const handleSubmitHistory = async () => {
+    if (!fromDate || !toDate) {
+      return;
+    }
+    profs.handleData([fromDate, toDate, profs.info[profs.step].id]);
+  };
+
+  // const handleChangeColor = (event) => {
+  //   profs.setColorN(event.target.value);
+  //   localStorage.setItem("colorN", event.target.value);
+  // }
+
+  // const handleChangeColorY = (event) => {
+  //   profs.setColorY(event.target.value);
+  //   localStorage.setItem("colorY", event.target.value);
+  // }
+
+  const handleSelect = async (e) => {
+    try {
+      const value = Number(e.target.value)
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { watch: value, sen_id: profs.info[profs.step].id })
+      if (res.data.success) {
+        profs.setdataInfo(prevData =>
+          produce(prevData, draft => {
+            draft[profs.info[profs.step].id].watch = value;
+          })
+        );
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
+  }
+
+  const handleOnOffWT = async () => {
+    try {
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { temp: -profs.info[profs.info[profs.step].id].temperature, sen_id: profs.info[profs.step].id })
+      if (res.data.success) {
+        profs.setdataInfo(prevData =>
+          produce(prevData, draft => {
+            draft[profs.info[profs.step].id].temperature = -draft[profs.info[profs.step].id].temperature;
+          })
+        );
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
+  }
+
+  const handleOnOffWP = async () => {
+    try {
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { wPress: -profs.info[profs.info[profs.step].id].wPress, sen_id: profs.info[profs.step].id })
+      if (res.data.success) {
+        profs.setdataInfo(prevData =>
+          produce(prevData, draft => {
+            draft[profs.info[profs.step].id].wPress = -draft[profs.info[profs.step].id].wPress;
+          })
+        );
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
+  }
+
+  const handleOnOffWPTime = async () => {
+    try {
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { wPressTime: -profs.info[profs.info[profs.step].id].wPressTime, sen_id: profs.info[profs.step].id })
+      if (res.data.success) {
+        profs.setdataInfo(prevData =>
+          produce(prevData, draft => {
+            draft[profs.info[profs.step].id].wPressTime = -draft[profs.info[profs.step].id].wPressTime;
+          })
+        );
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
   }
 
   return (
@@ -128,13 +244,29 @@ const SettingsButton = (profs) => {
       {/* Thanh cài đặt hiển thị khi nút nhấn */}
       {isOpen && (
         <div
-          className="absolute right-0 mt-2 w-80 bg-teal-600 rounded-lg shadow-lg"
+          className="absolute right-0 mt-2 w-85 bg-teal-600 rounded-lg shadow-lg"
           style={{ maxHeight: "400px", overflowY: "auto" }}
         >
-          <ul className="py-3 px-4 space-y-3">
+          <ul className="py-3 px-4 space-y-3 max-h-96 overflow-y-auto">
             {/* Cài đặt thời gian hiển thị */}
             <li><SetSample info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} /></li>
             <li><SetInterval info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} /></li>
+            <li>
+              <div className="ml-1 flex justify-between justify-center">
+                <div className='text-white rounded'>Thời gian hiển thị:</div>
+                <select className="bg-teal-600 rounded text-white"
+                  value={profs.info[profs.step].watch}
+                  onChange={handleSelect}
+                >
+                  <option value={60}>1 phut</option>
+                  <option value={300}>5 phut</option>
+                  <option value={600}>10 phut</option>
+                  <option value={900}>15 phut</option>
+                  <option value={1800}>30 phut</option>
+                  <option value={3600}>1 gio</option>
+                </select>
+              </div>
+            </li>
             <li>
               <div className="flex justify-between items-center">
                 <label htmlFor="input-value" className="text-white">Giá trị áp trên:</label>
@@ -171,24 +303,22 @@ const SettingsButton = (profs) => {
                 </div>
               </div>
             </li>
-
             <li>
               <div className="flex justify-between items-center">
-                <label htmlFor="input-value" className="text-white">Giá trị áp dưới:</label>
+                <label htmlFor="input-value" className="text-white">Áp suất điều chỉnh:</label>
                 <div className="flex items-center space-x-2">
-                  {/* Nếu đang trong chế độ chỉnh sửa, hiển thị ô nhập */}
-                  {isEditingB ? (
+                  {isEditingAdj ? (
                     <>
                       <input
                         id="input-value"
                         type="text"
-                        value={profs.info[profs.step].trackingB}
-                        onChange={handleInputChangeB}
+                        value={profs.info[profs.step].adj}
+                        onChange={handleInputChangeAdj}
                         placeholder="Nhập giá trị"
                         className="px-2 py-1 rounded-lg text-black w-20"
                       />
                       <button
-                        onClick={handleSubmitB}
+                        onClick={handleSubmitAdj}
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg"
                       >
                         OK
@@ -197,9 +327,9 @@ const SettingsButton = (profs) => {
                   ) : (
                     <>
                       {/* Nếu không chỉnh sửa, hiển thị giá trị */}
-                      <span className="text-white">{profs.info[profs.step].trackingB || 1.5} Bar</span>
+                      <span className="text-white">{profs.info[profs.step].adj} Bar</span>
                       <button
-                        onClick={() => setIsEditingB(true)} // Chuyển sang chế độ chỉnh sửa
+                        onClick={() => setIsEditingAdj(true)} // Chuyển sang chế độ chỉnh sửa
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
                       >
                         Chỉnh sửa
@@ -209,10 +339,41 @@ const SettingsButton = (profs) => {
                 </div>
               </div>
             </li>
-
+            <li>
+              {/* <DateM handleData={profs.handleData}/> */}
+              <div className="flex space-x-4 mb-4">
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="border px-2 py-1"
+                />
+                <span className="text-white">đến</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="border px-2 py-1"
+                />
+                <button
+                  onClick={handleSubmitHistory}
+                  className="bg-teal-500 text-white px-3 py-1 rounded hover:bg-teal-600"
+                >
+                  Ok
+                </button>
+              </div>
+            </li>
             <li>
               <div className="flex justify-between items-center">
-                <label htmlFor="input-value" className="text-white">Ngưỡng nhiệt độ:</label>
+                <label htmlFor="input-value" className="text-white">
+                  <input
+                    type="checkbox"
+                    checked={profs.info[profs.step].temperature && profs.info[profs.step].temperature >= 0}
+                    onChange={handleOnOffWT}
+                    className="w-5"
+                  />
+                  Cảnh báo nhiệt độ:
+                </label>
                 <div className="flex items-center space-x-2">
                   {/* Nếu đang trong chế độ chỉnh sửa, hiển thị ô nhập */}
                   {isEditingT ? (
@@ -248,24 +409,113 @@ const SettingsButton = (profs) => {
               </div>
             </li>
             <li>
-              {/* <DateM handleData={profs.handleData}/> */}
-              <div className="flex space-x-4 mb-4">
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="border px-2 py-1"
-                />
-                <span className="text-white">đến</span>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="border px-2 py-1"
-                />
+              <div className="flex justify-between items-center">
+                <label htmlFor="input-value" className="text-white">
+                  <input
+                    type="checkbox"
+                    checked={profs.info[profs.step].wPress >= 0}
+                    onChange={handleOnOffWP}
+                    className="w-5"
+                  />
+                  Cảnh báo áp thấp:
+                </label>
+                <div className="flex items-center space-x-2">
+                  {/* Nếu đang trong chế độ chỉnh sửa, hiển thị ô nhập */}
+                  {isEditingWP ? (
+                    <>
+                      <input
+                        id="input-value"
+                        type="text"
+                        value={profs.info[profs.step].wPress}
+                        onChange={handleInputChangeWP}
+                        placeholder="Nhập giá trị"
+                        className="px-2 py-1 rounded-lg text-black w-20"
+                      />
+                      <button
+                        onClick={handleSubmitWP}
+                        className="px-4 py-2 bg-teal-500 text-white rounded-lg"
+                      >
+                        OK
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Nếu không chỉnh sửa, hiển thị giá trị */}
+                      <span className="text-white">{profs.info[profs.step].wPress || 0.8} Bar</span>
+                      <button
+                        onClick={() => setIsEditingWP(true)} // Chuyển sang chế độ chỉnh sửa
+                        className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
+                      >
+                        Chỉnh sửa
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </li>
             <li>
+              <div className="flex flex-col space-y-2 bg-gray-800 p-4 rounded-lg">
+                {/* Checkbox Cảnh báo */}
+                <div className="flex justify-between items-center">
+                  <label htmlFor="checkbox" className="text-white flex items-center space-x-2">
+                    <input
+                      id="checkbox"
+                      type="checkbox"
+                      checked={profs.info[profs.step].wPressTime && profs.info[profs.step].wPressTime >= 0}
+                      onChange={handleOnOffWPTime}
+                      className="w-5 h-5"
+                    />
+                    <span>Cảnh báo áp đạt mức:</span>
+                  </label>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  {isEditingWPTime ? (
+                    <>
+                      <input
+                        id="input-value"
+                        type="text"
+                        value={profs.info[profs.step].wPressTime}
+                        onChange={handleInputChangeWPTime}
+                        placeholder="Nhập giá trị"
+                        className="px-2 py-1 rounded-lg text-black w-20"
+                      />
+                      <button
+                        onClick={handleSubmitWPTime}
+                        className="px-4 py-2 bg-teal-500 text-white rounded-lg"
+                      >
+                        OK
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-white">{profs.info[profs.step].wPressTime || 1.1} Bar</span>
+                      <button
+                        onClick={() => setIsEditingWPTime(true)}
+                        className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
+                      >
+                        Chỉnh sửa
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* Ô chọn giờ */}
+                <div className="flex justify-between items-center">
+                  <label htmlFor="time-input" className="text-white">
+                    Chọn giờ:
+                  </label>
+                  <input
+                    id="time-input"
+                    type="time"
+                    value={minutesToTime(profs.info[profs.step].timeAlarm)}
+                    onChange={handleTimeChangeTime}
+                    className="px-2 py-1 rounded-lg text-black w-25"
+                  />
+                </div>
+              </div>
+            </li>
+            {/* <li>
               <div className="ml-1 flex justify-between justify-center">
                 <div className='text-white rounded'>Màu đồ thị hôm nay:</div>
                 <select
@@ -275,7 +525,6 @@ const SettingsButton = (profs) => {
                   onChange={handleChangeColor}
                 >
                   {colors.map((color) => (
-                    console.log(profs.colorN),
                     <option key={color} value={color} style={{ backgroundColor: color }}>
                     </option>
                   ))}
@@ -289,7 +538,7 @@ const SettingsButton = (profs) => {
                   className="p-2 border rounded-lg shadow-md"
                   style={{ backgroundColor: profs.colorY }}
                   value={profs.colorY}
-                  onChange={handleChangeColor}
+                  onChange={handleChangeColorY}
                 >
                   {colors.map((color) => (
                     <option key={color} value={color} style={{ backgroundColor: color }}>
@@ -297,7 +546,7 @@ const SettingsButton = (profs) => {
                   ))}
                 </select>
               </div>
-            </li>
+            </li> */}
           </ul>
         </div>
       )}

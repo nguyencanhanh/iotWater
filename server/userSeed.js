@@ -15,7 +15,6 @@ const userRegister = async () => {
       interval: 300,
       sample: 300,
       tracking: 1.5,
-      trackingB: 1.3,
       temperature: 30,
       sen_id: [
         { name: "bacgiang1", id: 0, lat: 21.074073, lng: 105.779155 },

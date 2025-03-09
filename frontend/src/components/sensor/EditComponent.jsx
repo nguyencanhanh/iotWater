@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { sensorUpdateGet, sensorUpdatePut } from "../../api/index";
+import { produce } from "immer";
 
-function EditComponent({ id }) {
+function EditComponent({ id, setIsEdit }) {
     const [sensor, setSensor] = useState(null);
     const [sensorLoading, setSensorLoading] = useState(false);
 
@@ -9,7 +10,7 @@ function EditComponent({ id }) {
         const fetchSensor = async () => {
             setSensorLoading(true);
             try {
-                const res = await sensorUpdateGet(localStorage.getItem("token"), {id: id});
+                const res = await sensorUpdateGet(localStorage.getItem("token"), { id: id });
                 if (res.data.success) {
                     setSensor(res.data.sensor);
                 }
@@ -53,13 +54,25 @@ function EditComponent({ id }) {
                 <p>Loading...</p>
             ) : (
                 <div className="absolute bg-white p-6 rounded-md shadow-lg w-96">
+                    {/* Nút đóng ở góc phải trên cùng */}
+                    <button
+                        onClick={() => setIsEdit(prevData =>
+                            produce(prevData, draft => {
+                                draft[id] = !draft[id];
+                            })
+                        )}
+                        className="absolute top-2 right-2 text-gray-600 hover:text-gray-800"
+                    >
+                        ✖
+                    </button>
+
                     <div className="text-2xl font-bold mb-4">
                         <h3>Thông tin cảm biến</h3>
                     </div>
                     <form onSubmit={handleSubmit}>
                         <div>
                             <label htmlFor="name" className="text-sm font-medium text-gray-700">
-                                Department Name
+                                Tên cảm biến
                             </label>
                             <input
                                 type="text"
@@ -72,7 +85,7 @@ function EditComponent({ id }) {
                         </div>
                         <div>
                             <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-                                Description
+                                Ghi chú cảm biến
                             </label>
                             <textarea
                                 name="description"
@@ -93,6 +106,7 @@ function EditComponent({ id }) {
                 </div>
             )}
         </>
+
     );
 }
 

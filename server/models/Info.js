@@ -2,14 +2,18 @@ import mongoose from "mongoose";
 
 const infoSchema = new mongoose.Schema({
     tracking: {type: Number},
-    trackingB: {type: Number},
     interval: {type: Number},
-    display: {type: Number},
+    wPress: {type: Number},
+    wPressTime: {type: Number},
+    timeAlarm: {type: Number},
+    watch: {type: Number},
+    adj: {type: Number},
     id: {type: Number},
     name: {type: String},
     lat: {type: Number},
     lng: {type: Number},
     sample: {type: Number},
+    description: {type: String},
     temperature: {type: Number},
 })
 

@@ -4,10 +4,11 @@ import "leaflet/dist/leaflet.css";
 import mqtt from "mqtt";
 import { useAuth } from "../../context/authContext";
 import { intervalUpdatePut, sensorListGet } from "../../api/index";
+import ModalData from "../chart/Modal";
 
 function AdminSummary() {
-    const { user } = useAuth();
-    const [weatherData, setWeatherData] = useState(user.sen_id);
+    const { info } = useAuth();
+    const [weatherData, setWeatherData] = useState(info);
     const [data, setData] = useState(null);
     const [sensorLoading, setSensorLoading] = useState(false);
     const [newLat, setNewLat] = useState("");
@@ -15,6 +16,10 @@ function AdminSummary() {
     const [selectedId, setSelectedId] = useState(null);
     const [errorMessage, setErrorMessage] = useState("");
     const [showSettings, setShowSettings] = useState(false);
+    const [showModal, setShowModal] = useState(false);
+    const [dateData, setDateData] = useState([]);
+    const colorN = localStorage.getItem("colorN") || "#FF0000";
+    const colorY = localStorage.getItem("colorY") || "#0000FF";
 
     // MQTT Setup
     const host = "broker.hivemq.com";
@@ -28,7 +33,7 @@ function AdminSummary() {
     useEffect(() => {
         const fetchSensors = async () => {
             try {
-                const res = await sensorListGet(localStorage.getItem("token"), { totalMap: user.total });
+                const res = await sensorListGet(localStorage.getItem("token"), { totalMap: info.length });
                 if (res.data.success) {
                     setData(res.data.sensors);
                 } else {
@@ -82,18 +87,29 @@ function AdminSummary() {
         setErrorMessage("");
     };
 
+    const handleMarkerClick = (point) => {
+        setShowModal(true);
+        setDateData([Date.now(), Date.now(), point.id]);
+    };
+
     return (
         <div className="relative h-screen w-full">
             {/* Bản đồ ở lớp dưới */}
             <div className="absolute inset-0 z-0">
-                <MapContainer center={[21.028511, 105.804817]} zoom={15} className="h-full w-full" zoomControl={false}>
+                <MapContainer center={[weatherData[0].lat, weatherData[0].lng]} zoom={15} className="h-full w-full" zoomControl={false}>
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     {weatherData &&
                         data &&
                         weatherData.map((point, index) => (
-                            <Marker key={index} position={[point.lat, point.lng]}>
+                            <Marker key={index} position={[point.lat, point.lng]}
+                                eventHandlers={{
+                                    click: () => handleMarkerClick(point)
+                                }}
+                            >
                                 <Tooltip permanent direction="top" className="bg-white text-black p-1 text-xs rounded shadow-md">
-                                    🌡 {data[point.id]?.temperature || 30}°C | 🌬 {data[point.id]?.Pressure?.toFixed(2) || 1.1} Bar
+                                    {point.name} <br />
+                                    🌡 {data[point.id]?.temperature || 30}°C <br />
+                                    🌬 {data[point.id]?.Pressure?.toFixed(2) || 1.1} Bar
                                 </Tooltip>
                             </Marker>
                         ))}
@@ -149,6 +165,7 @@ function AdminSummary() {
                     </button>
                 </div>
             )}
+            {showModal ? <ModalData dateData={dateData} colorN={colorN} colorY={colorY} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}
         </div>
     );
 }

@@ -3,7 +3,8 @@ import Sensor from "../models/Sensor.js"
 import Info from "../models/Info.js";
 import axios from 'axios';
 
-const host = 'broker.hivemq.com';
+let checkTime = false
+const host = 'iotwater2024.mooo.com';
 const port = 1883;
 const clientId = `mqtt_${Math.random().toString(16).slice(3)}`
 
@@ -50,24 +51,29 @@ const connectMqtt = async () => {
     client.subscribe(topic)
   });
 
-  const info = await Info.find();
-
-  client.on("message", (topic, messageData) => {
+  client.on("message", async (topic, messageData) => {
     try {
-      const check = []
       messageData = JSON.parse(messageData.toString());
       const sen_name = Number(messageData.sen_name);
+      const info = await Info.find({ id: sen_name });
       const msg_id = Number(messageData.msg_id)
-      const dateNow = Date.now() - messageData.data.length * 60000;
-      messageData.data.forEach(async (message, index) => {
-        if (msg_id === 1) {
-          if (sen_name === 0) {
-            message.createAt = dateNow + (index + 1) * 60000;
+      if (msg_id === 1) {
+        const timeFake = info[0].sample * 1000;
+        const dateNow = Date.now() - (messageData.data.length - 1) * timeFake;
+        const timeCheck = Math.abs(messageData.data[0].createAt * 1000 - dateNow)
+        if (Number(timeCheck) > 100000) {
+          checkTime = true
+        }
+        else {
+          checkTime = false
+        }
+        messageData.data.forEach(async (message, index) => {
+          if (checkTime) {
+            message.createAt = dateNow + (index + 1) * timeFake;
           }
           else {
             message.createAt = message.createAt * 1000
           }
-          message.Pressure = message.Pressure * 0.7093 + 0.7411
           const newSensor = new Sensor({
             index: sen_name,
             battery: message.battery,
@@ -76,19 +82,21 @@ const connectMqtt = async () => {
             createAt: message.createAt
           });
           await newSensor.save();
-          if (message.temperature >= info[sen_name].temperature && check.length === 0) {
-            check[0] = message.temperature
-            check[1] = new Date(message.createAt).toLocaleString('en-GB', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false // Buộc không dùng định dạng 12 giờ
-            })
-          }
+        })
+      }
+      else if (msg_id === 3) {
+        const name = info[0].name
+        const currentDate = new Date(Date.now()).toLocaleString('en-GB', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false // Buộc không dùng định dạng 12 giờ 
+        })
+        if (messageData.t && info[0].temperature > 0) {
+          await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo nhiệt độ cao ${messageData.t}°C tại cảm biến ${name} vào lúc ${currentDate}`)
         }
-      })
-      if (check.length > 0) {
-        sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo nhiệt độ cao ${check[0]}°C tại cảm biến ${info[sen_name].name} vào lúc ${check[1]}`)
-        check = []
+        if (messageData.p && info[0].wPress > 0) {
+          await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo áp suất dưới thấp ${messageData.p}Bar tại cảm biến ${name} vào lúc ${currentDate}`)
+        }
       }
     } catch (error) {
       if (error.res && !error.res.data.success) {

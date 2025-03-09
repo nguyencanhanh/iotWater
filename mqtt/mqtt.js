@@ -3,7 +3,7 @@ import { CronJob } from 'cron'
 import appConstant from './constant.js';
 
 
-const host = 'broker.hivemq.com';
+const host = 'iotwater2024.mooo.com';
 const port = 1883;
 const clientId = `mqtt_${Math.random().toString(16).slice(3)}`
 
@@ -25,29 +25,29 @@ function sleep(ms) {
 }
 
 new CronJob(
-  appConstant.EVERY_10MINUTE,
+  appConstant.EVERY_10S,
   async function () {
-    let time = Date.now() - 9 * 60000;
+    // let time = Date.now() - 9 * 60000;
     console.log("published")
-    const data = []
+    // const data = []
     const data2 = []
-    const data3 = []
-    for (let i = 0; i < 10; i++) {
-      data.push({
-        createAt: time + i * 60000,
-        Pressure: Math.random() * 3,
-        battery: Math.random() * 100 | 0,
-        temperature: Math.random() * 100 | 0,
-      })
-    }
-    client.publish(topic, JSON.stringify({
-      sen_name: 0,
-      msg_id: 1,
-      data: data
-    }))
-    await sleep(100)
-    time = Date.now() - 9 * 60000;
-    for (let i = 0; i < 10; i++) {
+    // const data3 = []
+    // for (let i = 0; i < 10; i++) {
+    //   data.push({
+    //     createAt: time + i * 60000,
+    //     Pressure: Math.random() * 3,
+    //     battery: Math.random() * 100 | 0,
+    //     temperature: Math.random() * 100 | 0,
+    //   })
+    // }
+    // client.publish(topic, JSON.stringify({
+    //   sen_name: 0,
+    //   msg_id: 1,
+    //   data: data
+    // }))
+    // await sleep(100)
+    let time = Date.now();
+    for (let i = 0; i < 1; i++) {
       data2.push({
         createAt: time + i * 60000,
         Pressure: Math.random() * 3,
@@ -57,23 +57,23 @@ new CronJob(
     }
     client.publish(topic, JSON.stringify({
       sen_name: 1,
-      msg_id: 1,
-      data: data2
+      msg_id: 3,
+      t: 45
     }))
-    time = Date.now() - 9 * 60000;
-    for (let i = 0; i < 10; i++) {
-      data3.push({
-        createAt: time + i * 60000,
-        Pressure: Math.random() * 3,
-        battery: Math.random() * 100 | 0,
-        temperature: Math.random() * 100 | 0,
-      })
-    }
-    client.publish(topic, JSON.stringify({
-      sen_name: 2,
-      msg_id: 1,
-      data: data3
-    }))
+    // time = Date.now() - 9 * 60000;
+    // for (let i = 0; i < 10; i++) {
+    //   data3.push({
+    //     createAt: time + i * 60000,
+    //     Pressure: Math.random() * 3,
+    //     battery: Math.random() * 100 | 0,
+    //     temperature: Math.random() * 100 | 0,
+    //   })
+    // }
+    // client.publish(topic, JSON.stringify({
+    //   sen_name: 2,
+    //   msg_id: 1,
+    //   data: data3
+    // }))
   },
   null,  // cb when job stop
   true,  // auto start

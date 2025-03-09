@@ -4,10 +4,12 @@ import InfoSen from "../models/Info.js";
 import ExcelJS from 'exceljs';
 import { client } from "../mqtt/mqtt.js";
 
-const publishMessage = (key, message) => {
+const lengModal = 288
+
+const publishMessage = (key, message, sen_id) => {
   client.publish(
     'watter/setInterval',
-    JSON.stringify({ [key]: message }),
+    JSON.stringify({ [key]: message, sen_name: sen_id }),
     (error) => {
       if (error) {
         return false
@@ -18,68 +20,80 @@ const publishMessage = (key, message) => {
   )
 }
 
-function convertTime(timeConvert) {
-  return timeConvert.getHours() * 60 + timeConvert.getMinutes()
+function convertTime(timeConvert, watch) {
+  return (timeConvert.getHours() * 60 + timeConvert.getMinutes()) * 60 / watch
 }
 
-const exportFakeDataToExcel = async (sensors, info, res) => {
+function getDatesInRange(startDate, endDate) {
+  const dateArray = [];
+  let currentDate = new Date(startDate);
+
+  while (currentDate <= endDate) {
+    dateArray.push(new Date(currentDate)); // YYYY-MM-DD
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return dateArray;
+}
+
+const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  const datePart = date.toLocaleDateString("vi-VN"); // Định dạng dd/mm/yyyy
+  const timePart = date.toLocaleTimeString("vi-VN", { hour12: false, hour: "2-digit", minute: "2-digit" }); // HH:MM
+
+  return `${datePart} ${timePart}`; // Kết quả dạng "dd/mm/yyyy HH:MM"
+};
+
+const exportFakeDataToExcel = async (sensors, res) => {
   try {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Sensors');
+    const worksheet = workbook.addWorksheet("Sensors");
 
     worksheet.columns = [
-      { header: 'Thời gian', key: 'createAt', width: 30 },
-      { header: 'Tên cảm biến', key: 'sen_name', width: 30 },
-      { header: 'Áp suất', key: 'Pressure', width: 15 },
-      { header: 'Nhiệt độ', key: 'temperature', width: 15 },
+      { header: "Thời gian", key: "createAt", width: 30 },
+      { header: "Áp suất", key: "Pressure", width: 15 },
+      // { header: "Nhiệt độ", key: "temperature", width: 15 },
     ];
 
     sensors.forEach(sensor => {
+      if (Math.floor(sensor.createAt / 60000) % 5) {
+        return;
+      }
       worksheet.addRow({
-        sen_name: info.sen_id[sensor.index],
+        createAt: formatDate(sensor.createAt),
         Pressure: sensor.Pressure,
-        createAt: sensor.createAt.toISOString(),
+        // temperature: sensor.temperature,
       });
     });
 
-    // Ghi workbook vào buffer
+    // ✅ Ghi dữ liệu vào buffer
     const excelBuffer = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.from(excelBuffer);
 
-    // Kiểm tra nếu response đã gửi
-    if (res.headersSent) return;
-
-    // Thiết lập header để tải file
-    res.setHeader("Content-Disposition", "attachment; filename=export.xlsx");
+    // ✅ Đặt header chính xác
+    res.setHeader("Content-Disposition", 'attachment; filename="export.xlsx"');
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
-    // Gửi buffer về client
-    return res.status(200).json({ success: true, excelBuffer });
-
+    res.send(buffer); // ⚡ Đúng cách truyền file binary
   } catch (error) {
-    console.error('Error exporting fake data to Excel:', error);
-
+    console.error("❌ Lỗi server khi xuất Excel:", error);
     if (!res.headersSent) {
-      return res.status(500).json({ success: false, error: "Add Sensor server error." });
+      res.status(500).json({ success: false, error: error.message });
     }
   }
 };
 
+
 export const exportSensors = async (req, res) => {
   try {
-    const { type, timeGet } = req.body;
-    if (timeGet) {
-      const allData = await Sensor.find({ createAt: { $gte: timeGet[0].valueOf(), $lte: timeGet[1].valueOf() } });
-      const info = await Info.findOne({});
-      return exportFakeDataToExcel(allData, info, res);
-    }
-    const pastTime = Date.now() - Number(type) * 60 * 1000;
-    const allData = await Sensor.find({ createAt: { $gte: pastTime } });
-
-    const info = await Info.findOne({});
-
-    // Chỉ gọi exportFakeDataToExcel, không gửi JSON response sau đó
-    return exportFakeDataToExcel(allData, info, res);
-
+    const { sen_name, date } = req.body;
+    const endOfToday = new Date(date[1]);
+    endOfToday.setUTCHours(23, 59, 59, 999);
+    const sensorData = await Sensor.find({
+      index: sen_name,
+      createAt: { $gte: date[0], $lte: endOfToday }
+    }).sort({ createAt: 1 });
+    return exportFakeDataToExcel(sensorData, res);
   } catch (error) {
     if (!res.headersSent) {
       return res.status(500).json({ success: false, error: "Add Sensor server error." });
@@ -91,37 +105,67 @@ export const upInterval = async (req, res) => {
   const profs = req.body;
   try {
     if (profs.Coor != null) {
-      const updateCoor = await Info.findOneAndUpdate({},
+      const updateCoor = await InfoSen.findOneAndUpdate({ id: profs.Coor },
         {
           $set: {
-            [`sen_id.${profs.Coor}.lat`]: parseFloat(profs.lat),
-            [`sen_id.${profs.Coor}.lng`]: parseFloat(profs.lng)
+            lat: parseFloat(profs.lat),
+            lng: parseFloat(profs.lng)
           }
         },
         { new: true }
       )
       return res.status(200).json({ success: true })
     }
+    if(profs.adj != null){
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { adj: profs.adj } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    if (profs.wPressTime != null) {
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { wPressTime: profs.wPressTime } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    if (profs.timeAlarm != null) {
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { timeAlarm: profs.timeAlarm } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    if (profs.watch != null) {
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { watch: profs.watch } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    if (profs.wPress != null) {
+      // if (profs.wPress <= 0) {
+      //   const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { wPress: profs.wPress } }, { new: true })
+      //   return res.status(200).json({ success: true })
+      // }
+      if (publishMessage('wPress', Number(profs.wPress).toFixed(2) * 100, profs.sen_id)) {
+        return res.status(500).json({ success: false, error: "Not publish" })
+      }
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { wPress: profs.wPress } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
     if (profs.tracking != null) {
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { tracking: profs.tracking } }, { new: true })
       return res.status(200).json({ success: true })
     }
-    if (profs.trackingB != null) {
-      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { trackingB: profs.trackingB } }, { new: true })
-      return res.status(200).json({ success: true })
-    }
     if (profs.temp != null) {
+      // if (profs.temp < 0) {
+      //   const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { temperature: profs.temp } }, { new: true })
+      //   return res.status(200).json({ success: true })
+      // }
+      if (publishMessage('temp', Math.floor(Number(profs.temp)), profs.sen_id)) {
+        return res.status(500).json({ success: false, error: "Not publish" })
+      }
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { temperature: profs.temp } }, { new: true })
       return res.status(200).json({ success: true })
     }
     if (profs.sample != null) {
-      if (publishMessage('sample', profs.sample)) {
+      if (publishMessage('sample', profs.sample, profs.sen_id)) {
         return res.status(500).json({ success: false, error: "Not publish" })
       }
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { sample: profs.sample } }, { new: true })
       return res.status(200).json({ success: true, sample: info.sample })
     }
-    if (publishMessage('interval', profs.interval)) {
+    if (publishMessage('interval', profs.interval, profs.sen_id)) {
       return res.status(500).json({ success: false, error: "Not publish" })
     }
     const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id }, { $set: { interval: profs.interval } }, { new: true })
@@ -136,7 +180,6 @@ export const getSensors = async (req, res) => {
     const profs = req.body;
     const sensors = []
     const timeTrackingRet = []
-    const timeTrackingRetB = []
     const battery = []
     if (profs.totalMap) {
       for (let i = 0; i < Number(profs.totalMap); i++) {
@@ -146,71 +189,44 @@ export const getSensors = async (req, res) => {
       return res.status(200).json({ success: true, sensors })
     }
     if (profs.timeGet) {
-      const yesterday = new Date(profs.timeGet[0]);
-      yesterday.setDate(yesterday.getDate() - 1);
-      yesterday.setHours(0, 0, 0, 0);
-      for (let i = 0; i < Number(profs.total); i++) {
-        timeTrackingRet[i] = 0
-        timeTrackingRetB[i] = 0;
-        const sensor = await Sensor.find({
-          index: i,
-          createAt: { $gte: profs.timeGet[0].valueOf(), $lte: profs.timeGet[1].valueOf() }
-        })
-        const sensorY = await Sensor.find({
-          index: i,
-          createAt: { $gte: yesterday, $lte: profs.timeGet[0].valueOf() },
-        });
-        const sensorT = Array(1440).fill(null)
-        const dataPressure = []
-        const sensorYRest = []
-        let timeTracking = 0
-        let currentStart = null;
-        let timeTrackingB = 0
-        let currentStartB = null;
-        sensorY.forEach((sensor) => {
-          const index = Math.floor(convertTime(sensor.createAt))
-          sensorYRest[index] = sensor.Pressure
-        })
-        sensor.forEach((sensor) => {
-          if (profs.info !== null) {
-            if (sensor.Pressure >= profs.info[i].tracking) {
-              if (!currentStart) {
-                currentStart = sensor.createAt
-              }
-            }
-            else {
-              if (currentStart) {
-                const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
-                if (timeAdd < 2000) {
-                  timeTracking += timeAdd
-                }
-                currentStart = null;
-              }
-            }
-            if (sensor.Pressure <= profs.info[i].trackingB) {
-              if (!currentStartB) {
-                currentStartB = sensor.createAt
-              }
-            }
-            else {
-              if (currentStartB) {
-                const timeAdd = Math.floor((sensor.createAt - currentStartB) / 1000)
-                if (timeAdd < 2000) {
-                  timeTrackingB += timeAdd
-                }
-                currentStartB = null;
-              }
-            }
+      const startOfToday = new Date(profs.timeGet[0]);
+      const endOfToday = new Date(profs.timeGet[1]);
+      startOfToday.setDate(startOfToday.getDate() - 1);
+      endOfToday.setUTCHours(23, 59, 59, 999);
+      const sensorData = await Sensor.find({
+        index: profs.sen_name,
+        createAt: { $gte: startOfToday, $lte: endOfToday }
+      }).sort({ createAt: 1 });
+      const listDate = getDatesInRange(startOfToday, endOfToday);
+      const lengArray = lengModal * listDate.length - lengModal
+      const sensorH = Array(lengArray).fill(null)
+      const sensorY = Array(lengArray).fill(null)
+      const sensorT = Array(lengArray).fill(null)
+      const startDate = startOfToday.getDate()
+      sensorData.forEach((sensor) => {
+        const dateOfSensor = new Date(sensor.createAt)
+        const currentDate = dateOfSensor.getDate()
+        let index = (currentDate - startDate) * lengModal + Math.floor(convertTime(sensor.createAt, 300))
+        if (index < lengArray) {
+          if (sensorY[index]) {
+            sensorY[index] = (sensorY[index] + sensor.Pressure) / 2
           }
-          const index = Math.floor(convertTime(sensor.createAt))
-          timeTrackingRet[i] = Math.round(timeTracking / 60)
-          timeTrackingRetB[i] = Math.round(timeTrackingB / 60)
-          dataPressure[index] = sensor.Pressure
+          else {
+            sensorY[index] = sensor.Pressure.toFixed(2)
+          }
+        }
+        if (index > lengModal) {
+          index = index - lengModal
+          if (sensorH[index]) {
+            sensorH[index] = (sensorH[index] + sensor.Pressure) / 2
+          }
+          else {
+            sensorH[index] = sensor.Pressure.toFixed(2)
+          }
           sensorT[index] = sensor
-        })
-        sensors[i] = { sensorT, sensorYRest, dataPressure }
-      }
-      return res.status(200).json({ success: true, sensors, timeTrackingRet, timeTrackingRetB })
+        }
+      })
+      return res.status(200).json({ success: true, sensorH, sensorY, sensorT })
     }
     const startOfToday = new Date();
     const yesterday = new Date(startOfToday);
@@ -219,25 +235,23 @@ export const getSensors = async (req, res) => {
     startOfToday.setHours(0, 0, 0, 0);
     for (let i = 0; i < Number(profs.total); i++) {
       timeTrackingRet[i] = 0;
-      timeTrackingRetB[i] = 0;
       const sensorY = await Sensor.find({
         index: i,
         createAt: { $gte: yesterday, $lte: startOfToday },
-      });
+      }).sort({ createAt: 1 });
       const sensorN = await Sensor.find({
         index: i,
         createAt: { $gte: startOfToday },
       }).sort({ createAt: 1 });
-      const sensorT = Array(1440).fill(null)
+      const sensorT = Array(86400 / profs.info[i].watch).fill(null)
       const sensorYRest = []
       const dataPressure = []
       let timeTracking = 0
       let currentStart = 0;
-      let timeTrackingB = 0
 
       sensorY.forEach((sensor) => {
-        const index = Math.floor(convertTime(sensor.createAt))
-        sensorYRest[index] = sensor.Pressure
+        const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
+        sensorYRest[index] = sensor.Pressure.toFixed(2)
       })
       sensorN.forEach((sensor) => {
         if (profs.info) {
@@ -247,26 +261,25 @@ export const getSensors = async (req, res) => {
               timeTracking += timeAdd
             }
           }
-          if (sensor.Pressure <= profs.info[i].trackingB) {
-            const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
-            if (timeAdd < 1000) {
-              timeTrackingB += timeAdd
-            }
-          }
         }
         currentStart = sensor.createAt
-        const index = Math.floor(convertTime(sensor.createAt))
-        sensorT[index] = sensor
-        dataPressure[index] = sensor.Pressure
+        const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
+        if (dataPressure[index]) {
+          dataPressure[index] = (dataPressure[index] + sensor.Pressure) / 2
+        }
+        else {
+          dataPressure[index] = sensor.Pressure
+        }
+        sensorT[index] = sensor;
+        // dataPressure[index] = sensor.Pressure
       })
       if (sensorN.length !== 0) {
         battery[i] = sensorN[sensorN.length - 1].battery
       }
       timeTrackingRet[i] = Math.round(timeTracking / 60)
-      timeTrackingRetB[i] = Math.round(timeTrackingB / 60)
       sensors[i] = { sensorYRest, sensorT, dataPressure }
     }
-    return res.status(200).json({ success: true, sensors, timeTrackingRet, timeTrackingRetB, battery })
+    return res.status(200).json({ success: true, sensors, timeTrackingRet, battery })
   } catch (error) {
     return res.status(500).json({ success: false, error: "Sensor not found" })
   }
@@ -279,16 +292,6 @@ export const addSensor = async (req, res) => {
     if (!sen_name || !description) {
       return res.status(400).json({ success: false, error: "All fields are required." });
     }
-    const infoName = await Info.findOne({});
-    const info = await Info.findOneAndUpdate({},
-      {
-        $push: {
-          sen_id: { name: sen_name, id: infoName.total }
-        },
-        $inc: { total: 1 },
-      },
-      { new: true }
-    );
     return res.status(201).json({ success: true, message: "Sensor added successfully." });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Add Sensor server error." });

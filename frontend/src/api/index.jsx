@@ -76,7 +76,13 @@ export const exportDataPost = (token, options) => {
     return axios.post(
         `${URL_SENSOR}/export`,
         options,
-        axiosConfig(token),
-        { responseType: 'blob' }
+        {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json', // ✅ Đảm bảo gửi đúng format
+            },
+            responseType: "blob" // ✅ Quan trọng để nhận file Excel
+        }
     );
-}
+};
+

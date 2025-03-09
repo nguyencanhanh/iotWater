@@ -8,7 +8,6 @@ const userRegister = async () => {
       interval: 300,
       sample: 300,
       tracking: 1.5,
-      trackingB: 1.6,
       sen_id: 2,
       name: "bacgiang3",
       lat: 21.054073,

@@ -1,18 +1,94 @@
 import React, { useEffect, useState, useRef } from "react";
 import { listDataTable } from "./Chart";
 
+export const TableModal = (props) => {
+  const tableData = props.dataModal.sensorT;
+  const tableContainerRef = useRef(null);
+  const headerRef = useRef(null);
+
+  const handleScroll = () => {
+    const scrollContainer = document.getElementById("M");
+    const scrollTop = scrollContainer.scrollTop;
+    const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+    props.setScrollPosition(Math.floor(scrollTop * props.startDate.length / maxScroll * 288));
+  }
+  useEffect(() => {
+    // Đồng bộ thanh cuộn
+    const syncScrollBar = () => {
+      if (tableContainerRef.current && headerRef.current) {
+        const container = tableContainerRef.current;
+        const scrollWidth = container.offsetWidth - container.clientWidth;
+        headerRef.current.style.paddingRight = `${scrollWidth}px`;
+      }
+    };
+    syncScrollBar();
+  }, []);
+
+  return (
+    <div className="border border-gray-300 w-full">
+      {/* Header cố định */}
+      <div ref={headerRef} className="bg-gray-200">
+        <table className="border-collapse w-full">
+          <thead>
+            <tr className="text-sm text-center">
+              <th className="border border-gray-300 px-3 py-2 w-1/4">Thời gian</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5">Áp suất(Bar)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5">Cùng kì(Bar)</th>
+              {/* <th className="border border-gray-300 px-3 py-2 w-1/5">Nhiệt độ(°C)</th> */}
+              <th className="border border-gray-300 px-3 py-2 w-1/5">Pin(%)</th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+
+      {/* Body cuộn, chỉ hiển thị 5 hàng */}
+      <div
+        ref={tableContainerRef}
+        id={"M"}
+        onScroll={handleScroll}
+        className="overflow-y-auto"
+        style={{ maxHeight: "calc(5 * 40px)" }} // Giới hạn chiều cao cho đúng 5 hàng
+      >
+        {!tableData ? (
+          <h1>Loading...</h1>
+        ) : (
+          <table className="border-collapse w-full">
+            <tbody>
+              {tableData.map((row, index) => (
+                <tr key={index} className="h-5 text-xs">
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
+                    {`${props.startDate[Math.floor(index / 288)]} - ${String(Math.floor((index % 288) / 12)).padStart(2, "0")}:${String((index * 5) % 60).padStart(2, "0")}`}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
+                    {props.dataModal.sensorH[index] ?? ""} {/* Áp suất 2 (Bar) */}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
+                    {props.dataModal.sensorY[index] ?? ""}
+                  </td>
+                  {/* <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
+                    {row?.temperature ?? ""}
+                  </td> */}
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
+                    {row?.battery != null ? `${row.battery}%` : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>)}
+      </div>
+    </div>
+
+  );
+}
+
 const ScrollableTable = (device) => {
   const [tableData, setTableData] = useState(listDataTable[device.step]);
   const tableContainerRef = useRef(null);
   const headerRef = useRef(null);
 
   useEffect(() => {
-    if (!device.dataModal) {
-      setTableData(listDataTable[device.step]);
-    } else {
-      setTableData(device.dataModal[device.step]?.sensorT || []);
-    }
-  }, [device.step, device.dataModal]);
+    setTableData(listDataTable[device.step]);
+  }, [device.step]);
 
   useEffect(() => {
     // Đồng bộ thanh cuộn
@@ -21,7 +97,7 @@ const ScrollableTable = (device) => {
         const container = tableContainerRef.current;
         const scrollWidth = container.offsetWidth - container.clientWidth;
         headerRef.current.style.paddingRight = `${scrollWidth}px`;
-        container.scrollTop = (container.scrollHeight - container.clientHeight) * device.currentTimeDate - 95;
+        container.scrollTop = (container.scrollHeight - container.clientHeight) * device.currentTimeDate[device.step];
       }
     };
     syncScrollBar();
@@ -32,25 +108,27 @@ const ScrollableTable = (device) => {
     const scrollContainer = document.getElementById(mode + device.step);
     const scrollTop = scrollContainer.scrollTop;
     const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
-
-    device.handle((prevStates) => {
-      const updatedStates = [...prevStates];
-      updatedStates[device.step] = Math.floor(scrollTop / (maxScroll / 1435));
-      return updatedStates;
-    });
+    if (!device.dataModal) {
+      device.handle((prevStates) => {
+        const updatedStates = [...prevStates];
+        updatedStates[device.step] = Math.floor(scrollTop / (maxScroll / (86400 / device.watch - 5)));
+        return updatedStates;
+      });
+    }
   };
 
   return (
     <div className="border border-gray-300 w-full">
       {/* Header cố định */}
       <div ref={headerRef} className="bg-gray-200">
-        <table className="border-collapse w-full">
+        <table className="border-collapse w-full table-fixed">
           <thead>
-            <tr>
-              <th className="border border-gray-300 px-4 py-2 w-1/4">Thời gian</th>
-              <th className="border border-gray-300 px-4 py-2 w-1/4">Áp suất (Bar)</th>
-              <th className="border border-gray-300 px-4 py-2 w-1/4">Nhiệt độ (°C)</th>
-              <th className="border border-gray-300 px-4 py-2 w-1/4">Pin (%)</th>
+            <tr className="text-sm text-center">
+              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Thời gian</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Áp suất(Bar)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Cùng kì(Bar)</th>
+              {/* <th className="border border-gray-300 px-3 py-2 w-1/5">Nhiệt độ(°C)</th> */}
+              <th className="border border-gray-300 px-3 py-2 w-1/6" style={{ width: "10%" }}>Pin(%)</th>
             </tr>
           </thead>
         </table>
@@ -64,24 +142,33 @@ const ScrollableTable = (device) => {
         className="overflow-y-auto"
         style={{ maxHeight: "calc(5 * 40px)" }} // Giới hạn chiều cao cho đúng 5 hàng
       >
-        <table className="border-collapse w-full">
-          <tbody>
-            {tableData.map((row, index) => (
-              <tr key={index} className="h-5 text-xs">
-                <td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
-                  {`${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`}
-                </td><td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
-                  {row?.Pressure?.toFixed(2) ?? ""}
-                </td><td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
-                  {row?.temperature ?? ""}
-                </td><td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
-                  {row?.battery != null ? `${row.battery}%` : ""}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-
-        </table>
+        {!tableData ? (
+          <h1>Loading...</h1>
+        ) : (
+          <table className="border-collapse w-full table-fixed">
+            <tbody>
+              {tableData.map((row, index) => (
+                <tr key={index} className="h-5 text-xs">
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
+                    {`${String(Math.floor(index * device.watch / 3600)).padStart(2, "0")}:${String((index * device.watch / 60) % 60).padStart(2, "0")}`}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
+                    {row?.Pressure?.toFixed(2) ?? ""}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
+                    {device.data[device.step].sensorYRest[index] ? device.data[device.step].sensorYRest[index] : ""}
+                  </td>
+                  {/* <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
+                {row?.temperature ?? ""}
+              </td> */}
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/6 leading-tight" style={{ width: "10%" }}>
+                    {row?.battery != null ? `${row.battery}%` : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

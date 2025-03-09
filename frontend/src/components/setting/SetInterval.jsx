@@ -35,7 +35,7 @@ function SetInterval(info) {
 
   return (
     <div className="ml-1 flex justify-between justify-center">
-      <div className='text-white rounded'>Thời gian hiển thị:</div>
+      <div className='text-white rounded'>Thời gian đẩy dữ liệu:</div>
       <select className="bg-teal-600 rounded text-white"
         value={info.info[info.step].interval}
         onChange={handleSelect}

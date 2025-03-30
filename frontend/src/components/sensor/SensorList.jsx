@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from '../../context/authContext'
 // import { Link } from "react-router-dom";
-import { Battery } from "../chart/Chart";
-import RealTimeLineChart, { addDataSensor, connectMqtt, TimeComparison } from "../chart/Chart";
+import { Battery, battery } from "../chart/Chart";
+import RealTimeLineChart, { addDataSensor, connectMqtt, TimeComparison, Param } from "../chart/Chart";
 import ModalData from "../chart/Modal";
-import { sensorListGet } from "../../api/index"
+import { sensorListGet, getSensorInGroup } from "../../api/index"
 import SettingsButton from "../setting/Setting";
 import ScrollableTable from "../chart/Table";
 import EditComponent from "./EditComponent";
+import { useLocation, useParams } from "react-router-dom";
 import { produce } from "immer";
 
 export let changeData
@@ -43,35 +44,52 @@ const currentTime = (info) => {
 
 
 function SensorList() {
-  const currentDate = new Date();
-  const { user, info } = useAuth()
-  // const currentTimeDate = (currentDate.getHours() * 60 + currentDate.getMinutes()) / 1435;
+  const { user } = useAuth()
+  const groupPram = useParams().group
+  const groupID = useLocation().state.sensorIDs;
+  const idMap = useLocation().state.sensorMap
   const [sensorLoading, setSensorLoading] = useState(false);
   const [dateData, setDateData] = useState([])
   const [dataPressure, setDataPressure] = useState(null)
-  const [filteredDevices, setFilteredDevices] = useState(info);
-  const [isOpen, setIsOpen] = useState(false);
-  const [dataInfo, setdataInfo] = useState(info);
+  const [filteredDevices, setFilteredDevices] = useState(groupID);
+  const [dataInfo, setdataInfo] = useState(groupID);
   const [showModal, setShowModal] = useState(false);
+  const [pram, setPram] = useState([]);
   const [timeTracking, setTimeTracking] = useState([]);
   const [batteryInit, setBatteryInit] = useState([]);
-  const [signalStrength, setSingnals] = useState(Array(info.length).fill(0))
-  const [isViEdit, setIsEdit] = useState(Array(info.length).fill(false));
-  const [scrollPosition, setScrollPosition] = useState(Array(info.length).fill(0));
-  // const [colorN, setColorN] = useState(localStorage.getItem("colorN") || "#FF0000");
-  // const [colorY, setColorY] = useState("#0000FF");
-
+  const [temp, setTemp] = useState([]);
+  const [signalStrength, setSingnals] = useState(Array(groupID.length).fill(0))
+  const [isViEdit, setIsEdit] = useState(Array(groupID.length).fill(false));
+  const [scrollPosition, setScrollPosition] = useState(Array(groupID.length).fill(0));
+  const fetchSetting = async (total, info) => {
+    try {
+      const res = await getSensorInGroup(localStorage.getItem("token"), {group: groupPram, user: user.user});
+      if (res.data.success) {
+        setdataInfo(res.data.senInGroup)
+        setFilteredDevices(res.data.senInGroup)
+      } else {
+        alert("Failed to fetch sensors");
+      }
+    } catch (error) {
+      console.error("An unexpected error occurred:", error);
+      alert(
+        error.response?.data?.error || "Something went wrong. Please try again."
+      );
+    }
+  };
   const fetchSensors = async (total, info) => {
     try {
-      const res = await sensorListGet(localStorage.getItem("token"), { total: total, info: info });
+      const res = await sensorListGet(localStorage.getItem("token"), { total: total, info: info, user: user.user });
       if (res.data.success) {
         const data = res.data.sensors
         data.forEach((sensor, index) => {
           addDataSensor(index, sensor.sensorT, sensor.dataPressure)
         })
-        setDataPressure(data)
         setTimeTracking(res.data.timeTrackingRet)
         setBatteryInit(res.data.battery)
+        setTemp(res.data.temperature)
+        setPram(res.data.pram)
+        setDataPressure(data)
       } else {
         alert("Failed to fetch sensors");
       }
@@ -86,12 +104,14 @@ function SensorList() {
   };
 
   useEffect(() => {
-    fetchSensors(info.length, dataInfo);
-  }, [dataInfo]);
+    fetchSensors(groupID.length, groupID);
+    fetchSetting()
+    battery.length = 0;
+  }, []);
 
-  changeData = connectMqtt(timeTracking, dataInfo)
+  changeData = connectMqtt(timeTracking, dataInfo, idMap)
   const filterSensor = (e) => {
-    const records = info.filter((dep) => dep.name.toLowerCase().includes(e.target.value.toLowerCase()))
+    const records = groupID.filter((dep) => dep.name.toLowerCase().includes(e.target.value.toLowerCase()))
     setFilteredDevices(records)
   }
 
@@ -123,7 +143,7 @@ function SensorList() {
               className="px-4 py-1 bg-teal-600 rounded text-white"
             >
               Thêm cảm biến
-            </Link> */}
+            </Link>  */}
             {/* <DateCom handleData={handleData} />
             <Dropdown /> */}
           </div>
@@ -132,39 +152,41 @@ function SensorList() {
               <div className="flex justify-center items-center h-screen">
                 <div>Loading...</div>
               </div>
-            ) : (filteredDevices.map((device) => (
+            ) : (filteredDevices.map((device, step) => (
               <li className="flex flex-col items-center w-full sm:w-[560px] md:w-[600px] bg-gray-200 p-4 rounded-lg shadow" key={device.id}>
                 <div className="flex w-full justify-between items-center mb-4" >
                   <button
                     className="px-3 py-1 bg-teal-600 text-white rounded"
                     onClick={() => setIsEdit(prevData =>
                       produce(prevData, draft => {
-                        draft[device.id] = !draft[device.id];
+                        draft[step] = !draft[step];
                       })
                     )}
                   >
                     Thông tin
                   </button>
-                  <h3 className="text-lg font-bold">{device.name} ({device.id})</h3>
-                  <Battery step={device.id} data={batteryInit} signalStrength={signalStrength} setSingnals={setSingnals} dataInfo={dataInfo}/>
-                  {isViEdit[device.id] ? <EditComponent id={device.id} setIsEdit={setIsEdit} /> : null}
+                  <h3 className="text-lg font-bold">{device.name} ({dataInfo[step].id})</h3>
+                  <Battery step={step} temp={temp} data={batteryInit} signalStrength={signalStrength} setSingnals={setSingnals} dataInfo={dataInfo} />
+                  {isViEdit[step] ? <EditComponent step={step} id={dataInfo[step].id} setIsEdit={setIsEdit} /> : null}
                 </div>
-                <div className="flex w-full justify-between border-b-2 border-gray-300 items-center mb-4" >
-                  <TimeComparison step={device.id} init={timeTracking} info={info} />
-                  <SettingsButton total={info.length}
+                <div className="flex w-full justify-between" >
+                  <TimeComparison step={step} init={timeTracking} info={groupID} />
+                  <SettingsButton total={groupID.length}
                     info={dataInfo}
                     setdataInfo={setdataInfo}
                     handleData={handleData}
-                    step={device.id}
-                    // colorN={colorN} setColorN={setColorN} colorY={colorY} setColorY={setColorY}
+                    step={step}
                   />
                 </div>
-                <RealTimeLineChart name={device.id} label={laInit(dataInfo)} data={dataPressure} scrollPosition={scrollPosition} />
-                <ScrollableTable step={device.id} watch={device.watch} currentTimeDate={currentTime(dataInfo)} handle={setScrollPosition} data={dataPressure} />
+                <div className="flex border-b-2 border-gray-300 items-center mb-4 w-full">
+                  <Param pram={pram} step={step} />
+                </div>
+                <RealTimeLineChart name={step} label={laInit(dataInfo)} data={dataPressure} scrollPosition={scrollPosition} />
+                <ScrollableTable step={step} watch={device.watch} currentTimeDate={currentTime(dataInfo)} handle={setScrollPosition} data={dataPressure} />
               </li>
             )))
             }
-            {showModal ? <ModalData dateData={dateData} info={dataInfo} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}
+            {showModal ? <ModalData dateData={dateData} info={dataInfo} idMap={idMap} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}
           </ul>
         </div>
       )}

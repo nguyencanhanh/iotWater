@@ -12,6 +12,7 @@ const infoSchema = new mongoose.Schema({
     name: {type: String},
     lat: {type: Number},
     lng: {type: Number},
+    group: {type: String},
     sample: {type: Number},
     description: {type: String},
     temperature: {type: Number},

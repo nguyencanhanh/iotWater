@@ -10,7 +10,7 @@ export const TableModal = (props) => {
     const scrollContainer = document.getElementById("M");
     const scrollTop = scrollContainer.scrollTop;
     const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
-    props.setScrollPosition(Math.floor(scrollTop * props.startDate.length / maxScroll * 288));
+    props.setScrollPosition(Math.floor(scrollTop * props.lengScrol / maxScroll));
   }
   useEffect(() => {
     // Đồng bộ thanh cuộn
@@ -28,14 +28,16 @@ export const TableModal = (props) => {
     <div className="border border-gray-300 w-full">
       {/* Header cố định */}
       <div ref={headerRef} className="bg-gray-200">
-        <table className="border-collapse w-full">
+        <table className="border-collapse w-full table-fixed">
           <thead>
             <tr className="text-sm text-center">
-              <th className="border border-gray-300 px-3 py-2 w-1/4">Thời gian</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5">Áp suất(Bar)</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5">Cùng kì(Bar)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/4" style={{ width: "30%" }}>Thời gian</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Áp suất (m)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Cùng kì (m)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Lưu lượng (m3/h)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Cùng kì (m3/h)</th>
               {/* <th className="border border-gray-300 px-3 py-2 w-1/5">Nhiệt độ(°C)</th> */}
-              <th className="border border-gray-300 px-3 py-2 w-1/5">Pin(%)</th>
+              {/* <th className="border border-gray-300 px-3 py-2 w-1/6" style={{ width: "10%" }}>Pin(%)</th> */}
             </tr>
           </thead>
         </table>
@@ -47,30 +49,36 @@ export const TableModal = (props) => {
         id={"M"}
         onScroll={handleScroll}
         className="overflow-y-auto"
-        style={{ maxHeight: "calc(5 * 40px)" }} // Giới hạn chiều cao cho đúng 5 hàng
+        style={{ maxHeight: "calc(8 * 40px)" }} // Giới hạn chiều cao cho đúng 5 hàng
       >
         {!tableData ? (
           <h1>Loading...</h1>
         ) : (
-          <table className="border-collapse w-full">
+          <table className="border-collapse w-full table-fixed">
             <tbody>
               {tableData.map((row, index) => (
-                <tr key={index} className="h-5 text-xs">
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight">
-                    {`${props.startDate[Math.floor(index / 288)]} - ${String(Math.floor((index % 288) / 12)).padStart(2, "0")}:${String((index * 5) % 60).padStart(2, "0")}`}
+                <tr key={index} className="h-8 text-lg">
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight" style={{ width: "30%" }}>
+                    {`${props.startDate[Math.floor(index / 288)].toISOString().split("T")[0]} - ${String(Math.floor(((index + props.startHour * 12) % 288) / 12)).padStart(2, "0")}:${String((index * 5) % 60).padStart(2, "0")}`}
                   </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
-                    {props.dataModal.sensorH[index] ?? ""} {/* Áp suất 2 (Bar) */}
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
+                    {props.dataModal.sensorH[index] !== null ? props.dataModal.sensorH[index]?.toFixed(1) : ""} {/* Áp suất 2 (Bar) */}
                   </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
-                    {props.dataModal.sensorY[index] ?? ""}
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
+                    {props.dataModal.sensorY[index] !== null ? props.dataModal.sensorY[index]?.toFixed(1) : ""}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
+                    {/* {props.dataModal.sensorH[index] !== null ? props.dataModal.sensorH[index]?.toFixed(1) : ""} Áp suất 2 (Bar) */}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
+                    {/* {props.dataModal.sensorY[index] !== null ? props.dataModal.sensorY[index]?.toFixed(1) : ""} */}
                   </td>
                   {/* <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
                     {row?.temperature ?? ""}
                   </td> */}
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
+                  {/* <td className="border border-gray-300 px-2 py-0 text-center w-1/6 leading-tight" style={{ width: "10%" }}>
                     {row?.battery != null ? `${row.battery}%` : ""}
-                  </td>
+                  </td> */}
                 </tr>
               ))}
             </tbody>
@@ -118,17 +126,25 @@ const ScrollableTable = (device) => {
   };
 
   return (
-    <div className="border border-gray-300 w-full">
+    <div className="relative border border-gray-300 w-full">
+      {/* Lớp phủ trong suốt bên trái để chặn cuộn */}
+      <div
+        className="absolute top-0 left-0 h-full bg-transparent"
+        style={{ width: "50%", pointerEvents: "auto" }}
+        onWheel={(e) => e.stopPropagation()} // Chặn cuộn khi chuột ở bên trái
+      />
+
       {/* Header cố định */}
       <div ref={headerRef} className="bg-gray-200">
         <table className="border-collapse w-full table-fixed">
           <thead>
             <tr className="text-sm text-center">
-              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Thời gian</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Áp suất(Bar)</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Cùng kì(Bar)</th>
-              {/* <th className="border border-gray-300 px-3 py-2 w-1/5">Nhiệt độ(°C)</th> */}
-              <th className="border border-gray-300 px-3 py-2 w-1/6" style={{ width: "10%" }}>Pin(%)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5">Thời gian</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5">Áp suất (m)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5">Cùng kì (m)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5">Lưu lượng (m3/h)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/5">Cùng kì (m3/h)</th>
+              <th className="border border-gray-300 px-3 py-2 w-1/6">Pin(%)</th>
             </tr>
           </thead>
         </table>
@@ -140,7 +156,7 @@ const ScrollableTable = (device) => {
         id={device.dataModal ? "M" + device.step : "" + device.step}
         onScroll={handleScroll}
         className="overflow-y-auto"
-        style={{ maxHeight: "calc(5 * 40px)" }} // Giới hạn chiều cao cho đúng 5 hàng
+        style={{ maxHeight: "calc(8 * 40px)" }}
       >
         {!tableData ? (
           <h1>Loading...</h1>
@@ -148,20 +164,21 @@ const ScrollableTable = (device) => {
           <table className="border-collapse w-full table-fixed">
             <tbody>
               {tableData.map((row, index) => (
-                <tr key={index} className="h-5 text-xs">
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
+                <tr key={index} className="h-8 text-lg">
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
                     {`${String(Math.floor(index * device.watch / 3600)).padStart(2, "0")}:${String((index * device.watch / 60) % 60).padStart(2, "0")}`}
                   </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {row?.Pressure?.toFixed(2) ?? ""}
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">{row?.Pressure ?? ""}</td>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
+                    {device.data[device.step].sensorYRest[index] !== null ? device.data[device.step].sensorYRest[index] : ""}
                   </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {device.data[device.step].sensorYRest[index] ? device.data[device.step].sensorYRest[index] : ""}
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
+                    {/* {device.data[device.step].sensorYRest[index] !== null ? device.data[device.step].sensorYRest[index] : ""} */}
                   </td>
-                  {/* <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
-                {row?.temperature ?? ""}
-              </td> */}
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/6 leading-tight" style={{ width: "10%" }}>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
+                    {/* {device.data[device.step].sensorYRest[index] !== null ? device.data[device.step].sensorYRest[index] : ""} */}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/6">
                     {row?.battery != null ? `${row.battery}%` : ""}
                   </td>
                 </tr>
@@ -171,6 +188,7 @@ const ScrollableTable = (device) => {
         )}
       </div>
     </div>
+
   );
 };
 

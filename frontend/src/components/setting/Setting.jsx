@@ -3,6 +3,7 @@ import SetInterval from "./SetInterval";
 import SetSample from "./SetSample";
 import { produce } from "immer";
 import { intervalUpdatePut } from '../../api/index';
+import { useAuth } from '../../context/authContext'
 
 function minutesToTime(totalMinutes) {
   const hours = Math.floor(totalMinutes / 60);
@@ -12,6 +13,7 @@ function minutesToTime(totalMinutes) {
 
 
 const SettingsButton = (profs) => {
+  const { user } = useAuth()
   const [isOpen, setIsOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
   const [isEditingAdj, setIsEditingAdj] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
@@ -24,7 +26,7 @@ const SettingsButton = (profs) => {
   const handleInputChange = (event) => {
     profs.setdataInfo(prevData =>
       produce(prevData, draft => {
-        draft[profs.info[profs.step].id].tracking = event.target.value;
+        draft[profs.step].tracking = event.target.value;
       })
     );
   };
@@ -32,7 +34,7 @@ const SettingsButton = (profs) => {
   const handleInputChangeAdj = (event) => {
     profs.setdataInfo(prevData =>
       produce(prevData, draft => {
-        draft[profs.info[profs.step].id].adj = event.target.value;
+        draft[profs.step].adj = event.target.value;
       })
     );
   };
@@ -40,7 +42,7 @@ const SettingsButton = (profs) => {
   const handleInputChangeT = (event) => {
     profs.setdataInfo(prevData =>
       produce(prevData, draft => {
-        draft[profs.info[profs.step].id].temperature = event.target.value;
+        draft[profs.step].temperature = event.target.value;
       })
     );
   };
@@ -48,22 +50,30 @@ const SettingsButton = (profs) => {
   const handleInputChangeWP = (event) => {
     profs.setdataInfo(prevData =>
       produce(prevData, draft => {
-        draft[profs.info[profs.step].id].wPress = event.target.value;
+        draft[profs.step].wPress = event.target.value;
       })
     );
   };
 
   const handleInputChangeWPTime = (event) => {
+    event.preventDefault();
     profs.setdataInfo(prevData =>
       produce(prevData, draft => {
-        draft[profs.info[profs.step].id].wPressTime = event.target.value;
+        draft[profs.step].wPressTime = event.target.value;
       })
     );
   };
 
   const handleSubmit = async () => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { tracking: profs.info[profs.step].tracking, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { tracking: profs.info[profs.step].tracking, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         setIsEditing(false);
       }
@@ -75,8 +85,15 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitAdj = async () => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { adj: profs.info[profs.step].adj, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { adj: profs.info[profs.step].adj, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         setIsEditingAdj(false);
       }
@@ -88,8 +105,15 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitT = async () => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { temp: profs.info[profs.step].temperature, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { temp: profs.info[profs.step].temperature, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         setIsEditingT(false);
       }
@@ -101,8 +125,15 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitWP = async () => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { wPress: profs.info[profs.step].wPress, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { wPress: profs.info[profs.step].wPress, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         setIsEditingWP(false);
       }
@@ -114,8 +145,15 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitWPTime = async () => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { wPressTime: profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        {timeAlarm: profs.info[profs.step].timeAlarm, wPressTime: profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         setIsEditingWPTime(false);
       }
@@ -127,14 +165,21 @@ const SettingsButton = (profs) => {
   };
 
   const handleTimeChangeTime = async (event) => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     const value = event.target.value
-    const [hours, minutes] = timeStr.split(":").map(Number);
+    const [hours, minutes] = value.split(":").map(Number);
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { timeAlarm: hours * 60 + minutes, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { timeAlarm: hours * 60 + minutes, wPressTime: profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         profs.setdataInfo(prevData =>
           produce(prevData, draft => {
-            draft[profs.info[profs.step].id].timeAlarm = value;
+            draft[profs.step].timeAlarm = hours * 60 + minutes;
           })
         );
       }
@@ -152,24 +197,21 @@ const SettingsButton = (profs) => {
     profs.handleData([fromDate, toDate, profs.info[profs.step].id]);
   };
 
-  // const handleChangeColor = (event) => {
-  //   profs.setColorN(event.target.value);
-  //   localStorage.setItem("colorN", event.target.value);
-  // }
-
-  // const handleChangeColorY = (event) => {
-  //   profs.setColorY(event.target.value);
-  //   localStorage.setItem("colorY", event.target.value);
-  // }
-
   const handleSelect = async (e) => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     try {
       const value = Number(e.target.value)
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { watch: value, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { watch: value, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         profs.setdataInfo(prevData =>
           produce(prevData, draft => {
-            draft[profs.info[profs.step].id].watch = value;
+            draft[profs.step].watch = value;
           })
         );
       }
@@ -181,12 +223,19 @@ const SettingsButton = (profs) => {
   }
 
   const handleOnOffWT = async () => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { temp: -profs.info[profs.info[profs.step].id].temperature, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { temp: -profs.info[profs.step].temperature, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         profs.setdataInfo(prevData =>
           produce(prevData, draft => {
-            draft[profs.info[profs.step].id].temperature = -draft[profs.info[profs.step].id].temperature;
+            draft[profs.step].temperature = -draft[profs.step].temperature;
           })
         );
       }
@@ -198,12 +247,19 @@ const SettingsButton = (profs) => {
   }
 
   const handleOnOffWP = async () => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { wPress: -profs.info[profs.info[profs.step].id].wPress, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { wPress: -profs.info[profs.step].wPress, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         profs.setdataInfo(prevData =>
           produce(prevData, draft => {
-            draft[profs.info[profs.step].id].wPress = -draft[profs.info[profs.step].id].wPress;
+            draft[profs.step].wPress = -draft[profs.step].wPress;
           })
         );
       }
@@ -215,12 +271,19 @@ const SettingsButton = (profs) => {
   }
 
   const handleOnOffWPTime = async () => {
+    if(user.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { wPressTime: -profs.info[profs.info[profs.step].id].wPressTime, sen_id: profs.info[profs.step].id })
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { wPressTime: -profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id, user: user.user }
+      )
       if (res.data.success) {
         profs.setdataInfo(prevData =>
           produce(prevData, draft => {
-            draft[profs.info[profs.step].id].wPressTime = -draft[profs.info[profs.step].id].wPressTime;
+            draft[profs.step].wPressTime = -draft[profs.step].wPressTime;
           })
         );
       }
@@ -232,7 +295,7 @@ const SettingsButton = (profs) => {
   }
 
   return (
-    <div className="relative inline-block text-left">
+    <div className="relative inline-block text-left z-[1]">
       {/* Nút cài đặt */}
       <button
         onClick={() => setIsOpen((prev) => !prev)}
@@ -249,8 +312,8 @@ const SettingsButton = (profs) => {
         >
           <ul className="py-3 px-4 space-y-3 max-h-96 overflow-y-auto">
             {/* Cài đặt thời gian hiển thị */}
-            <li><SetSample info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} /></li>
-            <li><SetInterval info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} /></li>
+            <li><SetSample info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role}/></li>
+            <li><SetInterval info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role}/></li>
             <li>
               <div className="ml-1 flex justify-between justify-center">
                 <div className='text-white rounded'>Thời gian hiển thị:</div>
@@ -291,7 +354,7 @@ const SettingsButton = (profs) => {
                   ) : (
                     <>
                       {/* Nếu không chỉnh sửa, hiển thị giá trị */}
-                      <span className="text-white">{profs.info[profs.step].tracking || 1.5} Bar</span>
+                      <span className="text-white">{profs.info[profs.step].tracking || 1.5} kg/m2</span>
                       <button
                         onClick={() => setIsEditing(true)} // Chuyển sang chế độ chỉnh sửa
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
@@ -327,7 +390,7 @@ const SettingsButton = (profs) => {
                   ) : (
                     <>
                       {/* Nếu không chỉnh sửa, hiển thị giá trị */}
-                      <span className="text-white">{profs.info[profs.step].adj} Bar</span>
+                      <span className="text-white">{profs.info[profs.step].adj} kg/m2</span>
                       <button
                         onClick={() => setIsEditingAdj(true)} // Chuyển sang chế độ chỉnh sửa
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
@@ -343,17 +406,23 @@ const SettingsButton = (profs) => {
               {/* <DateM handleData={profs.handleData}/> */}
               <div className="flex space-x-4 mb-4">
                 <input
-                  type="date"
+                  type="datetime-local"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
                   className="border px-2 py-1"
+                  style={{
+                    width: "160px",
+                  }}
                 />
                 <span className="text-white">đến</span>
                 <input
-                  type="date"
+                  type="datetime-local"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
                   className="border px-2 py-1"
+                  style={{
+                    width: "160px",
+                  }}
                 />
                 <button
                   onClick={handleSubmitHistory}
@@ -413,7 +482,7 @@ const SettingsButton = (profs) => {
                 <label htmlFor="input-value" className="text-white">
                   <input
                     type="checkbox"
-                    checked={profs.info[profs.step].wPress >= 0}
+                    checked={profs.info[profs.step].wPress && profs.info[profs.step].wPress >= 0}
                     onChange={handleOnOffWP}
                     className="w-5"
                   />
@@ -441,7 +510,7 @@ const SettingsButton = (profs) => {
                   ) : (
                     <>
                       {/* Nếu không chỉnh sửa, hiển thị giá trị */}
-                      <span className="text-white">{profs.info[profs.step].wPress || 0.8} Bar</span>
+                      <span className="text-white">{profs.info[profs.step].wPress} kg/m2</span>
                       <button
                         onClick={() => setIsEditingWP(true)} // Chuyển sang chế độ chỉnh sửa
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
@@ -489,7 +558,7 @@ const SettingsButton = (profs) => {
                     </>
                   ) : (
                     <>
-                      <span className="text-white">{profs.info[profs.step].wPressTime || 1.1} Bar</span>
+                      <span className="text-white">{profs.info[profs.step].wPressTime || 1.1} kg/m2</span>
                       <button
                         onClick={() => setIsEditingWPTime(true)}
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
@@ -515,38 +584,6 @@ const SettingsButton = (profs) => {
                 </div>
               </div>
             </li>
-            {/* <li>
-              <div className="ml-1 flex justify-between justify-center">
-                <div className='text-white rounded'>Màu đồ thị hôm nay:</div>
-                <select
-                  className="p-2 border rounded-lg shadow-md"
-                  style={{ backgroundColor: profs.colorN }}
-                  value={profs.colorN}
-                  onChange={handleChangeColor}
-                >
-                  {colors.map((color) => (
-                    <option key={color} value={color} style={{ backgroundColor: color }}>
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </li>
-            <li>
-              <div className="ml-1 flex justify-between justify-center">
-                <div className='text-white rounded'>Màu đồ thị hôm qua:</div>
-                <select
-                  className="p-2 border rounded-lg shadow-md"
-                  style={{ backgroundColor: profs.colorY }}
-                  value={profs.colorY}
-                  onChange={handleChangeColorY}
-                >
-                  {colors.map((color) => (
-                    <option key={color} value={color} style={{ backgroundColor: color }}>
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </li> */}
           </ul>
         </div>
       )}

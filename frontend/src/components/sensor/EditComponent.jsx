@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { sensorUpdateGet, sensorUpdatePut } from "../../api/index";
 import { produce } from "immer";
 
-function EditComponent({ id, setIsEdit }) {
+function EditComponent({ step, id, setIsEdit }) {
     const [sensor, setSensor] = useState(null);
     const [sensorLoading, setSensorLoading] = useState(false);
 
@@ -36,7 +36,7 @@ function EditComponent({ id, setIsEdit }) {
             const res = await sensorUpdatePut(localStorage.getItem("token"), {
                 sen_name: sensor.name,
                 sen_description: sensor.description,
-                id: sensor.id,
+                id: id,
             });
             if (res.data.success) {
                 alert("Cập nhật thông tin cảm biến thành công");
@@ -58,7 +58,7 @@ function EditComponent({ id, setIsEdit }) {
                     <button
                         onClick={() => setIsEdit(prevData =>
                             produce(prevData, draft => {
-                                draft[id] = !draft[id];
+                                draft[step] = !draft[step];
                             })
                         )}
                         className="absolute top-2 right-2 text-gray-600 hover:text-gray-800"

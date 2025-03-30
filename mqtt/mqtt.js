@@ -1,5 +1,5 @@
 import mqtt from 'mqtt'
-import { CronJob } from 'cron'
+import { CronJob, timeout } from 'cron'
 import appConstant from './constant.js';
 
 
@@ -15,7 +15,7 @@ const client = mqtt.connect(connectUrl, {
   reconnectPeriod: 5000,
 })
 
-const topic = 'iotwatter@2024'
+const topic = 'watter/setInterval'
 client.on('connect', () => {
   console.log('Connected')
 })
@@ -25,55 +25,13 @@ function sleep(ms) {
 }
 
 new CronJob(
-  appConstant.EVERY_10S,
+  appConstant.EVERY_DAY,
   async function () {
-    // let time = Date.now() - 9 * 60000;
-    console.log("published")
-    // const data = []
-    const data2 = []
-    // const data3 = []
-    // for (let i = 0; i < 10; i++) {
-    //   data.push({
-    //     createAt: time + i * 60000,
-    //     Pressure: Math.random() * 3,
-    //     battery: Math.random() * 100 | 0,
-    //     temperature: Math.random() * 100 | 0,
-    //   })
-    // }
-    // client.publish(topic, JSON.stringify({
-    //   sen_name: 0,
-    //   msg_id: 1,
-    //   data: data
-    // }))
-    // await sleep(100)
-    let time = Date.now();
-    for (let i = 0; i < 1; i++) {
-      data2.push({
-        createAt: time + i * 60000,
-        Pressure: Math.random() * 3,
-        battery: Math.random() * 100 | 0,
-        temperature: Math.random() * 100 | 0,
-      })
-    }
-    client.publish(topic, JSON.stringify({
-      sen_name: 1,
-      msg_id: 3,
-      t: 45
-    }))
-    // time = Date.now() - 9 * 60000;
-    // for (let i = 0; i < 10; i++) {
-    //   data3.push({
-    //     createAt: time + i * 60000,
-    //     Pressure: Math.random() * 3,
-    //     battery: Math.random() * 100 | 0,
-    //     temperature: Math.random() * 100 | 0,
-    //   })
-    // }
-    // client.publish(topic, JSON.stringify({
-    //   sen_name: 2,
-    //   msg_id: 1,
-    //   data: data3
-    // }))
+    const timeNow = Math.floor(Date.now() / 1000 + 3)
+    client.publish(
+      'watter/setInterval',
+      JSON.stringify({ sen_name: 255, time: timeNow })
+    )
   },
   null,  // cb when job stop
   true,  // auto start

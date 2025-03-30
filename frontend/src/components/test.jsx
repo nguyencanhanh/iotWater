@@ -55,13 +55,13 @@ const LineChart = (profs) => {
     labels: labels,
     datasets: [
       {
-        label: "Áp suất hôm nay (Bar)",
+        label: "Áp suất hôm nay (m)",
         data: data,
         borderColor: "rgb(59, 130, 246)", // Màu xanh
         tension: 0.3, // Độ cong của đường
       },
       {
-        label: "Áp suất hôm qua (Bar)",
+        label: "Áp suất hôm qua (m)",
         data: [20,20, 30, 40, 50,null, null, null,50,20, 30, 40, 50,200, null, null, null],
         borderColor: "rgb(34, 197, 94)", // Màu xanh lá
         tension: 0.3, // Độ cong của đường

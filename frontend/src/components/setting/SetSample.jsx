@@ -6,11 +6,11 @@ function SetSample(info) {
   const interval = info.info[info.step].interval
   const updateInterval = async (value) => {
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { sample: value, sen_id: info.info[info.step].id })
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { sample: value, sen_id: info.info[info.step].id, user: info.user })
       if (res.data.success) {
         info.setdataInfo(prevData =>
           produce(prevData, draft => {
-            draft[info.info[info.step].id].sample = value;
+            draft[info.step].sample = value;
           })
         );
       }
@@ -26,6 +26,10 @@ function SetSample(info) {
     const valueX = Number(event.target.value);
     if(valueX > interval || (interval % valueX)){
       alert('Chọn không hợp lệ');
+      return;
+    }
+    if(info.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
     updateInterval(valueX)

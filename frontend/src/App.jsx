@@ -4,10 +4,11 @@ import AdminDashboard from "./pages/AdminDashboard"
 import AdminSummary from "./components/dashboard/AdminSummary"
 import SensorList from "./components/sensor/SensorList"
 import AddSensor from './components/sensor/AddSensor';
-import EditComponent from './components/sensor/EditComponent'
 import EmployeeDashboard from "./pages/EmployeeDashboard"
 import PrivateRoutes from './utils/PrivateRoutes'
 import RoleBaseRoutes from './utils/RoleBaseRoutes'
+import SettingGroup from './components/setting/SettingGroup';
+import GroupSensor from './components/sensor/GroupSensor';
 
 function App() {
 
@@ -19,16 +20,16 @@ function App() {
 
         <Route path='/admin-dashboard' element={
           <PrivateRoutes>
-            <RoleBaseRoutes requiredRole={['admin']} >
+            <RoleBaseRoutes requiredRole={['admin', 'trial']} >
               <AdminDashboard />
             </RoleBaseRoutes>
           </PrivateRoutes>
         }>
           <Route index element={<AdminSummary/>}></Route>
-          <Route path='/admin-dashboard/sensors' element={<SensorList/>}></Route>
+          <Route path='/admin-dashboard/sensors' element={<GroupSensor/>}></Route>
+          <Route path='/admin-dashboard/sensors/:group' element={<SensorList/>}></Route>
           <Route path='/admin-dashboard/add-sensors' element={<AddSensor/>}></Route>
-          {/* <Route path='/admin-dashboard/sensor/:id' element={<EditComponent/>}></Route> */}
-          {/* <Route path='/admin-dashboard/table' element={<TableList/>}></Route> */}
+          <Route path='/admin-dashboard/setting' element={<SettingGroup/>}></Route>
 
         </Route>
         <Route path="/employee-dashboard" element={<EmployeeDashboard />}></Route>

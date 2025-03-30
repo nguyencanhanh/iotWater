@@ -1,11 +1,14 @@
 import React, { useState } from "react";
 import { sensorAddPost } from "../../api/index";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from '../../context/authContext'
 
 function Addsensor() {
+  const { user, info } = useAuth()
   const [sensor, setsensor] = useState({
     sen_name: "",
-    description: ""
+    description: "",
+    id: info.length
   });
   const navigate = useNavigate();
   const handleChange = (e) => {

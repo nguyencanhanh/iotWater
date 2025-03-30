@@ -4,15 +4,14 @@ import { produce } from "immer";
 
 function SetInterval(info) {
   const display = info.info[info.step].sample
-
   const updateInterval = async (value) => {
     const valueIn = value
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { interval: valueIn, sen_id: info.info[info.step].id })
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { interval: valueIn, sen_id: info.info[info.step].id, user: info.user })
       if (res.data.success) {
         info.setdataInfo(prevData =>
           produce(prevData, draft => {
-            draft[info.info[info.step].id].interval = valueIn;
+            draft[info.step].interval = valueIn;
           })
         );
       }
@@ -28,6 +27,10 @@ function SetInterval(info) {
     const valueX = Number(event.target.value);
     if(valueX < display){
       alert('Chọn không hợp lệ');
+      return;
+    }
+    if(info.role === 'trial'){
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
     updateInterval(valueX)

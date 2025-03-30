@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { FaBuilding, FaTachometerAlt, FaTools, FaUser, FaChevronLeft, FaChevronRight } from "react-icons/fa";
+import { FaBuilding, FaTachometerAlt, FaTools, FaChevronLeft, FaChevronRight } from "react-icons/fa";
 
 const Admin_Sidebar = ({ isOpen, toggleSidebar }) => {
   return (
@@ -42,15 +42,15 @@ const Admin_Sidebar = ({ isOpen, toggleSidebar }) => {
             <FaBuilding />
             <span>Biểu đồ</span>
           </NavLink>
-          {/* <NavLink
+          <NavLink
             to="/admin-dashboard/setting"
             className={({ isActive }) =>
               `${isActive ? "bg-teal-600" : ""} flex items-center space-x-4 py-2.5 px-4 rounded`
             }
           >
             <FaTools />
-            <span>Cài đặt</span>
-          </NavLink> */}
+            <span>Đổi nhóm</span>
+          </NavLink>
         </div>
       </div>
 

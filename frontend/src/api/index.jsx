@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { URL_AUTH, URL_DASHBOARD, URL_SENSOR } from '../utils/host';
+import { URL_AUTH, URL_DASHBOARD, URL_SENSOR, URL_GROUP } from '../utils/host';
 
 const axiosConfig = (token) => ({
     headers: {
@@ -25,6 +25,54 @@ export const infoGet = (token) => {
     )
 }
 
+export const getGroup = (token, user) => {
+    return axios.post(
+        `${URL_GROUP}`,
+        user,
+        axiosConfig(token)
+    )
+}
+
+export const getGroupInfo = (token, user) => {
+    return axios.post(
+        `${URL_GROUP}/info`,
+        user,
+        axiosConfig(token)
+    )
+}
+
+export const getSensorInGroup = (token, group) => {
+    return axios.post(
+        `${URL_GROUP}/group`,
+        group,
+        axiosConfig(token)
+    )
+}
+
+export const changeGroup = (token, sen) => {
+    return axios.put(
+        `${URL_GROUP}/change`,
+        sen,
+        axiosConfig(token)
+    )
+}
+
+export const addGroup = (token, sen) => {
+    return axios.post(
+        `${URL_GROUP}/add`,
+        sen,
+        axiosConfig(token)
+    )
+}
+
+export const deleteGroup = (token, sen) => {
+    return axios.post(
+        `${URL_GROUP}/delete`,
+        sen,
+        axiosConfig(token)
+    )
+}
+
 export const dashboardSummaryGet = (token) => {
     return axios.get(`${URL_DASHBOARD}/summary`,
         axiosConfig(token)
@@ -46,7 +94,6 @@ export const sensorListGet = (token, total) => {
 }
 
 export const sensorAddPost = (token, sensor) => {
-    console.log(sensor)
     return axios.post(`${URL_SENSOR}/add`,
         sensor,
         axiosConfig(token)

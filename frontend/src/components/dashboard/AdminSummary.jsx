@@ -7,7 +7,7 @@ import { intervalUpdatePut, sensorListGet } from "../../api/index";
 import ModalData from "../chart/Modal";
 
 function AdminSummary() {
-    const { info } = useAuth();
+    const { user, info } = useAuth();
     const [weatherData, setWeatherData] = useState(info);
     const [data, setData] = useState(null);
     const [sensorLoading, setSensorLoading] = useState(false);
@@ -18,12 +18,10 @@ function AdminSummary() {
     const [showSettings, setShowSettings] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [dateData, setDateData] = useState([]);
-    const colorN = localStorage.getItem("colorN") || "#FF0000";
-    const colorY = localStorage.getItem("colorY") || "#0000FF";
 
     // MQTT Setup
-    const host = "broker.hivemq.com";
-    const port = 8884;
+    const host = "iotwater2024.mooo.com";
+    const port = 9001;
     const clientId = `mqtt_${Math.random().toString(16).slice(3)}`;
     const connectUrl = `wss://${host}:${port}/mqtt`;
     const topic = "iotwatter@2024";
@@ -33,7 +31,7 @@ function AdminSummary() {
     useEffect(() => {
         const fetchSensors = async () => {
             try {
-                const res = await sensorListGet(localStorage.getItem("token"), { totalMap: info.length });
+                const res = await sensorListGet(localStorage.getItem("token"), { totalMap: info.length, user: user.user });
                 if (res.data.success) {
                     setData(res.data.sensors);
                 } else {
@@ -53,11 +51,11 @@ function AdminSummary() {
         client.on("connect", () => console.log("Connected to MQTT broker"));
         client.on("message", (topic, messageData) => {
             messageData = JSON.parse(messageData.toString());
+            if(messageData.m !== 1 || messageData.n > info.length) return;
             setData((prevData) => ({
                 ...prevData,
-                [messageData.sen_name]: {
-                    temperature: messageData.data.reduce((sum, msg) => sum + msg.temperature, 0) / messageData.data.length,
-                    Pressure: messageData.data.reduce((sum, msg) => sum + msg.Pressure, 0) / messageData.data.length,
+                [messageData.n]: {
+                    Pressure: messageData.d.reduce((sum, msg) => sum + msg.p, 0) / messageData.d.length,
                 },
             }));
         });
@@ -71,7 +69,7 @@ function AdminSummary() {
             return;
         }
         try {
-            await intervalUpdatePut(localStorage.getItem("token"), { Coor: selectedId, lat: newLat, lng: newLng });
+            await intervalUpdatePut(localStorage.getItem("token"), { Coor: selectedId, lat: newLat, lng: newLng, user: user.user });
         } catch (error) {
             if (error.res && !error.res.data.success) {
                 alert(error.res.data.error);
@@ -89,7 +87,11 @@ function AdminSummary() {
 
     const handleMarkerClick = (point) => {
         setShowModal(true);
-        setDateData([Date.now(), Date.now(), point.id]);
+        const startDate = new Date();
+        const endDate = new Date();
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(24);
+        setDateData([startDate, endDate, point.id]);
     };
 
     return (
@@ -97,7 +99,10 @@ function AdminSummary() {
             {/* Bản đồ ở lớp dưới */}
             <div className="absolute inset-0 z-0">
                 <MapContainer center={[weatherData[0].lat, weatherData[0].lng]} zoom={15} className="h-full w-full" zoomControl={false}>
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <TileLayer
+                        url="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+                        subdomains={["mt1", "mt2", "mt3"]}
+                    />
                     {weatherData &&
                         data &&
                         weatherData.map((point, index) => (
@@ -106,10 +111,20 @@ function AdminSummary() {
                                     click: () => handleMarkerClick(point)
                                 }}
                             >
-                                <Tooltip permanent direction="top" className="bg-white text-black p-1 text-xs rounded shadow-md">
-                                    {point.name} <br />
-                                    🌡 {data[point.id]?.temperature || 30}°C <br />
-                                    🌬 {data[point.id]?.Pressure?.toFixed(2) || 1.1} Bar
+                                <Tooltip permanent direction="top" className="w-150">
+                                    <h3 className="text-lg font-semibold">{point.name}</h3>
+                                    <table className="w-full">
+                                        <tbody>
+                                            <tr>
+                                                <td className="text-left text-gray-600 text-lg border border-gray-300">Áp suất</td>
+                                                <td className="text-left text-gray-600 text-lg border border-gray-300">{data[point.id]?.Pressure?.toFixed(2)} m</td>
+                                            </tr>
+                                            <tr>
+                                                <td className="text-left text-gray-600 text-lg border border-gray-300">Lưu lượng</td>
+                                                <td className="text-left text-gray-600 text-lg border border-gray-300">m3/h</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </Tooltip>
                             </Marker>
                         ))}
@@ -165,7 +180,7 @@ function AdminSummary() {
                     </button>
                 </div>
             )}
-            {showModal ? <ModalData dateData={dateData} colorN={colorN} colorY={colorY} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}
+            {showModal ? <ModalData info={weatherData} dateData={dateData} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}
         </div>
     );
 }

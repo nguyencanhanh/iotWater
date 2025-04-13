@@ -20,8 +20,29 @@ const SettingsButton = (profs) => {
   const [isEditingT, setIsEditingT] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
   const [isEditingWP, setIsEditingWP] = useState(false);
   const [isEditingWPTime, setIsEditingWPTime] = useState(false);
+  const [FlowSum, setFlowSum] = useState();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+
+  const handleSend = async () => {
+    if (user.role === 'trial') {
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
+    try {
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { sum: FlowSum, sen_id: profs.info[profs.step].id, user: user.user }
+      )
+      if(res.data.success){
+        alert("Cập nhật thành công");
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
+  }
 
   const handleInputChange = (event) => {
     profs.setdataInfo(prevData =>
@@ -65,7 +86,7 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmit = async () => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -85,7 +106,7 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitAdj = async () => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -105,7 +126,7 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitT = async () => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -125,7 +146,7 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitWP = async () => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -145,14 +166,14 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitWPTime = async () => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
     try {
       const res = await intervalUpdatePut(
         localStorage.getItem("token"),
-        {timeAlarm: profs.info[profs.step].timeAlarm, wPressTime: profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id, user: user.user }
+        { timeAlarm: profs.info[profs.step].timeAlarm, wPressTime: profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id, user: user.user }
       )
       if (res.data.success) {
         setIsEditingWPTime(false);
@@ -165,7 +186,7 @@ const SettingsButton = (profs) => {
   };
 
   const handleTimeChangeTime = async (event) => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -198,7 +219,7 @@ const SettingsButton = (profs) => {
   };
 
   const handleSelect = async (e) => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -223,7 +244,7 @@ const SettingsButton = (profs) => {
   }
 
   const handleOnOffWT = async () => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -247,7 +268,7 @@ const SettingsButton = (profs) => {
   }
 
   const handleOnOffWP = async () => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -271,7 +292,7 @@ const SettingsButton = (profs) => {
   }
 
   const handleOnOffWPTime = async () => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -312,8 +333,8 @@ const SettingsButton = (profs) => {
         >
           <ul className="py-3 px-4 space-y-3 max-h-96 overflow-y-auto">
             {/* Cài đặt thời gian hiển thị */}
-            <li><SetSample info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role}/></li>
-            <li><SetInterval info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role}/></li>
+            <li><SetSample info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role} /></li>
+            <li><SetInterval info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role} /></li>
             <li>
               <div className="ml-1 flex justify-between justify-center">
                 <div className='text-white rounded'>Thời gian hiển thị:</div>
@@ -582,6 +603,26 @@ const SettingsButton = (profs) => {
                     className="px-2 py-1 rounded-lg text-black w-25"
                   />
                 </div>
+              </div>
+            </li>
+            <li>
+              <div className="flex justify-between items-center">
+                <label htmlFor="input-value" className="text-white">
+                  Nhập áp tổng khởi tạo:
+                <input
+                  type="number"
+                  value={FlowSum}
+                  onChange={(e) => setFlowSum(e.target.value)}
+                  placeholder="Nhập áp suất (kg/m²)"
+                  className="border text-black border-gray-300 p-2 rounded w-full mb-4"
+                />
+                </label>
+                <button
+                  onClick={handleSend}
+                  className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                >
+                  Gửi đi
+                </button>
               </div>
             </li>
           </ul>

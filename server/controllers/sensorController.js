@@ -2,9 +2,11 @@ import Sensor from "../models/Sensor.js"
 // import Info from "../models/User.js";
 import InfoSen from "../models/Info.js";
 import Group from "../models/Group.js";
+import Flow from "../models/SumFlow.js";
 import ExcelJS from 'exceljs';
 import { client } from "../mqtt/mqtt.js";
 import cron from 'node-cron'
+import { differenceInCalendarDays } from 'date-fns'
 
 const cronJobs = [];
 
@@ -72,21 +74,31 @@ const processJob = (sen_name, timeAlarm) => {
 }
 
 export const Schedule = async () => {
-  const info = await InfoSen.find();
-  info.forEach(element => {
-    processJob(element.id, element.timeAlarm)
-  });
+  // const info = await InfoSen.find();
+  // info.forEach(element => {
+  //   processJob(element.id, element.timeAlarm)
+  // });
 };
+
+function addDateElement(dataArray, sensor, index, type) {
+  if (dataArray[index]) {
+    dataArray[index] = (dataArray[index] + sensor[type]) / 2
+  }
+  else {
+    dataArray[index] = sensor[type]
+  }
+}
 
 function convertTime(timeConvert, watch) {
   return (timeConvert.getHours() * 60 + timeConvert.getMinutes()) * 60 / watch
 }
 
+
 function getDatesInRange(startDate, endDate) {
   const dateArray = [];
   let currentDate = new Date(startDate);
 
-  while (currentDate.getDate() < endDate.getDate()) {
+  while (differenceInCalendarDays(endDate, currentDate)) {
     dateArray.push(new Date(currentDate)); // YYYY-MM-DD
     currentDate.setDate(currentDate.getDate() + 1);
   }
@@ -120,7 +132,7 @@ const exportFakeDataToExcel = async (sensors, res) => {
     worksheet.columns = [
       { header: "Thời gian", key: "createAt", width: 30 },
       { header: "Áp suất", key: "Pressure", width: 15 },
-      // { header: "Nhiệt độ", key: "temperature", width: 15 },
+      { header: "Lưu lượng", key: "flow", width: 15 },
     ];
 
     sensors.forEach(sensor => {
@@ -130,7 +142,7 @@ const exportFakeDataToExcel = async (sensors, res) => {
       worksheet.addRow({
         createAt: formatDate(sensor.createAt),
         Pressure: sensor.Pressure?.toFixed(2),
-        // temperature: sensor.temperature,
+        flow: sensor.flow,
       });
     });
 
@@ -187,6 +199,10 @@ export const upInterval = async (req, res) => {
       )
       return res.status(200).json({ success: true })
     }
+    if(profs.sum != null){
+      const info = await Flow.findOneAndUpdate({ sen_name: profs.sen_id, user: profs.user }, { $set: { sum: profs.sum } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
     if (profs.adj != null) {
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { adj: profs.adj } }, { new: true })
       return res.status(200).json({ success: true })
@@ -194,11 +210,11 @@ export const upInterval = async (req, res) => {
     if (profs.wPressTime != null) {
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { wPressTime: profs.wPressTime } }, { new: true })
       if (profs.wPressTime < 0) {
-        cronJobs[profs.sen_id].forEach(job => job.stop());
+        // cronJobs[profs.sen_id].forEach(job => job.stop());
         cronJobs[profs.sen_id] = [];
       }
       else if (cronJobs[profs.sen_id].length === 0) {
-        processJob(profs.sen_id, profs.timeAlarm);
+        // processJob(profs.sen_id, profs.timeAlarm);
       }
       return res.status(200).json({ success: true })
     }
@@ -207,7 +223,7 @@ export const upInterval = async (req, res) => {
       cronJobs[profs.sen_id].forEach(job => job.stop());
       cronJobs[profs.sen_id] = [];
       if (profs.press > 0) {
-        processJob(profs.sen_id, profs.timeAlarm);
+        // processJob(profs.sen_id, profs.timeAlarm);
       }
       return res.status(200).json({ success: true })
     }
@@ -228,7 +244,7 @@ export const upInterval = async (req, res) => {
       return res.status(200).json({ success: true })
     }
     if (profs.temp != null) {
-      const inputTemp = profs.temp < 0 ? 0 : Math.floor(Number(profs.temp));
+      const inputTemp = profs.temp < 0 ? 100 : Math.floor(Number(profs.temp));
       if (publishMessage('temp', inputTemp, profs.sen_id)) {
         return res.status(500).json({ success: false, error: "Not publish" })
       }
@@ -260,6 +276,7 @@ export const getSensors = async (req, res) => {
     const temperature = []
     const battery = []
     const pram = []
+    const pramFlow = []
     if (profs.totalMap) {
       for (let i = 0; i < Number(profs.totalMap); i++) {
         const sensor = await Sensor.findOne({ index: i, user: profs.user }).sort({ $natural: -1 });
@@ -283,32 +300,28 @@ export const getSensors = async (req, res) => {
       const lengArray = getLength(lengModal, listDate)
       const sensorH = []
       const sensorY = []
+      const flowH = []
+      const flowY = []
       const sensorT = Array(lengArray).fill(null)
-      const startDate = startOfToday.getDate()
+      const startDate = startOfToday
+      const offSetHour = listDate[0].getHours() * 12
       sensorData.forEach((sensor, step) => {
         const dateOfSensor = new Date(sensor.createAt)
-        const currentDate = dateOfSensor.getDate()
-        let index = (currentDate - startDate) * lengModal + Math.floor(convertTime(sensor.createAt, 300)) - listDate[0].getHours() * 12
-        if (index < lengModal) {
-          if (sensorY[index]) {
-            sensorY[index] = (sensorY[index] + sensor.Pressure) / 2
-          }
-          else {
-            sensorY[index] = sensor.Pressure
-          }
+        const currentDate = dateOfSensor
+        const convert = differenceInCalendarDays(currentDate, startDate)
+        const convertTimeValue = Math.floor(convertTime(sensor.createAt, 300))
+        let index = convert * lengModal + convertTimeValue - offSetHour;
+        if (index < lengArray) {
+          addDateElement(sensorY, sensor, index, "Pressure")
+          addDateElement(flowY, sensor, index, "flow")
         }
         if (index >= lengModal) {
           index = index - lengModal
-          if (sensorH[index]) {
-            sensorH[index] = (sensorH[index] + sensor.Pressure) / 2
-          }
-          else {
-            sensorH[index] = sensor.Pressure
-          }
-          if(step === 0)console.log(0)
+          addDateElement(sensorH, sensor, index, "Pressure")
+          addDateElement(flowH, sensor, index, "flow")
         }
       })
-      return res.status(200).json({ success: true, sensorH, sensorY, sensorT })
+      return res.status(200).json({ success: true, sensorH, sensorY, flowH, flowY, sensorT })
     }
     const startOfToday = new Date();
     const yesterday = new Date(startOfToday);
@@ -317,10 +330,14 @@ export const getSensors = async (req, res) => {
     startOfToday.setHours(0, 0, 0, 0);
     for (let i = 0; i < Number(profs.total); i++) {
       timeTrackingRet[i] = 0;
+      const flowSum = await Flow.findOne({
+        sen_name: profs.info[i].id,
+        user: profs.user,
+      }).select('sum -_id').lean();
       const sensorY = await Sensor.find({
         index: profs.info[i].id,
         user: profs.user,
-        createAt: { $gte: yesterday, $lte: startOfToday },
+        createAt: { $gte: yesterday, $lt: startOfToday },
       }).sort({ createAt: 1 });
       const sensorN = await Sensor.find({
         index: profs.info[i].id,
@@ -329,21 +346,37 @@ export const getSensors = async (req, res) => {
       }).sort({ createAt: 1 });
       const sensorT = Array(86400 / profs.info[i].watch).fill(null)
       const sensorYRest = []
+      const flowYRest = []
       const dataPressure = []
+      const dataFlow = []
       let timeTracking = 0
       let currentStart = 0;
       let maxPress = 0;
       let minPress = 70;
       let avgPress = 0;
+      const pFlow = {
+        max: 0,
+        min: 1000,
+        avg: 0,
+        sum: flowSum.sum,
+        count: 0
+      }
 
       sensorY.forEach((sensor) => {
         const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
         sensorYRest[index] = sensor.Pressure
+        flowYRest[index] = sensor.flow
       })
       sensorN.forEach((sensor) => {
         maxPress = Math.max(sensor.Pressure, maxPress);
         minPress = Math.min(sensor.Pressure, minPress);
         avgPress += sensor.Pressure;
+        if(sensor.flow){
+          pFlow.max = Math.max(sensor.flow, pFlow.max);
+          pFlow.min = Math.min(sensor.flow, pFlow.min);
+          pFlow.avg += sensor.flow;
+          pFlow.count++
+        }
         if (profs.info) {
           if (sensor.Pressure >= profs.info[i].tracking) {
             const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
@@ -354,14 +387,9 @@ export const getSensors = async (req, res) => {
         }
         currentStart = sensor.createAt
         const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
-        if (dataPressure[index]) {
-          dataPressure[index] = (dataPressure[index] + sensor.Pressure) / 2
-        }
-        else {
-          dataPressure[index] = sensor.Pressure
-        }
+        addDateElement(dataPressure, sensor, index, "Pressure")
+        addDateElement(dataFlow, sensor, index, "flow")
         sensorT[index] = sensor
-        // dataPressure[index] = sensor.Pressure
       })
       if (sensorN.length !== 0) {
         battery[i] = sensorN[sensorN.length - 1].battery
@@ -369,10 +397,12 @@ export const getSensors = async (req, res) => {
       }
       timeTrackingRet[i] = Math.round(timeTracking / 60)
       if (minPress === 70) minPress = 0;
+      if(pFlow.min === 1000) pFlow.min = 0;
       pram[i] = { max: maxPress, min: minPress, avg: avgPress / sensorN.length }
-      sensors[i] = { sensorYRest, sensorT, dataPressure }
+      pramFlow[i] = { ...pFlow, avg: pFlow.avg / pFlow.count};
+      sensors[i] = { sensorYRest, flowYRest, dataFlow, sensorT, dataPressure }
     }
-    return res.status(200).json({ success: true, sensors, timeTrackingRet, battery, temperature, pram })
+    return res.status(200).json({ success: true, sensors, timeTrackingRet, battery, temperature, pram, pramFlow })
   } catch (error) {
     return res.status(500).json({ success: false, error: "Sensor not found" })
   }
@@ -540,4 +570,3 @@ export const addGroup = async (req, res) => {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
   }
 }
-

@@ -1,5 +1,9 @@
 import axios from 'axios';
-import { URL_AUTH, URL_DASHBOARD, URL_SENSOR, URL_GROUP } from '../utils/host';
+
+const URL_AUTH = import.meta.env.VITE_URL_AUTH;
+const URL_DASHBOARD = import.meta.env.VITE_URL_DASHBOARD
+const URL_SENSOR = import.meta.env.VITE_URL_SENSOR
+const URL_GROUP = import.meta.env.VITE_URL_GROUP
 
 const axiosConfig = (token) => ({
     headers: {

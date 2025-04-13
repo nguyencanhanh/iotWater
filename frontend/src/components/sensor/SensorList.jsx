@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from '../../context/authContext'
 // import { Link } from "react-router-dom";
 import { Battery, battery } from "../chart/Chart";
-import RealTimeLineChart, { addDataSensor, connectMqtt, TimeComparison, Param } from "../chart/Chart";
+import RealTimeLineChart, { addDataSensor, connectMqtt, TimeComparison, Param, ParamFlow} from "../chart/Chart";
 import ModalData from "../chart/Modal";
 import { sensorListGet, getSensorInGroup } from "../../api/index"
 import SettingsButton from "../setting/Setting";
@@ -55,6 +55,7 @@ function SensorList() {
   const [dataInfo, setdataInfo] = useState(groupID);
   const [showModal, setShowModal] = useState(false);
   const [pram, setPram] = useState([]);
+  const [pramFlow, setPramFlow] = useState([]);
   const [timeTracking, setTimeTracking] = useState([]);
   const [batteryInit, setBatteryInit] = useState([]);
   const [temp, setTemp] = useState([]);
@@ -83,12 +84,13 @@ function SensorList() {
       if (res.data.success) {
         const data = res.data.sensors
         data.forEach((sensor, index) => {
-          addDataSensor(index, sensor.sensorT, sensor.dataPressure)
+          addDataSensor(index, sensor.sensorT, sensor.dataPressure, sensor.dataFlow)
         })
         setTimeTracking(res.data.timeTrackingRet)
         setBatteryInit(res.data.battery)
         setTemp(res.data.temperature)
         setPram(res.data.pram)
+        setPramFlow(res.data.pramFlow)
         setDataPressure(data)
       } else {
         alert("Failed to fetch sensors");
@@ -178,8 +180,9 @@ function SensorList() {
                     step={step}
                   />
                 </div>
-                <div className="flex border-b-2 border-gray-300 items-center mb-4 w-full">
+                <div className="w-full justify-between">
                   <Param pram={pram} step={step} />
+                  <ParamFlow pram={pramFlow} step={step} />
                 </div>
                 <RealTimeLineChart name={step} label={laInit(dataInfo)} data={dataPressure} scrollPosition={scrollPosition} />
                 <ScrollableTable step={step} watch={device.watch} currentTimeDate={currentTime(dataInfo)} handle={setScrollPosition} data={dataPressure} />

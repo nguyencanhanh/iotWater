@@ -46,6 +46,7 @@ function GroupSensor() {
           <th className="border border-gray-300 p-2">Tên cảm biến</th>
           <th className="border border-gray-300 p-2">Áp suất</th>
           <th className="border border-gray-300 p-2">Lưu lượng</th>
+          <th className="border border-gray-300 p-2">Nhiệt Độ</th>
           <th className="border border-gray-300 p-2">Pin</th>
         </tr>
       </thead>
@@ -70,11 +71,12 @@ function GroupSensor() {
               {dataGroup[group].map((sensor, i) => (
                 <tr key={i} className="hover:bg-gray-100">
                   {/* <td className="border border-gray-300 p-2"></td> */}
-                  <td className="border border-gray-300 p-2">{sensor.id}</td>
+                  <td className="border border-gray-300 text-center p-2">{sensor.id}</td>
                   <td className="border border-gray-300 p-2">{sensor.name}</td>
-                  <td className="border border-gray-300 p-2">{currentData[sensor.id]?.Pressure}</td>
-                  <td className="border border-gray-300 p-2">{currentData[sensor.id]?.Flow}</td>
-                  <td className="border border-gray-300 p-2">{currentData[sensor.id]?.battery}%</td>
+                  <td className="border border-gray-300 text-center p-2">{currentData[sensor.id]?.Pressure}</td>
+                  <td className="border border-gray-300 text-center p-2">{currentData[sensor.id]?.flow}</td>
+                  <td className="border border-gray-300 text-center p-2">{currentData[sensor.id]?.temperature || 25}</td>
+                  <td className="border border-gray-300 text-center p-2">{currentData[sensor.id]?.battery}%</td>
                 </tr>
               ))}
             </React.Fragment>

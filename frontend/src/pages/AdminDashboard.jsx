@@ -8,6 +8,11 @@ const AdminDashboard = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Theo dõi trạng thái sidebar
+  if(!localStorage.getItem("client_ID")){
+    localStorage.setItem("client_ID", `mqtt_${Math.random().toString(16).slice(3)}`)
+  } else{
+    localStorage.setItem("client_ID", `mqtt_${localStorage.getItem("client_ID")}`)
+  }
 
   if (loading) {
     return <div>Loading...</div>;

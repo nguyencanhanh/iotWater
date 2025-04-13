@@ -56,6 +56,7 @@ function AdminSummary() {
                 ...prevData,
                 [messageData.n]: {
                     Pressure: messageData.d.reduce((sum, msg) => sum + msg.p, 0) / messageData.d.length,
+                    flow: messageData.f
                 },
             }));
         });
@@ -117,11 +118,11 @@ function AdminSummary() {
                                         <tbody>
                                             <tr>
                                                 <td className="text-left text-gray-600 text-lg border border-gray-300">Áp suất</td>
-                                                <td className="text-left text-gray-600 text-lg border border-gray-300">{data[point.id]?.Pressure?.toFixed(2)} m</td>
+                                                <td className="text-left text-gray-600 text-lg border text-center border-gray-300">{data[point.id]?.Pressure?.toFixed(2)} m</td>
                                             </tr>
                                             <tr>
                                                 <td className="text-left text-gray-600 text-lg border border-gray-300">Lưu lượng</td>
-                                                <td className="text-left text-gray-600 text-lg border border-gray-300">m3/h</td>
+                                                <td className="text-left text-gray-600 text-lg border text-center border-gray-300">{data[point.id]?.flow} m3/h</td>
                                             </tr>
                                         </tbody>
                                     </table>

@@ -1,7 +1,9 @@
 import mqtt from "mqtt"
 import Sensor from "../models/Sensor.js"
 import Info from "../models/Info.js";
-import axios from 'axios';
+import Flow from "../models/SumFlow.js";
+// import axios from 'axios';
+import { exec } from 'child_process';
 
 let checkTime = false
 const host = 'iotwater2024.mooo.com';
@@ -18,17 +20,20 @@ function sleep(ms) {
 }
 
 async function sendTelegramMessage(token, chatId, message, retries = 3) {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
-
+  // const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  const curlCommand = `curl -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+     -H "Content-Type: application/json" \
+     -d '{"chat_id": "${chatId}", "text": "${message}"}'`;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const response = await axios.get(url, {
-        params: {
-          chat_id: chatId,
-          text: message
-        }
-      });
-      return response.data;
+      // const response = await axios.get(url, {
+      //   params: {
+      //     chat_id: chatId,
+      //     text: message
+      //   }
+      // });
+      exec(curlCommand);
+      return true;
     } catch (error) {
       console.error(`❌ Lỗi khi gửi tin nhắn (Lần ${attempt}):`, error.response ? error.response.data : error.message);
       if (attempt === retries) {
@@ -40,6 +45,7 @@ async function sendTelegramMessage(token, chatId, message, retries = 3) {
 }
 
 const connectMqtt = async () => {
+  let sumFlow = 0;
   client = mqtt.connect(connectUrl, {
     clientId,
     clean: true,
@@ -57,39 +63,30 @@ const connectMqtt = async () => {
       const sen_name = Number(messageData.n);
       const msg_id = Number(messageData.m);
       const user = Number(messageData.u) || 0;
-      const info = await Info.find({ id: sen_name });
       if (msg_id === 1) {
         const data = messageData.d
-        // const timeCreateAt = data[0].t
-        // const timeFake = info[0].sample * 1000;
-        // const dateNow = Date.now() - (data.length - 1) * timeFake;
-        // const timeCheck = Math.abs(timeCreateAt * 1000 - dateNow)
-        // if (Number(timeCheck) > 60000) {
-        //   checkTime = true
-        // }
-        // else {
-        //   checkTime = false
-        // }
-        // console.log(checkTime)
+        sumFlow += messageData.s || 0
+        if(sumFlow > 10){
+          await Flow.findOneAndUpdate({ sen_name: sen_name, user: user }, { $inc: { sum: sumFlow } });
+          sumFlow = 0
+        }
         data.forEach(async (message, index) => {
-          // if (checkTime) {
-          //   message.t = dateNow + (index + 1) * timeFake;
-          // }
-          // else {
-          // }
           message.t = message.t * 1000
+		      const flowA = message.f || messageData.f
           const newSensor = new Sensor({
             index: sen_name,
             user: user,
             battery: message.b || messageData.b,
             Pressure: message.p,
             temperature: messageData.t,
+            flow: flowA < 300 ? flowA : null,
             createAt: message.t
           });
           await newSensor.save();
         })
       }
       else if (msg_id === 2) {
+        const info = await Info.find({ id: sen_name });
         const name = info[0].name
         const currentDate = new Date(Date.now()).toLocaleString('en-GB', {
           hour: '2-digit',
@@ -101,6 +98,7 @@ const connectMqtt = async () => {
         }
       }
       else if (msg_id === 3) {
+        const info = await Info.find({ id: sen_name });
         const name = info[0].name
         const currentDate = new Date(Date.now()).toLocaleString('en-GB', {
           hour: '2-digit',

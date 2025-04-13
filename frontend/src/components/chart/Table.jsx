@@ -1,17 +1,18 @@
 import React, { useEffect, useState, useRef } from "react";
 import { listDataTable } from "./Chart";
 
+function dateString(index, offset, startDate, startHour) {
+  if (offset) {
+    return `${startDate[Math.floor((index + offset) / 288)].toISOString().split("T")[0]} - ${String(Math.floor(((index + startHour * 12) % 288) / 12)).padStart(2, "0")}:${String((index * 5) % 60).padStart(2, "0")}`
+  }
+  return `${String(Math.floor(((index + startHour * 12) % 288) / 12)).padStart(2, "0")}:${String((index * 5) % 60).padStart(2, "0")}`
+}
+
 export const TableModal = (props) => {
   const tableData = props.dataModal.sensorT;
   const tableContainerRef = useRef(null);
   const headerRef = useRef(null);
 
-  const handleScroll = () => {
-    const scrollContainer = document.getElementById("M");
-    const scrollTop = scrollContainer.scrollTop;
-    const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
-    props.setScrollPosition(Math.floor(scrollTop * props.lengScrol / maxScroll));
-  }
   useEffect(() => {
     // Đồng bộ thanh cuộn
     const syncScrollBar = () => {
@@ -46,8 +47,6 @@ export const TableModal = (props) => {
       {/* Body cuộn, chỉ hiển thị 5 hàng */}
       <div
         ref={tableContainerRef}
-        id={"M"}
-        onScroll={handleScroll}
         className="overflow-y-auto"
         style={{ maxHeight: "calc(8 * 40px)" }} // Giới hạn chiều cao cho đúng 5 hàng
       >
@@ -59,26 +58,20 @@ export const TableModal = (props) => {
               {tableData.map((row, index) => (
                 <tr key={index} className="h-8 text-lg">
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight" style={{ width: "30%" }}>
-                    {`${props.startDate[Math.floor(index / 288)].toISOString().split("T")[0]} - ${String(Math.floor(((index + props.startHour * 12) % 288) / 12)).padStart(2, "0")}:${String((index * 5) % 60).padStart(2, "0")}`}
+                    {dateString(index, props.offset, props.startDate, props.startHour)}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {props.dataModal.sensorH[index] !== null ? props.dataModal.sensorH[index]?.toFixed(1) : ""} {/* Áp suất 2 (Bar) */}
+                    {props.dataModal.sensorH[index] !== null ? props.dataModal.sensorH[index]?.toFixed(1) : ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
                     {props.dataModal.sensorY[index] !== null ? props.dataModal.sensorY[index]?.toFixed(1) : ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {/* {props.dataModal.sensorH[index] !== null ? props.dataModal.sensorH[index]?.toFixed(1) : ""} Áp suất 2 (Bar) */}
+                    {props.dataModal.flowH[index] !== null ? props.dataModal.flowH[index]?.toFixed(2) : ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {/* {props.dataModal.sensorY[index] !== null ? props.dataModal.sensorY[index]?.toFixed(1) : ""} */}
+                    {props.dataModal.flowY[index] !== null ? props.dataModal.flowY[index]?.toFixed(2) : ""}
                   </td>
-                  {/* <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight">
-                    {row?.temperature ?? ""}
-                  </td> */}
-                  {/* <td className="border border-gray-300 px-2 py-0 text-center w-1/6 leading-tight" style={{ width: "10%" }}>
-                    {row?.battery != null ? `${row.battery}%` : ""}
-                  </td> */}
                 </tr>
               ))}
             </tbody>
@@ -173,10 +166,10 @@ const ScrollableTable = (device) => {
                     {device.data[device.step].sensorYRest[index] !== null ? device.data[device.step].sensorYRest[index] : ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
-                    {/* {device.data[device.step].sensorYRest[index] !== null ? device.data[device.step].sensorYRest[index] : ""} */}
+                    {row?.flow ?? ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
-                    {/* {device.data[device.step].sensorYRest[index] !== null ? device.data[device.step].sensorYRest[index] : ""} */}
+                    {device.data[device.step].flowYRest[index] !== null ? device.data[device.step].flowYRest[index] : ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/6">
                     {row?.battery != null ? `${row.battery}%` : ""}

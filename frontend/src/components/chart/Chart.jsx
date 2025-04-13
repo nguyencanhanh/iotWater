@@ -39,6 +39,7 @@ export let temperature = [];
 let timeReach = [];
 export let respondInterval;
 export const listDataSensor = []
+export const flowDataSensor = []
 export const listDataTable = []
 
 function convertTime(timeConvert, watch) {
@@ -46,9 +47,10 @@ function convertTime(timeConvert, watch) {
   return (timeConvert.getHours() * 60 + timeConvert.getMinutes()) * 60 / watch
 }
 
-export const addDataSensor = (indexSensors, data, dataPressure) => {
+export const addDataSensor = (indexSensors, data, dataPressure, dataFlow) => {
   listDataTable[indexSensors] = data
   listDataSensor[indexSensors] = dataPressure
+  flowDataSensor[indexSensors] = dataFlow;
 }
 
 export const connectMqtt = (timeTrackingRet, info, idMap) => {
@@ -91,6 +93,7 @@ export const connectMqtt = (timeTrackingRet, info, idMap) => {
             const message = {
               createAt: mess.t,
               Pressure: mess.p,
+              flow: mess.f || messageData.f,
               battery: mess.b || messageData.b
             }
             message.createAt = message.createAt * 1000
@@ -159,18 +162,18 @@ export const ChartMadal = (profs) => {
       },
       {
         label: "Lưu lượng(m3/h)",
-        data: [20, 30, 40, 20, 20, 20, 20, 20],
-        borderColor: "#00FFFF", // Màu xanh
+        data: profs.dataModal.flowH,
+        borderColor: "#000080", // Màu xanh
         tension: 0.1, // Độ cong của đường
         pointRadius: pointLage, // Độ lớn điểm
         borderWidth: 1,
-        pointBackgroundColor: "#00FFFF", // Màu điểm
+        pointBackgroundColor: "#000080", // Màu điểm
         yAxisID: "y2",
         spanGaps: true
       },
       {
         label: "Lưu lượng cùng kỳ(m3/h)",
-        data: [50, 50, 12, 54, 52, 12, 45, 7, 88, 11, 23, 66, 88, 22],
+        data: profs.dataModal.flowY,
         borderColor: "#FFFF00", // Màu xanh
         tension: 0.1, // Độ cong của đường
         pointRadius: pointLage, // Độ lớn điểm
@@ -186,6 +189,11 @@ export const ChartMadal = (profs) => {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      mode: 'nearest', // <<== điểm gần nhất
+      axis: 'x', // hoặc 'xy' nếu muốn cả 2 chiều
+      intersect: false, // <<== quan trọng: không cần trỏ đúng vào điểm
+    },
     plugins: {
       legend: { display: true, position: "top" },
       tooltip: { enabled: true },
@@ -238,24 +246,12 @@ export const ChartMadal = (profs) => {
         position: "right",
         title: { display: true, text: "Lưu lượng (l/s)" },
         min: 0,
-        max: 250,
+        max: 300,
         grid: { drawOnChartArea: false }, // Ẩn lưới của trục này
       },
     },
   };
 
-  // useEffect(() => {
-  //   if (chartRef.current) {
-  //     const chart = chartRef.current; // Truy cập biểu đồ
-  //     const annotation = chart.options.plugins.annotation;
-
-  //     // Cập nhật giá trị xMin và xMax
-  //     annotation.annotations.highlightBox.xMin = profs.scrollPosition;
-  //     annotation.annotations.highlightBox.xMax = profs.scrollPosition + 5;
-
-  //     chart.update(); // Cập nhật biểu đồ mà không reset trạng thái
-  //   }
-  // }, [profs.scrollPosition]);
 
   return (
     <div className="w-full h-60 mb-3">
@@ -293,18 +289,18 @@ const RealTimeLineChart = (profs) => {
       },
       {
         label: "Lưu lượng(m3/h)",
-        data: [20, 30, 40, 20, 20, 20, 20, 20],
-        borderColor: "#00FFFF", // Màu xanh
+        data: profs.data[profs.name].dataFlow,
+        borderColor: "#000080", // Màu xanh
         tension: 0.1, // Độ cong của đường
         pointRadius: pointLage, // Độ lớn điểm
         borderWidth: 1,
-        pointBackgroundColor: "#00FFFF", // Màu điểm
+        pointBackgroundColor: "#000080", // Màu điểm
         yAxisID: "y2",
         spanGaps: true
       },
       {
         label: "Lưu lượng cùng kỳ(m3/h)",
-        data: [50, 50, 12, 54, 52, 12, 45, 7, 88, 11, 23, 66, 88, 22],
+        data: profs.data[profs.name].flowYRest,
         borderColor: "#FFFF00", // Màu xanh
         tension: 0.1, // Độ cong của đường
         pointRadius: pointLage, // Độ lớn điểm
@@ -320,6 +316,11 @@ const RealTimeLineChart = (profs) => {
   const [options, setOptions] = useState({
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      mode: 'nearest', // <<== điểm gần nhất
+      axis: 'x', // hoặc 'xy' nếu muốn cả 2 chiều
+      intersect: false, // <<== quan trọng: không cần trỏ đúng vào điểm
+    },
     plugins: {
       legend: {
         display: true,
@@ -377,7 +378,7 @@ const RealTimeLineChart = (profs) => {
         position: "right",
         title: { display: true, text: "Lưu lượng (m3/h)" },
         min: 0,
-        max: 250,
+        max: 300,
         grid: { drawOnChartArea: false }, // Ẩn lưới của trục này
       },
     },
@@ -386,6 +387,7 @@ const RealTimeLineChart = (profs) => {
   useEffect(() => {
     setData((prevData) => {
       prevData.datasets[0].data = listDataSensor[profs.name];
+      prevData.datasets[2].data = flowDataSensor[profs.name];
       return prevData;
     });
   }, [changeData]);
@@ -498,6 +500,17 @@ export const Param = (profs) => {
       <p>max: {profs.pram[profs.step].max}</p>
       <p className='ml-3'>min: {profs.pram[profs.step].min}</p>
       <p className='ml-3'>avg: {profs.pram[profs.step].avg?.toFixed(2)}</p>
+    </div>
+  );
+};
+
+export const ParamFlow = (profs) => {
+  return (
+    <div className="flex">
+      <p>max: {profs.pram[profs.step].max}</p>
+      <p className='ml-3'>min: {profs.pram[profs.step].min}</p>
+      <p className='ml-3'>avg: {profs.pram[profs.step].avg?.toFixed(2)}</p>
+      <p className='ml-3'>sum: {profs.pram[profs.step].sum?.toFixed(1)}</p>
     </div>
   );
 };

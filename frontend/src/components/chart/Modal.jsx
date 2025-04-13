@@ -5,6 +5,7 @@ import { ChartMadal } from './Chart';
 import { TableModal } from './Table';
 import { exportDataPost } from '../../api/index';
 import { useAuth } from '../../context/authContext'
+import {differenceInCalendarDays} from 'date-fns'
 
 function generateLabelsAndData(watch, hourStart) {
   const labels = [];
@@ -41,11 +42,18 @@ function getLength(lengModal, listDate, start, end) {
   }
 }
 
+function convertValue(a, b){
+  return Math.floor((b - a) / (1000 * 3600 * 24));
+}
+
+function convertTime(timeConvert, watch) {
+  return timeConvert.getHours() * 3600 / watch
+}
 
 function getDatesInRange(startDate, endDate) {
   const dateArray = [];
   const currentDate = new Date(startDate);
-  while (currentDate.getDate() < endDate.getDate()) {
+  while (differenceInCalendarDays(endDate, currentDate)) {
     dateArray.push(new Date(currentDate)); // YYYY-MM-DD
     currentDate.setDate(currentDate.getDate() + 1);
   }
@@ -61,7 +69,7 @@ const ModalData = (props) => {
   const [dataModal, setDataModal] = useState(null);
   const [fromDate, setFromDate] = useState(dateData[0]);
   const [toDate, setToDate] = useState(dateData[1]);
-  const [scrollPosition, setScrollPosition] = useState(0);
+  const [offset, setOffset] = useState(Math.floor(convertTime(new Date(dateData[0]), 300)));
   const [listDate, setListDate] = useState(getDatesInRange(dateData[0], new Date(dateData[1])));
   const startDate = new Date(fromDate).getHours();
   const endDate = new Date(toDate).getHours();
@@ -71,6 +79,7 @@ const ModalData = (props) => {
       const res = await sensorListGet(localStorage.getItem("token"), { sen_name: dateData[2], timeGet: [fromDate, toDate], user: user.user });
       if (res.data.success) {
         const data = res.data
+        console.log(res.data)
         setDataModal(data);
       } else {
         alert("Failed to fetch sensors");
@@ -93,6 +102,7 @@ const ModalData = (props) => {
     }
     const listDateNew = getDatesInRange(fromDate, new Date(toDate));
     setListDate(listDateNew);
+    setOffset(Math.floor(convertTime(new Date(listDateNew[0]), 300)))
     setDataLabel(generateLabelsAndData(getLength(1440, listDateNew), listDateNew[0].getHours()));
     fetchSensors();
   };
@@ -108,7 +118,7 @@ const ModalData = (props) => {
         const url = window.URL.createObjectURL(res.data);
         const link = document.createElement("a");
         link.href = url;
-        link.setAttribute("download", "export.xlsx");
+        link.setAttribute("download", `${name}_${fromDate}_${toDate}.xlsx`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -172,9 +182,8 @@ const ModalData = (props) => {
               length={288 * listDate.length}
               dataLabel={dataLabel}
               dataModal={dataModal}
-              scrollPosition={scrollPosition}
             />
-            <TableModal dataModal={dataModal} startDate={listDate} setScrollPosition={setScrollPosition} startHour={startDate} />
+            <TableModal dataModal={dataModal} startDate={listDate} offset={offset} startHour={startDate} />
           </div>
         )}
       </div>

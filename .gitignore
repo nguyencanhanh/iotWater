@@ -2,4 +2,6 @@
 frontend/node_modules/
 server/node_modules/
 mqtt/node_modules/
+server/.env
+frontend/node_modules/.env
 .vscode/

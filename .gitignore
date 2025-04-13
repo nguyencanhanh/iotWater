@@ -2,6 +2,6 @@
 frontend/node_modules/
 server/node_modules/
 mqtt/node_modules/
-server/.env
-frontend/.env
+git rm --cached server/.env
+git rm --cached frontend/.env
 .vscode/

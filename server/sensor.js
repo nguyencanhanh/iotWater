@@ -12,7 +12,6 @@ const userRegister = async () => {
       name: "bacgiang3",
       lat: 21.054073,
       lng: 105.179155,
-      sample: 300,
       temperature: 99
     })
     await info.save()

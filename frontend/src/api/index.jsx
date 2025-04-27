@@ -4,6 +4,7 @@ const URL_AUTH = import.meta.env.VITE_URL_AUTH;
 const URL_DASHBOARD = import.meta.env.VITE_URL_DASHBOARD
 const URL_SENSOR = import.meta.env.VITE_URL_SENSOR
 const URL_GROUP = import.meta.env.VITE_URL_GROUP
+const URL_ALARM = import.meta.env.VITE_URL_ALARM
 
 const axiosConfig = (token) => ({
     headers: {
@@ -76,6 +77,31 @@ export const deleteGroup = (token, sen) => {
         axiosConfig(token)
     )
 }
+
+export const getAlarm = (token, sen_name) => {
+    return axios.post(
+        `${URL_ALARM}`,
+        sen_name,
+        axiosConfig(token)
+    )
+}
+
+export const addAlarm = (token, sen) => {
+    return axios.post(
+        `${URL_ALARM}/add`,
+        sen,
+        axiosConfig(token)
+    )
+}
+
+export const deleteAlarm = (token, sen) => {
+    return axios.post(
+        `${URL_ALARM}/delete`,
+        sen,
+        axiosConfig(token)
+    )
+}
+
 
 export const dashboardSummaryGet = (token) => {
     return axios.get(`${URL_DASHBOARD}/summary`,

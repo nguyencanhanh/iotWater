@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { changeData } from "../sensor/SensorList"
 import mqtt from 'mqtt';
 import { Sema } from 'async-sema'
-import { produce } from "immer";
 import annotationPlugin from "chartjs-plugin-annotation";
 import { Line } from "react-chartjs-2";
 import {
@@ -35,6 +34,7 @@ const pointLage = 0
 //end define
 
 export let battery = [];
+export let flowsum = [];
 export let temperature = [];
 let timeReach = [];
 export let respondInterval;
@@ -81,19 +81,20 @@ export const connectMqtt = (timeTrackingRet, info, idMap) => {
       await semaphore.acquire();
       try {
         messageData = JSON.parse(messageData.toString());
-        const sen_name = idMap[Number(messageData.n)];
+        const sen_name = idMap[Number(messageData.n) === 255 ? 0 : messageData.n];
         const msg_id = Number(messageData.m);
         if (msg_id === 1 && sen_name != null) {
           const dataMess = messageData.d
           const lastValue = dataMess[dataMess.length - 1];
           battery[sen_name] = lastValue.b || messageData.b;
+          flowsum[sen_name] = messageData.s;
           temperature[sen_name] = messageData.t;
           let currentStart = dataMess[0].t * 1000;
           dataMess.forEach(async (mess, index) => {
             const message = {
               createAt: mess.t,
               Pressure: mess.p,
-              flow: mess.f || messageData.f,
+              flow: mess.f,
               battery: mess.b || messageData.b
             }
             message.createAt = message.createAt * 1000
@@ -139,24 +140,13 @@ export const ChartMadal = (profs) => {
     labels: profs.dataLabel.labels,
     datasets: [
       {
-        label: "Áp suất hôm nay (m)",
+        label: "Áp suất(m)",
         data: profs.dataModal.sensorH,
         borderColor: "#FF0000", // Màu xanh lá
         tension: 0.1, // Độ cong của đường
         borderWidth: 1,
         pointRadius: pointLage, // Độ lớn điểm
         pointBackgroundColor: "#FF0000", // Màu điể
-        yAxisID: "y1",
-        spanGaps: true
-      },
-      {
-        label: "Áp suất cùng kì (m)",
-        data: profs.dataModal.sensorY,
-        borderColor: "#000000", // Màu xanh
-        tension: 0.1, // Độ cong của đường
-        pointRadius: pointLage, // Độ lớn điểm
-        borderWidth: 1,
-        pointBackgroundColor: "#000000", // Màu điểm
         yAxisID: "y1",
         spanGaps: true
       },
@@ -168,17 +158,6 @@ export const ChartMadal = (profs) => {
         pointRadius: pointLage, // Độ lớn điểm
         borderWidth: 1,
         pointBackgroundColor: "#000080", // Màu điểm
-        yAxisID: "y2",
-        spanGaps: true
-      },
-      {
-        label: "Lưu lượng cùng kỳ(m3/h)",
-        data: profs.dataModal.flowY,
-        borderColor: "#FFFF00", // Màu xanh
-        tension: 0.1, // Độ cong của đường
-        pointRadius: pointLage, // Độ lớn điểm
-        borderWidth: 1,
-        pointBackgroundColor: "#FFFF00", // Màu điểm
         yAxisID: "y2",
         spanGaps: true
       },
@@ -223,13 +202,6 @@ export const ChartMadal = (profs) => {
             scaleID: "x",
             value: 0, // Cập nhật khi di chuột
           },
-          // highlightBox: {
-          //   type: "box",
-          //   xMin: 0,  // Điều chỉnh vị trí vùng màu
-          //   xMax: 5,
-          //   backgroundColor: "rgba(255, 0, 0, 0.3)", // Màu đỏ trong suốt
-          //   borderWidth: 1,
-          // }
         },
       },
     },
@@ -237,14 +209,14 @@ export const ChartMadal = (profs) => {
       x: { min: 0, max: profs.length, grid: { display: false } },
       y1: {
         position: "left",
-        title: { display: true, text: "Áp suất (kg/m²)" },
+        title: { display: true, text: "Áp suất (m)" },
         min: 0,
         max: 50,
         grid: { color: "rgba(200, 200, 200, 0.2)" },
       },
       y2: {
         position: "right",
-        title: { display: true, text: "Lưu lượng (l/s)" },
+        title: { display: true, text: "Lưu lượng (m3/h)" },
         min: 0,
         max: 300,
         grid: { drawOnChartArea: false }, // Ẩn lưới của trục này
@@ -263,11 +235,11 @@ export const ChartMadal = (profs) => {
 const RealTimeLineChart = (profs) => {
   const chartRef = useRef(null);
   const [chartData, setData] = useState({
-    labels: profs.label[profs.name],
+    labels: profs.label,
     datasets: [
       {
         label: "Áp(m)",
-        data: profs.data[profs.name].dataPressure,
+        data: profs.data.dataPressure,
         borderColor: "#FF0000", // Màu xanh lá
         tension: 0.1, // Độ cong của đường
         pointRadius: pointLage, // Độ lớn điểm
@@ -278,7 +250,7 @@ const RealTimeLineChart = (profs) => {
       },
       {
         label: "Áp cùng kỳ(m)",
-        data: profs.data[profs.name].sensorYRest,
+        data: profs.data.sensorYRest,
         borderColor: "#000000", // Màu xanh
         tension: 0.1, // Độ cong của đường
         pointRadius: pointLage, // Độ lớn điểm
@@ -289,7 +261,7 @@ const RealTimeLineChart = (profs) => {
       },
       {
         label: "Lưu lượng(m3/h)",
-        data: profs.data[profs.name].dataFlow,
+        data: profs.data.dataFlow,
         borderColor: "#000080", // Màu xanh
         tension: 0.1, // Độ cong của đường
         pointRadius: pointLage, // Độ lớn điểm
@@ -300,7 +272,7 @@ const RealTimeLineChart = (profs) => {
       },
       {
         label: "Lưu lượng cùng kỳ(m3/h)",
-        data: profs.data[profs.name].flowYRest,
+        data: profs.data.flowYRest,
         borderColor: "#FFFF00", // Màu xanh
         tension: 0.1, // Độ cong của đường
         pointRadius: pointLage, // Độ lớn điểm
@@ -362,14 +334,14 @@ const RealTimeLineChart = (profs) => {
     scales: {
       x: {
         min: 0,
-        max: profs.label[profs.name]?.length,
+        max: profs.label?.length,
         grid: {
           display: false,
         },
       },
       y1: {
         position: "left",
-        title: { display: true, text: "Áp suất (kg/m²)" },
+        title: { display: true, text: "Áp suất (m)" },
         min: 0,
         max: 50,
         grid: { color: "rgba(200, 200, 200, 0.2)" },
@@ -398,12 +370,12 @@ const RealTimeLineChart = (profs) => {
       const annotation = chart.options.plugins.annotation;
 
       // Cập nhật giá trị xMin và xMax
-      annotation.annotations.highlightBox.xMin = profs.scrollPosition[profs.name];
-      annotation.annotations.highlightBox.xMax = profs.scrollPosition[profs.name] + 5;
+      annotation.annotations.highlightBox.xMin = profs.scrollPosition;
+      annotation.annotations.highlightBox.xMax = profs.scrollPosition + 5;
 
       chart.update(); // Cập nhật biểu đồ mà không reset trạng thái
     }
-  }, [profs.scrollPosition[profs.name]]);
+  }, [profs.scrollPosition]);
 
   return (
     <div className="w-full h-60">
@@ -412,26 +384,19 @@ const RealTimeLineChart = (profs) => {
   );
 };
 
-export const Battery = ({ step, data, temp, dataInfo, setSingnals, signalStrength }) => {
-  const [batteryLevel, setBatteryLevel] = useState(data[step]);
-  const [tem, setTempurature] = useState(temp[step])
+export const Battery = ({step, data, temp, dataInfo}) => {
+  const [batteryLevel, setBatteryLevel] = useState(data);
+  const [tem, setTempurature] = useState(temp);
+  const [signalStrength, setSingnals] = useState(0)
   useEffect(() => {
-    setBatteryLevel(battery[step] || data[step]);
-    setTempurature(temperature[step] || temp[step])
+    setBatteryLevel(battery[step] || data);
+    setTempurature(temperature[step] || temp)
     if (battery[step]) {
-      setSingnals(prevData =>
-        produce(prevData, draft => {
-          draft[step] = 3;
-        })
-      )
+      setSingnals(3)
     }
     setTimeout(() => {
-      setSingnals(prevData =>
-        produce(prevData, draft => {
-          draft[step] = 0;
-        })
-      )
-    }, dataInfo[step]?.interval * 1000 + 40000);
+      setSingnals(0)
+    }, dataInfo?.interval * 1000 + 40000);
   }, [changeData]);
 
   const getBatteryColor = (percentage) => {
@@ -445,7 +410,7 @@ export const Battery = ({ step, data, temp, dataInfo, setSingnals, signalStrengt
     return bars.map((height, index) => (
       <div
         key={index}
-        className={`w-1 ${signalStrength[step] >= index + 1 ? "bg-green-500" : "bg-gray-300"}`}
+        className={`w-1 ${signalStrength >= index + 1 ? "bg-green-500" : "bg-gray-300"}`}
         style={{ height: `${height}%` }}
       ></div>
     ));
@@ -478,7 +443,7 @@ export const Battery = ({ step, data, temp, dataInfo, setSingnals, signalStrengt
 
 
 export const TimeComparison = (profs) => {
-  const [timeMoreThan, setTimeMoreThan] = useState(profs.init[profs.step])
+  const [timeMoreThan, setTimeMoreThan] = useState(profs.init)
   if (!profs.dataModal) {
     useEffect(() => {
       setTimeMoreThan(timeReach[profs.step]);
@@ -487,7 +452,7 @@ export const TimeComparison = (profs) => {
   return (
     <div className="flex items-center w-1/2">
       <span className="text-sm font-medium text-gray-700 mr-2">
-        Lớn hơn <span className="text-red-600">{profs.info[profs.step]?.tracking}</span> m:
+        Lớn hơn <span className="text-red-600">{profs.info?.tracking}</span> m:
       </span>
       <span className="text-lg font-bold text-teal-700">{Math.floor(timeMoreThan / 60)}H {timeMoreThan % 60}P</span>
     </div>
@@ -497,20 +462,29 @@ export const TimeComparison = (profs) => {
 export const Param = (profs) => {
   return (
     <div className="flex">
-      <p>max: {profs.pram[profs.step].max}</p>
-      <p className='ml-3'>min: {profs.pram[profs.step].min}</p>
-      <p className='ml-3'>avg: {profs.pram[profs.step].avg?.toFixed(2)}</p>
+      <p>max: {profs.pram?.max}</p>
+      <p className='ml-3'>min: {profs.pram?.min}</p>
+      <p className='ml-3'>avg: {profs.pram?.avg?.toFixed(2)}</p>
     </div>
   );
 };
 
 export const ParamFlow = (profs) => {
+  const [sumFlow, setSumFlow] = useState(profs.pram?.sum?.toFixed(1))
+  const [total, setTotal] = useState(profs.pram?.total?.toFixed(1))
+  useEffect(() => {
+    setTotal((prevData) => {
+      return !flowsum[profs.step] ? prevData : (Number(prevData) + flowsum[profs.step] - Number(sumFlow)).toFixed(1)
+    });
+    setSumFlow(flowsum[profs.step] ? flowsum[profs.step].toFixed(1) : profs.pram?.sum?.toFixed(1));
+  }, [changeData]);
   return (
     <div className="flex">
-      <p>max: {profs.pram[profs.step].max}</p>
-      <p className='ml-3'>min: {profs.pram[profs.step].min}</p>
-      <p className='ml-3'>avg: {profs.pram[profs.step].avg?.toFixed(2)}</p>
-      <p className='ml-3'>sum: {profs.pram[profs.step].sum?.toFixed(1)}</p>
+      <p>max: {profs.pram?.max}</p>
+      <p className='ml-3'>min: {profs.pram?.min}</p>
+      <p className='ml-3'>avg: {profs.pram?.avg?.toFixed(2)}</p>
+      <p className='ml-3'>total: {total}</p>
+      <p className='ml-3'>sum: {sumFlow}</p>
     </div>
   );
 };

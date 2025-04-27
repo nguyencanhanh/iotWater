@@ -59,15 +59,16 @@ function SensorList() {
   const [timeTracking, setTimeTracking] = useState([]);
   const [batteryInit, setBatteryInit] = useState([]);
   const [temp, setTemp] = useState([]);
-  const [signalStrength, setSingnals] = useState(Array(groupID.length).fill(0))
   const [isViEdit, setIsEdit] = useState(Array(groupID.length).fill(false));
   const [scrollPosition, setScrollPosition] = useState(Array(groupID.length).fill(0));
   const fetchSetting = async (total, info) => {
     try {
       const res = await getSensorInGroup(localStorage.getItem("token"), {group: groupPram, user: user.user});
       if (res.data.success) {
-        setdataInfo(res.data.senInGroup)
-        setFilteredDevices(res.data.senInGroup)
+        const resInfo = res.data.senInGroup
+        setdataInfo(resInfo)
+        setFilteredDevices(resInfo)
+        fetchSensors(resInfo.length, resInfo)
       } else {
         alert("Failed to fetch sensors");
       }
@@ -106,14 +107,13 @@ function SensorList() {
   };
 
   useEffect(() => {
-    fetchSensors(groupID.length, groupID);
     fetchSetting()
     battery.length = 0;
   }, []);
 
   changeData = connectMqtt(timeTracking, dataInfo, idMap)
   const filterSensor = (e) => {
-    const records = groupID.filter((dep) => dep.name.toLowerCase().includes(e.target.value.toLowerCase()))
+    const records = dataInfo.filter((dep) => dep.name.toLowerCase().includes(e.target.value.toLowerCase()))
     setFilteredDevices(records)
   }
 
@@ -168,24 +168,25 @@ function SensorList() {
                     Thông tin
                   </button>
                   <h3 className="text-lg font-bold">{device.name} ({dataInfo[step].id})</h3>
-                  <Battery step={step} temp={temp} data={batteryInit} signalStrength={signalStrength} setSingnals={setSingnals} dataInfo={dataInfo} />
+                  <Battery step={step} temp={temp[step]} data={batteryInit[step]} dataInfo={dataInfo[step]} />
                   {isViEdit[step] ? <EditComponent step={step} id={dataInfo[step].id} setIsEdit={setIsEdit} /> : null}
                 </div>
                 <div className="flex w-full justify-between" >
-                  <TimeComparison step={step} init={timeTracking} info={groupID} />
+                  <TimeComparison step={step} init={timeTracking[step]} info={groupID[step]} />
                   <SettingsButton total={groupID.length}
                     info={dataInfo}
                     setdataInfo={setdataInfo}
                     handleData={handleData}
+                    adj={device.adj}
                     step={step}
                   />
                 </div>
                 <div className="w-full justify-between">
-                  <Param pram={pram} step={step} />
-                  <ParamFlow pram={pramFlow} step={step} />
+                  <Param pram={pram[step]}/>
+                  <ParamFlow step={step} pram={pramFlow[step]}/>
                 </div>
-                <RealTimeLineChart name={step} label={laInit(dataInfo)} data={dataPressure} scrollPosition={scrollPosition} />
-                <ScrollableTable step={step} watch={device.watch} currentTimeDate={currentTime(dataInfo)} handle={setScrollPosition} data={dataPressure} />
+                <RealTimeLineChart name={step} adj={device.adj} label={laInit(dataInfo)[step]} data={dataPressure[step]} scrollPosition={scrollPosition[step]} />
+                <ScrollableTable step={step} watch={dataInfo[step].watch} adj={device.adj} currentTimeDate={currentTime(dataInfo)[step]} handle={setScrollPosition} data={dataPressure[step]} />
               </li>
             )))
             }

@@ -1,11 +1,11 @@
 import mqtt from "mqtt"
 import Sensor from "../models/Sensor.js"
 import Info from "../models/Info.js";
-import Flow from "../models/SumFlow.js";
 // import axios from 'axios';
 import { exec } from 'child_process';
 
-let checkTime = false
+const allUser = [0]
+const allSensors = []
 const host = 'iotwater2024.mooo.com';
 const port = 1883;
 const clientId = `mqtt_${Math.random().toString(16).slice(3)}`
@@ -44,8 +44,46 @@ async function sendTelegramMessage(token, chatId, message, retries = 3) {
   }
 }
 
+const newSensor = async (user, id) => {
+  try {
+    const newSen = new Info({
+      user: user,
+      tracking: 0,
+      interval: 60,
+      wPress: 0,
+      wPressTime: 0,
+      timeAlarm: 300,
+      watch: 60,
+      adj: 0, 
+      id: id,
+      name: id,
+      lat: 0,
+      lng: 0,
+      group: "Không có",
+      sample: 60,
+      description: "",
+      temperature: 25,
+    })
+    await newSen.save()
+  } catch (error) {
+    console.log(error)
+  }
+}
+
+
 const connectMqtt = async () => {
-  let sumFlow = 0;
+  // let sumFlow = 0;
+  for (const user of allUser) {
+    const info = await Info.find({ user: user });
+    if (info.length > 0) {
+      info.forEach((sensor) => {
+        if(!allSensors[user]) {
+          allSensors[user] = {}
+        }
+        allSensors[user][sensor.id] = 1
+      })
+    }
+  }
   client = mqtt.connect(connectUrl, {
     clientId,
     clean: true,
@@ -60,26 +98,30 @@ const connectMqtt = async () => {
   client.on("message", async (topic, messageData) => {
     try {
       messageData = JSON.parse(messageData.toString());
-      const sen_name = Number(messageData.n);
-      const msg_id = Number(messageData.m);
+      const sen_name = Number(messageData.n) === 255 ? 0 : messageData.n;
       const user = Number(messageData.u) || 0;
+      if(!allSensors[user][sen_name]) {
+        newSensor(user, sen_name)
+        allSensors[user][sen_name] = 1
+      }
+      const msg_id = Number(messageData.m);
       if (msg_id === 1) {
         const data = messageData.d
-        sumFlow += messageData.s || 0
-        if(sumFlow > 10){
-          await Flow.findOneAndUpdate({ sen_name: sen_name, user: user }, { $inc: { sum: sumFlow } });
-          sumFlow = 0
-        }
+        // sumFlow = messageData.s
+        // if (sumFlow) {
+        //   await Flow.findOneAndUpdate({ sen_name: sen_name, user: user }, { $set: { sum: sumFlow } });
+        //   //   sumFlow = 0
+        // }
         data.forEach(async (message, index) => {
           message.t = message.t * 1000
-		      const flowA = message.f || messageData.f
           const newSensor = new Sensor({
             index: sen_name,
             user: user,
             battery: message.b || messageData.b,
             Pressure: message.p,
             temperature: messageData.t,
-            flow: flowA < 300 ? flowA : null,
+            sum: messageData.s,
+            flow: message.f,
             createAt: message.t
           });
           await newSensor.save();

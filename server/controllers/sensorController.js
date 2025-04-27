@@ -1,14 +1,29 @@
 import Sensor from "../models/Sensor.js"
-// import Info from "../models/User.js";
 import InfoSen from "../models/Info.js";
 import Group from "../models/Group.js";
-import Flow from "../models/SumFlow.js";
+import Alarm from "../models/AlarmFlow.js"
 import ExcelJS from 'exceljs';
 import { client } from "../mqtt/mqtt.js";
 import cron from 'node-cron'
 import { differenceInCalendarDays } from 'date-fns'
 
-const cronJobs = [];
+const scheduledJobs = {};
+const userGlobal = [0];
+
+// cron.schedule('1 0 * * *', () => {
+
+// });
+
+// function runYourFunction() {
+//   // Code của bạn ở đây
+//   console.log('Đang thực hiện công việc...');
+// }
+
+function timeToCronExpr(timeStr) {
+  const [hour, minute] = timeStr.split(':').map(Number);
+  return `${minute} ${hour} * * *`;
+}
+
 
 const publishMessage = (key, message, sen_id) => {
   client.publish(
@@ -23,62 +38,6 @@ const publishMessage = (key, message, sen_id) => {
     }
   )
 }
-
-const processJob = (sen_name, timeAlarm) => {
-  cronJobs[sen_name] = []
-  const startHour = Math.floor(timeAlarm / 60);  // Giờ bắt đầu
-  const startMinute = timeAlarm % 60;  // Phút bắt đầu
-  const duration = 20;  // Chạy trong 20 phút
-  const interval = 2;  // Mỗi 2 phút
-
-  const endMinute = startMinute + duration;
-  const checkDate = (startHour + Math.floor(endMinute / 60))
-  const endHour = checkDate > 23 ? 23 : checkDate;
-  const adjustedEndMinute = checkDate > 23 ? 59 : endMinute % 60;
-
-  // console.log(`Cron job sẽ chạy từ ${startHour}:${startMinute} đến ${endHour}:${adjustedEndMinute} mỗi ngày`);
-
-  // Nếu chạy trong cùng 1 giờ
-  if (startHour === endHour) {
-    const cronExpression = `${startMinute}-${adjustedEndMinute}/${interval} ${startHour} * * *`;
-    const job = cron.schedule(cronExpression, () => {
-      // console.log(`Công việc chạy lúc: ${new Date().toLocaleTimeString()} ${sen_name}`);
-      client.publish(
-        'watter/setInterval',
-        JSON.stringify({ sen_name: sen_name, req: 1 })
-      )
-    });
-    cronJobs[sen_name].push(job)
-  } else {
-    // Chạy từ startMinute đến 59 của startHour
-    const firstCronExpression = `${startMinute}-59/${interval} ${startHour} * * *`;
-    const job1 = cron.schedule(firstCronExpression, () => {
-      client.publish(
-        'watter/setInterval',
-        JSON.stringify({ sen_name: sen_name, req: 1 })
-      )
-      // console.log(`Công việc chạy lúc: ${new Date().toLocaleTimeString()} ${sen_name}`);
-    });
-    cronJobs[sen_name].push(job1)
-    // Chạy từ 0 đến adjustedEndMinute của endHour
-    const secondCronExpression = `0-${adjustedEndMinute}/${interval} ${endHour} * * *`;
-    const job2 = cron.schedule(secondCronExpression, () => {
-      client.publish(
-        'watter/setInterval',
-        JSON.stringify({ sen_name: sen_name, req: 1 })
-      )
-      // console.log(`Công việc chạy lúc: ${new Date().toLocaleTimeString()} ${sen_name}`);
-    });
-    cronJobs[sen_name].push(job2)
-  }
-}
-
-export const Schedule = async () => {
-  // const info = await InfoSen.find();
-  // info.forEach(element => {
-  //   processJob(element.id, element.timeAlarm)
-  // });
-};
 
 function addDateElement(dataArray, sensor, index, type) {
   if (dataArray[index]) {
@@ -108,8 +67,8 @@ function getDatesInRange(startDate, endDate) {
 
 function getLength(lengModal, listDate) {
   const lengDate = listDate.length;
-  if (lengDate !== 2) {
-    return lengModal * lengDate - lengModal * 3 + (24 - listDate[0].getHours() + listDate[lengDate - 1].getHours()) * 12
+  if (lengDate !== 1) {
+    return lengModal * lengDate - lengModal * 2 + (24 - listDate[0].getHours() + listDate[lengDate - 1].getHours()) * 12
   }
   else {
     return (listDate[lengDate - 1].getHours() - listDate[0].getHours()) * 12
@@ -124,29 +83,80 @@ const formatDate = (dateString) => {
   return `${datePart} ${timePart}`; // Kết quả dạng "dd/mm/yyyy HH:MM"
 };
 
-const exportFakeDataToExcel = async (sensors, res) => {
+const exportFakeDataToExcel = async (sensorData, res, adj) => {
   try {
     const workbook = new ExcelJS.Workbook();
+    
+    // === 1. Viết phần Tổng Hợp (All Stats) ===
+    const summarySheet = workbook.addWorksheet("Summary");
+    const stats = sensorData[0].stats
+    
+    // === 2. Viết phần Từng Ngày (EndOfDay Summary) ===
+    const endOfDaySum = sensorData[0].endOfDaySum
+    summarySheet.columns = [
+      { header: "Ngày", key: "day", width: 12 },
+      { header: "Sản lượng", key: "production", width: 12 },
+      { header: "Áp suất avg", key: "avgPressure", width: 12 },
+      { header: "Áp suất min", key: "minPressure", width: 12 },
+      { header: "Thời gian min", key: "minPressureTime", width: 15 },
+      { header: "Áp suất max", key: "maxPressure", width: 12 },
+      { header: "Thời gian max", key: "maxPressureTime", width: 15 },
+      { header: "Lưu lượng avg", key: "avgFlow", width: 12 },
+      { header: "Lưu lượng min", key: "minFlow", width: 12 },
+      { header: "Thời gian min", key: "minFlowTime", width: 15 },
+      { header: "Lưu lượng max", key: "maxFlow", width: 12 },
+      { header: "Thời gian max", key: "maxFlowTime", width: 15 },
+      { header: "Tổng cuối ngày", key: "totalSum", width: 12 },
+    ];
+    
+    endOfDaySum.forEach(daySum => {
+      summarySheet.addRow({
+        day: daySum._id?.day ?? "",
+        production: daySum.lastSum && daySum.firstSum ? (daySum.lastSum - daySum.firstSum).toFixed(1) : "",
+        avgPressure: daySum.avgPressure?.toFixed(1) ?? "",
+        minPressure: daySum.minPressure?.pressure?.toFixed(1) ?? "",
+        minPressureTime: daySum.minPressure?.createAt ?? "",
+        maxPressure: daySum.maxPressure?.pressure?.toFixed(1) ?? "",
+        maxPressureTime: daySum.maxPressure?.createAt ?? "",
+        avgFlow: daySum.avgFlow?.toFixed(2) ?? "",
+        minFlow: daySum.minFlow?.flow?.toFixed(2) ?? "",
+        minFlowTime: daySum.minFlow?.createAt ?? "",
+        maxFlow: daySum.maxFlow?.flow?.toFixed(2) ?? "",
+        maxFlowTime: daySum.maxFlow?.createAt ?? "",
+        totalSum: daySum.lastSum?.toFixed(1) ?? "",
+      });
+      
+    });
+    summarySheet.addRow([]);
+    summarySheet.addRow(["TỔNG HỢP TOÀN BỘ"]);
+    summarySheet.addRow(["Áp suất avg", stats.avgPressure?.toFixed(1) ?? ""]);
+    summarySheet.addRow(["Áp suất min", stats.minPressure?.pressure?.toFixed(1) ?? "", "Lúc", stats.minPressure?.createAt ?? ""]);
+    summarySheet.addRow(["Áp suất max", stats.maxPressure?.pressure?.toFixed(1) ?? "", "Lúc", stats.maxPressure?.createAt ?? ""]);
+    summarySheet.addRow(["Lưu lượng avg", stats.avgFlow?.toFixed(2) ?? ""]);
+    summarySheet.addRow(["Lưu lượng min", stats.minFlow?.flow?.toFixed(2) ?? "", "Lúc", stats.minFlow?.createAt ?? ""]);
+    summarySheet.addRow(["Lưu lượng max", stats.maxFlow?.flow?.toFixed(2) ?? "", "Lúc", stats.maxFlow?.createAt ?? ""]);
+        
+    // === 3. Viết phần Data Chi Tiết ===
     const worksheet = workbook.addWorksheet("Sensors");
-
+    worksheet.addRow(["DỮ LIỆU CHI TIẾT"]);
     worksheet.columns = [
       { header: "Thời gian", key: "createAt", width: 30 },
       { header: "Áp suất", key: "Pressure", width: 15 },
       { header: "Lưu lượng", key: "flow", width: 15 },
     ];
 
-    sensors.forEach(sensor => {
+    sensorData[0]?.data?.forEach(sensor => {
       if (Math.floor(sensor.createAt / 60000) % 15) {
-        return;
+        return; // chỉ lấy mỗi 15 phút 1 lần
       }
       worksheet.addRow({
         createAt: formatDate(sensor.createAt),
-        Pressure: sensor.Pressure?.toFixed(2),
+        Pressure: (sensor.Pressure + adj)?.toFixed(2),
         flow: sensor.flow,
       });
     });
 
-    // ✅ Ghi dữ liệu vào buffer
+    // ✅ Ghi ra buffer
     const excelBuffer = await workbook.xlsx.writeBuffer();
     const buffer = Buffer.from(excelBuffer);
 
@@ -166,17 +176,109 @@ const exportFakeDataToExcel = async (sensors, res) => {
 
 export const exportSensors = async (req, res) => {
   try {
-    const { sen_name, date, user } = req.body;
+    const { sen_name, adj, date, user } = req.body;
     const startOfToday = new Date(date[0]);
     const endOfToday = new Date(date[1]);
     startOfToday.setUTCMinutes(0, 0, 0);
     endOfToday.setUTCMinutes(0, 0, 999);
-    const sensorData = await Sensor.find({
-      index: sen_name,
-      user: user,
-      createAt: { $gte: startOfToday, $lte: endOfToday }
-    }).sort({ createAt: 1 });
-    return exportFakeDataToExcel(sensorData, res);
+    const sensorData = await Sensor.aggregate([
+      {
+        $match: {
+          index: sen_name,
+          user: user,
+          createAt: { $gte: startOfToday, $lte: endOfToday }
+        }
+      },
+      { $sort: { createAt: 1 } },
+      {
+        $facet: {
+          data: [
+            { $project: { _id: 0, Pressure: 1, flow: 1, createAt: 1 } }
+          ],
+          stats: [
+            {
+              $group: {
+                _id: null,
+                firstSum: { $first: "$sum" },
+                lastSum: { $last: "$sum" },
+                avgPressure: { $avg: "$Pressure" },
+                minPressure: {
+                  $min: {
+                    pressure: "$Pressure",
+                    createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                  }
+                },
+                maxPressure: {
+                  $max: {
+                    pressure: "$Pressure",
+                    createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                  }
+                },
+                avgFlow: { $avg: "$flow" },
+                minFlow: {
+                  $min: {
+                    flow: "$flow",
+                    createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                  }
+                },
+                maxFlow: {
+                  $max: {
+                    flow: "$flow",
+                    createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                  }
+                },
+              }
+            }
+          ],
+          endOfDaySum: [
+            {
+              $group: {
+                _id: {
+                  day: { $dateToString: { format: "%Y-%m-%d", date: "$createAt", timezone: "+07:00" } }
+                },
+                firstSum: { $first: "$sum" }, // sum đầu tiên trong ngày
+                lastSum: { $last: "$sum" },    // sum cuối cùng trong ngày
+                avgPressure: { $avg: "$Pressure" },
+                minPressure: {
+                  $min: {
+                    pressure: "$Pressure",
+                    createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                  }
+                },
+                maxPressure: {
+                  $max: {
+                    pressure: "$Pressure",
+                    createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                  }
+                },
+                avgFlow: { $avg: "$flow" },
+                minFlow: {
+                  $min: {
+                    flow: "$flow",
+                    createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                  }
+                },
+                maxFlow: {
+                  $max: {
+                    flow: "$flow",
+                    createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                  }
+                },
+              }
+            },
+            { $sort: { "_id.day": 1 } }
+          ]
+        }
+      },
+      {
+        $project: {
+          data: 1,
+          stats: { $arrayElemAt: ["$stats", 0] },
+          endOfDaySum: 1
+        }
+      }
+    ]);
+    return exportFakeDataToExcel(sensorData, res, adj);
   } catch (error) {
     if (!res.headersSent) {
       return res.status(500).json({ success: false, error: "Add Sensor server error." });
@@ -199,32 +301,14 @@ export const upInterval = async (req, res) => {
       )
       return res.status(200).json({ success: true })
     }
-    if(profs.sum != null){
-      const info = await Flow.findOneAndUpdate({ sen_name: profs.sen_id, user: profs.user }, { $set: { sum: profs.sum } }, { new: true })
+    if (profs.sum != null) {
+      if (publishMessage('sum_content', Number(profs.sum).toFixed(1) * 1000, profs.sen_id)) {
+        return res.status(500).json({ success: false, error: "Not publish" })
+      }
       return res.status(200).json({ success: true })
     }
     if (profs.adj != null) {
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { adj: profs.adj } }, { new: true })
-      return res.status(200).json({ success: true })
-    }
-    if (profs.wPressTime != null) {
-      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { wPressTime: profs.wPressTime } }, { new: true })
-      if (profs.wPressTime < 0) {
-        // cronJobs[profs.sen_id].forEach(job => job.stop());
-        cronJobs[profs.sen_id] = [];
-      }
-      else if (cronJobs[profs.sen_id].length === 0) {
-        // processJob(profs.sen_id, profs.timeAlarm);
-      }
-      return res.status(200).json({ success: true })
-    }
-    if (profs.timeAlarm != null) {
-      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { timeAlarm: profs.timeAlarm } }, { new: true })
-      cronJobs[profs.sen_id].forEach(job => job.stop());
-      cronJobs[profs.sen_id] = [];
-      if (profs.press > 0) {
-        // processJob(profs.sen_id, profs.timeAlarm);
-      }
       return res.status(200).json({ success: true })
     }
     if (profs.watch != null) {
@@ -288,40 +372,123 @@ export const getSensors = async (req, res) => {
       const lengModal = 288
       const startOfToday = new Date(profs.timeGet[0]);
       const endOfToday = new Date(profs.timeGet[1]);
-      startOfToday.setDate(startOfToday.getDate() - 1);
       startOfToday.setUTCMinutes(0, 0, 0);
       endOfToday.setUTCMinutes(0, 0, 999);
-      const sensorData = await Sensor.find({
-        index: profs.sen_name,
-        user: profs.user,
-        createAt: { $gte: startOfToday, $lte: endOfToday }
-      }).sort({ createAt: 1 });
+      const result = await Sensor.aggregate([
+        {
+          $match: {
+            index: profs.sen_name,
+            user: profs.user,
+            createAt: { $gte: startOfToday, $lte: endOfToday }
+          }
+        },
+        { $sort: { createAt: 1 } },
+        {
+          $facet: {
+            data: [
+              { $project: { _id: 0, Pressure: 1, flow: 1, createAt: 1 } }
+            ],
+            stats: [
+              {
+                $group: {
+                  _id: null,
+                  firstSum: { $first: "$sum" },
+                  lastSum: { $last: "$sum" },
+                  avgPressure: { $avg: "$Pressure" },
+                  minPressure: {
+                    $min: {
+                      pressure: "$Pressure",
+                      createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                    }
+                  },
+                  maxPressure: {
+                    $max: {
+                      pressure: "$Pressure",
+                      createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                    }
+                  },
+                  avgFlow: { $avg: "$flow" },
+                  minFlow: {
+                    $min: {
+                      flow: "$flow",
+                      createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                    }
+                  },
+                  maxFlow: {
+                    $max: {
+                      flow: "$flow",
+                      createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                    }
+                  },
+                }
+              }
+            ],
+            endOfDaySum: [
+              {
+                $group: {
+                  _id: {
+                    day: { $dateToString: { format: "%Y-%m-%d", date: "$createAt", timezone: "+07:00" } }
+                  },
+                  firstSum: { $first: "$sum" }, // sum đầu tiên trong ngày
+                  lastSum: { $last: "$sum" },    // sum cuối cùng trong ngày
+                  avgPressure: { $avg: "$Pressure" },
+                  minPressure: {
+                    $min: {
+                      pressure: "$Pressure",
+                      createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                    }
+                  },
+                  maxPressure: {
+                    $max: {
+                      pressure: "$Pressure",
+                      createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                    }
+                  },
+                  avgFlow: { $avg: "$flow" },
+                  minFlow: {
+                    $min: {
+                      flow: "$flow",
+                      createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                    }
+                  },
+                  maxFlow: {
+                    $max: {
+                      flow: "$flow",
+                      createAt: { $dateToString: { format: "%Y-%m-%d %H:%M", date: "$createAt", timezone: "+07:00" } }
+                    }
+                  },
+                }
+              },
+              { $sort: { "_id.day": 1 } }
+            ]
+          }
+        },
+        {
+          $project: {
+            data: 1,
+            stats: { $arrayElemAt: ["$stats", 0] },
+            endOfDaySum: 1
+          }
+        }
+      ]);
       const listDate = getDatesInRange(startOfToday, endOfToday);
       const lengArray = getLength(lengModal, listDate)
       const sensorH = []
-      const sensorY = []
       const flowH = []
-      const flowY = []
       const sensorT = Array(lengArray).fill(null)
       const startDate = startOfToday
-      const offSetHour = listDate[0].getHours() * 12
-      sensorData.forEach((sensor, step) => {
+      const offSetHour = startOfToday.getHours() * 12
+      result[0].data.forEach((sensor) => {
         const dateOfSensor = new Date(sensor.createAt)
         const currentDate = dateOfSensor
         const convert = differenceInCalendarDays(currentDate, startDate)
         const convertTimeValue = Math.floor(convertTime(sensor.createAt, 300))
-        let index = convert * lengModal + convertTimeValue - offSetHour;
-        if (index < lengArray) {
-          addDateElement(sensorY, sensor, index, "Pressure")
-          addDateElement(flowY, sensor, index, "flow")
-        }
-        if (index >= lengModal) {
-          index = index - lengModal
-          addDateElement(sensorH, sensor, index, "Pressure")
-          addDateElement(flowH, sensor, index, "flow")
-        }
+        const index = convert * lengModal + convertTimeValue - offSetHour;
+        addDateElement(sensorH, sensor, index, "Pressure");
+        addDateElement(flowH, sensor, index, "flow");
+        sensorT[index] = sensor
       })
-      return res.status(200).json({ success: true, sensorH, sensorY, flowH, flowY, sensorT })
+      return res.status(200).json({ success: true, sensorH, flowH, sum: result[0].endOfDaySum, param: result[0].stats, sensorT })
     }
     const startOfToday = new Date();
     const yesterday = new Date(startOfToday);
@@ -330,20 +497,53 @@ export const getSensors = async (req, res) => {
     startOfToday.setHours(0, 0, 0, 0);
     for (let i = 0; i < Number(profs.total); i++) {
       timeTrackingRet[i] = 0;
-      const flowSum = await Flow.findOne({
-        sen_name: profs.info[i].id,
-        user: profs.user,
-      }).select('sum -_id').lean();
       const sensorY = await Sensor.find({
         index: profs.info[i].id,
         user: profs.user,
         createAt: { $gte: yesterday, $lt: startOfToday },
-      }).sort({ createAt: 1 });
-      const sensorN = await Sensor.find({
-        index: profs.info[i].id,
-        user: profs.user,
-        createAt: { $gte: startOfToday },
-      }).sort({ createAt: 1 });
+      })
+      .select('flow Pressure createAt')
+      .sort({ createAt: 1 });      
+      const result = await Sensor.aggregate([
+        {
+          $match: {
+            index: profs.info[i].id,
+            user: profs.user,
+            createAt: { $gte: startOfToday }
+          }
+        },
+        { $sort: { createAt: 1 } },
+        {
+          $facet: {
+            data: [
+              { $project: { _id: 0, Pressure: 1, flow: 1, temperature: 1, battery: 1, createAt: 1 } }
+            ],
+            stats: [
+              {
+                $group: {
+                  _id: null,
+                  firstSum: { $first: "$sum" },
+                  lastSum: { $last: "$sum" },
+                  battery: { $last: "$battery" },
+                  temperature: { $last: "$temperature" },
+                  avgPressure: { $avg: "$Pressure" },
+                  minPressure: { $min: "$Pressure" },
+                  maxPressure: { $max: "$Pressure" },
+                  avgFlow: { $avg: "$flow" },
+                  minFlow: { $min: "$flow" },
+                  maxFlow: { $max: "$flow" },
+                }
+              }
+            ],
+          }
+        },
+        {
+          $project: {
+            data: 1,
+            stats: { $arrayElemAt: ["$stats", 0] },
+          }
+        }
+      ]);
       const sensorT = Array(86400 / profs.info[i].watch).fill(null)
       const sensorYRest = []
       const flowYRest = []
@@ -351,32 +551,18 @@ export const getSensors = async (req, res) => {
       const dataFlow = []
       let timeTracking = 0
       let currentStart = 0;
-      let maxPress = 0;
-      let minPress = 70;
-      let avgPress = 0;
-      const pFlow = {
-        max: 0,
-        min: 1000,
-        avg: 0,
-        sum: flowSum.sum,
-        count: 0
-      }
 
       sensorY.forEach((sensor) => {
         const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
         sensorYRest[index] = sensor.Pressure
         flowYRest[index] = sensor.flow
       })
-      sensorN.forEach((sensor) => {
-        maxPress = Math.max(sensor.Pressure, maxPress);
-        minPress = Math.min(sensor.Pressure, minPress);
-        avgPress += sensor.Pressure;
-        if(sensor.flow){
-          pFlow.max = Math.max(sensor.flow, pFlow.max);
-          pFlow.min = Math.min(sensor.flow, pFlow.min);
-          pFlow.avg += sensor.flow;
-          pFlow.count++
-        }
+      result[0].data.forEach((sensor) => {
+        // if(profs.info[i].id === 255)console.log("sensor", sensor)
+        const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
+        addDateElement(dataPressure, sensor, index, "Pressure")
+        addDateElement(dataFlow, sensor, index, "flow")
+        sensorT[index] = sensor
         if (profs.info) {
           if (sensor.Pressure >= profs.info[i].tracking) {
             const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
@@ -386,20 +572,14 @@ export const getSensors = async (req, res) => {
           }
         }
         currentStart = sensor.createAt
-        const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
-        addDateElement(dataPressure, sensor, index, "Pressure")
-        addDateElement(dataFlow, sensor, index, "flow")
-        sensorT[index] = sensor
       })
-      if (sensorN.length !== 0) {
-        battery[i] = sensorN[sensorN.length - 1].battery
-        temperature[i] = sensorN[sensorN.length - 1].temperature || 25
+      if (result[0].data && result[0].data.length > 0) {
+        const stats = result[0].stats
+        battery[i] = stats.battery
+        temperature[i] = stats.temperature
+        pram[i] = { max: stats.maxPressure, min: stats.minPressure, avg: stats.avgPressure }
+        pramFlow[i] = { max: stats.maxFlow, min: stats.minFlow, total: stats.lastSum - stats.firstSum, avg: stats.avgFlow, sum: stats.lastSum };
       }
-      timeTrackingRet[i] = Math.round(timeTracking / 60)
-      if (minPress === 70) minPress = 0;
-      if(pFlow.min === 1000) pFlow.min = 0;
-      pram[i] = { max: maxPress, min: minPress, avg: avgPress / sensorN.length }
-      pramFlow[i] = { ...pFlow, avg: pFlow.avg / pFlow.count};
       sensors[i] = { sensorYRest, flowYRest, dataFlow, sensorT, dataPressure }
     }
     return res.status(200).json({ success: true, sensors, timeTrackingRet, battery, temperature, pram, pramFlow })
@@ -476,6 +656,7 @@ export const getGroup = async (req, res) => {
     const group = []
     const Groups = await Group.find({ user: user });
     const senGroup = await InfoSen.find({ user: user });
+    group.push("Không có")
     Groups.forEach((sensor) => {
       group.push(sensor.name)
     })
@@ -491,7 +672,7 @@ export const getGroup = async (req, res) => {
 export const getSensorInGroup = async (req, res) => {
   try {
     const { group, user } = req.body
-    const senInGroup = group !== "Khong co" ? await InfoSen.find({ group: group, user: user }) : await InfoSen.find({ group: { $exists: false }, user: user });
+    const senInGroup = await InfoSen.find({ group: group, user: user });
     return res.status(200).json({ success: true, senInGroup });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
@@ -507,11 +688,11 @@ export const getGroupInfo = async (req, res) => {
     startOfToday.setHours(0, 0, 0, 0);
     const senGroup = await InfoSen.find({ user: user });
     for (let i = 0; i < senGroup.length; i++) {
-      const valueSen = await Sensor.findOne({ index: i, user: user, createAt: { $gte: startOfToday } }).sort({ createAt: -1 });
-      valueSenS[i] = valueSen
+      const valueSen = await Sensor.findOne({ index: senGroup[i].id, user: user, createAt: { $gte: startOfToday } }).sort({ createAt: -1 });
+      valueSenS[senGroup[i].id] = valueSen
     }
     senGroup.forEach((sensor) => {
-      if (!sensor.group || sensor.group === "") sensor.group = "Khong co"
+      // if (!sensor.group || sensor.group === "") sensor.group = "Khong co"
       if (!data[sensor.group]) data[sensor.group] = []
       data[sensor.group].push(sensor)
     })
@@ -524,13 +705,13 @@ export const getGroupInfo = async (req, res) => {
 export const changeGroup = async (req, res) => {
   try {
     const profs = req.body;
-    if (profs.newGroup === "Khong co") {
-      const updateSensor = await InfoSen.findOneAndUpdate(
-        { name: profs.name, user: profs.user },
-        { $unset: { group: "" } }
-      );
-      return res.status(200).json({ success: true });
-    }
+    // if (profs.newGroup === "Khong co") {
+    //   const updateSensor = await InfoSen.findOneAndUpdate(
+    //     { name: profs.name, user: profs.user },
+    //     { $unset: { group: "" } }
+    //   );
+    //   return res.status(200).json({ success: true });
+    // }
     const updateSensor = await InfoSen.findOneAndUpdate(
       { name: profs.name, user: profs.user },
       {
@@ -550,7 +731,7 @@ export const deleteGroup = async (req, res) => {
   try {
     const profs = req.body;
     const delGroup = await Group.deleteOne({ name: profs.groupToRemove, user: profs.user })
-    const deleteGroup = await InfoSen.updateMany({ group: profs.groupToRemove, user: profs.user }, { $unset: { group: "" } })
+    const deleteGroup = await InfoSen.updateMany({ group: profs.groupToRemove, user: profs.user }, { $set: { group: "Không có" } })
     return res.status(200).json({ success: true });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
@@ -570,3 +751,56 @@ export const addGroup = async (req, res) => {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
   }
 }
+
+export const addAlarm = async (req, res) => {
+  try {
+    const profs = req.body;
+    scheduledJobs[`${profs.name}-${profs.user}-${profs.id}`] = cron.schedule(timeToCronExpr(profs.time), () => { 
+      // publishMessage("high_threshold", profs.flow * 1000, profs.id)
+    });
+    const newAlarm = new Alarm({
+      name: profs.name,
+      user: profs.user,
+      id: profs.id,
+      time: profs.time,
+      flow: profs.flow
+    })
+    await newAlarm.save()
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "Alarm add failed due to some reason" });
+  }
+}
+
+export const getAlarm = async (req, res) => {
+  try {
+    const { user, sen_name } = req.body
+    const data = await Alarm.find({ user: user, id: sen_name });
+    data.forEach((alarm) => {
+      if(!scheduledJobs[`${alarm.name}-${user}-${sen_name}`]) {
+        scheduledJobs[`${alarm.name}-${user}-${sen_name}`] = cron.schedule(timeToCronExpr(alarm.time), () => { 
+          // publishMessage("high_threshold", alarm.flow * 1000, sen_name)
+        });
+      }
+    });
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
+  }
+}
+
+export const deleteAlarm = async (req, res) => {
+  try {
+    const { user, sen_name, name } = req.body
+    scheduledJobs[`${name}-${user}-${sen_name}`].stop();
+    delete scheduledJobs[`${name}-${user}-${sen_name}`];
+    if(!scheduledJobs){
+      // publishMessage("high_threshold", 300000, sen_name)
+    } 
+    const data = await Alarm.deleteOne({ user: user, id: sen_name, name: name });
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
+  }
+}
+

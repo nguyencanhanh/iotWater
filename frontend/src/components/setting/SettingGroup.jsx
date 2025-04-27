@@ -10,7 +10,7 @@ export default function GroupNameTable() {
 
   const fetchGroups = async () => {
     try {
-      const res = await getGroup(localStorage.getItem("token"), {user: user.user})
+      const res = await getGroup(localStorage.getItem("token"), { user: user.user })
       setGroups(res.data.group)
       setData(res.data.sen_group)
     } catch (error) {
@@ -26,7 +26,7 @@ export default function GroupNameTable() {
   }, []);
 
   const handleGroupChange = async (index, newGroup, name) => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -46,8 +46,8 @@ export default function GroupNameTable() {
     }
   };
 
-  const handleAddGroup = async() => {
-    if(user.role === 'trial'){
+  const handleAddGroup = async () => {
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
@@ -55,7 +55,7 @@ export default function GroupNameTable() {
       try {
         const res = await addGroup(localStorage.getItem("token"), { newGroup: newGroup, user: user.user })
       } catch (error) {
-        
+
       }
       setGroups([...groups, newGroup]);
       setNewGroup("");
@@ -63,15 +63,15 @@ export default function GroupNameTable() {
   };
 
   const handleRemoveGroup = async (groupToRemove) => {
-    if(user.role === 'trial'){
+    if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
     try {
       const res = await deleteGroup(localStorage.getItem("token"), { groupToRemove: groupToRemove, user: user.user })
-      if(res.data.success){
+      if (res.data.success) {
         setGroups(groups.filter(group => group !== groupToRemove));
-        setData(data.map(item => item.group === groupToRemove ? { ...item, group: "" } : item));
+        setData(data.map(item => item.group === groupToRemove ? { ...item, group: "Không có" } : item));
       }
     } catch (error) {
       console.error("An unexpected error occurred:", error);
@@ -105,7 +105,7 @@ export default function GroupNameTable() {
                     value={item.group}
                     onChange={(e) => handleGroupChange(index, e.target.value, item.name)}
                   >
-                    <option value="">Khong co</option>
+                    {/* <option value="">Khong co</option> */}
                     {groups.map((group) => (
                       <option key={group} value={group}>{group}</option>
                     ))}
@@ -134,17 +134,20 @@ export default function GroupNameTable() {
           </button>
         </div>
         <ul>
-          {groups.map((group) => (
-            <li key={group} className="flex justify-between items-center py-1">
-              <span>{group}</span>
-              <button
-                className="bg-red-500 text-white px-2 py-1 rounded"
-                onClick={() => handleRemoveGroup(group)}
-              >
-                Xóa
-              </button>
-            </li>
-          ))}
+          {groups
+            .filter(group => group !== "Không có")
+            .map(group => (
+              <li key={group} className="flex justify-between items-center py-1">
+                <span>{group}</span>
+                <button
+                  className="bg-red-500 text-white px-2 py-1 rounded"
+                  onClick={() => handleRemoveGroup(group)}
+                >
+                  Xóa
+                </button>
+              </li>
+            ))}
+
         </ul>
       </div>
     </div>

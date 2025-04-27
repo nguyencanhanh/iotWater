@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal } from 'antd';
 import { sensorListGet } from "../../api/index"
 import { ChartMadal } from './Chart';
-import { TableModal } from './Table';
+import { TableModal, SensorDataDisplay } from './Table';
 import { exportDataPost } from '../../api/index';
 import { useAuth } from '../../context/authContext'
 import {differenceInCalendarDays} from 'date-fns'
@@ -11,7 +11,7 @@ function generateLabelsAndData(watch, hourStart) {
   const labels = [];
   const verticalLines = [];
   for (let i = 0; i < watch; i += 5) {
-    const hour = watch < 1440 ? Math.floor(i / 60) % 24 + hourStart : Math.floor(i / 60 + hourStart) % 24;
+    const hour = watch < 288 ? Math.floor(i / 60) % 24 + hourStart : Math.floor(i / 60 + hourStart) % 24;
     const minute = i % 60;
     const index = Math.floor(i / 5);
 
@@ -42,10 +42,6 @@ function getLength(lengModal, listDate, start, end) {
   }
 }
 
-function convertValue(a, b){
-  return Math.floor((b - a) / (1000 * 3600 * 24));
-}
-
 function convertTime(timeConvert, watch) {
   return timeConvert.getHours() * 3600 / watch
 }
@@ -66,6 +62,7 @@ const ModalData = (props) => {
   const { user } = useAuth()
   const dateData = props.dateData;
   const name = props.idMap ? props.info[props.idMap[dateData[2]]].name : props.info[props.dateData[2]].name;
+  const adj = props.idMap ? props.info[props.idMap[dateData[2]]].adj : props.info[props.dateData[2]].adj;
   const [dataModal, setDataModal] = useState(null);
   const [fromDate, setFromDate] = useState(dateData[0]);
   const [toDate, setToDate] = useState(dateData[1]);
@@ -79,7 +76,6 @@ const ModalData = (props) => {
       const res = await sensorListGet(localStorage.getItem("token"), { sen_name: dateData[2], timeGet: [fromDate, toDate], user: user.user });
       if (res.data.success) {
         const data = res.data
-        console.log(res.data)
         setDataModal(data);
       } else {
         alert("Failed to fetch sensors");
@@ -111,7 +107,7 @@ const ModalData = (props) => {
     try {
       const res = await exportDataPost(
         localStorage.getItem("token"),
-        { sen_name: dateData[2], date: [fromDate, toDate], user: user.user },
+        { sen_name: dateData[2], adj: adj, date: [fromDate, toDate], user: user.user },
       );
 
       if (res.data) {
@@ -178,12 +174,13 @@ const ModalData = (props) => {
           <h1>Loading...</h1>
         ) : (
           <div className="w-full bg-gray-200 p-4 rounded-lg shadow">
+            <SensorDataDisplay param={dataModal.param} sum={dataModal.sum}/>
             <ChartMadal
               length={288 * listDate.length}
               dataLabel={dataLabel}
               dataModal={dataModal}
             />
-            <TableModal dataModal={dataModal} startDate={listDate} offset={offset} startHour={startDate} />
+            <TableModal dataModal={dataModal} adj={adj} startDate={listDate} offset={offset} startHour={startDate} />
           </div>
         )}
       </div>

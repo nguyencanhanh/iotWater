@@ -1,13 +1,14 @@
 import mongoose from "mongoose";
 
 const infoSchema = new mongoose.Schema({
+    user:{type:Number},
     tracking: {type: Number},
     interval: {type: Number},
     wPress: {type: Number},
     wPressTime: {type: Number},
     timeAlarm: {type: Number},
     watch: {type: Number},
-    adj: {type: Number},
+    adj: {type: Number}, 
     id: {type: Number},
     name: {type: String},
     lat: {type: Number},

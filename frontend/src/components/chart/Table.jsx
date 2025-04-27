@@ -8,6 +8,86 @@ function dateString(index, offset, startDate, startHour) {
   return `${String(Math.floor(((index + startHour * 12) % 288) / 12)).padStart(2, "0")}:${String((index * 5) % 60).padStart(2, "0")}`
 }
 
+
+export const SensorDataDisplay = (profs) => {
+  const [openDetail, setOpenDetail] = useState(false);
+  const total = profs.param.lastSum && profs.param.firstSum ? (profs.param.lastSum - profs.param.firstSum).toFixed(1) : "Chưa có dữ liệu"
+  const toggleDetail = () => {
+    setOpenDetail(!openDetail); // Toggle chi tiết
+  };
+
+  return (
+    <div className="container mx-auto p-4">
+      <h1 className="text-3xl font-bold mb-4">Thông số cảm biến</h1>
+      <div className="overflow-x-auto">
+        <table className="table-auto w-full border-collapse border border-gray-300">
+          <thead>
+            <tr>
+              <th className="border border-gray-300 px-4 py-2">Chi tiết</th>
+              <th className="border border-gray-300 px-4 py-2">Sản lượng (m3)</th>
+              <th className="border border-gray-300 px-4 py-2">Avg áp suất (m)</th>
+              <th className="border border-gray-300 px-4 py-2">Min áp suất (m)</th>
+              <th className="border border-gray-300 px-4 py-2">Thời gian min</th>
+              <th className="border border-gray-300 px-4 py-2">Max áp suất (m)</th>
+              <th className="border border-gray-300 px-4 py-2">Thời gian max</th>
+              <th className="border border-gray-300 px-4 py-2">Avg lưu lượng (m3/h)</th>
+              <th className="border border-gray-300 px-4 py-2">Min lưu lượng (m3/h)</th>
+              <th className="border border-gray-300 px-4 py-2">Thời gian min</th>
+              <th className="border border-gray-300 px-4 py-2">Max lưu lượng (m3/h)</th>
+              <th className="border border-gray-300 px-4 py-2">Thời gian max</th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* Hiển thị các giá trị tổng hợp của tất cả các ngày */}
+            <tr className="hover:bg-gray-100">
+              <td className="border border-gray-300 px-4 py-2">
+                <button
+                  onClick={toggleDetail}
+                  className="text-blue-500 hover:text-blue-700 focus:outline-none"
+                >
+                  {openDetail ? 'Ẩn chi tiết' : 'Chi tiết'}
+                </button>
+              </td>
+              <td className="border border-gray-300 px-4 py-2">{total}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.avgPressure.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.minPressure?.pressure.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.minPressure?.createAt}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxPressure?.pressure.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxPressure?.createAt}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.avgFlow?.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.minFlow?.flow.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.minFlow?.createAt}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxFlow?.flow.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxFlow?.createAt}</td>
+            </tr>
+
+            {/* Hiển thị chi tiết dữ liệu của từng ngày nếu mở */}
+            {openDetail && profs.sum.map((item, index) => {
+              const total = item.lastSum && item.firstSum ? (item.lastSum - item.firstSum).toFixed(1) : "Chưa có dữ liệu"
+              return (
+                <tr key={index} className="hover:bg-gray-100">
+                  <td className="border border-gray-300 px-4 py-2">{item._id.day}</td>
+                  <td className="border border-gray-300 px-4 py-2">{total}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.avgPressure?.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.minPressure?.pressure.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.minPressure?.createAt}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.maxPressure?.pressure.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.maxPressure?.createAt}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.avgFlow?.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.minFlow?.flow.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.minFlow?.createAt}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.maxFlow?.flow.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.maxFlow?.createAt}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 export const TableModal = (props) => {
   const tableData = props.dataModal.sensorT;
   const tableContainerRef = useRef(null);
@@ -34,11 +114,7 @@ export const TableModal = (props) => {
             <tr className="text-sm text-center">
               <th className="border border-gray-300 px-3 py-2 w-1/4" style={{ width: "30%" }}>Thời gian</th>
               <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Áp suất (m)</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Cùng kì (m)</th>
               <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Lưu lượng (m3/h)</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5" style={{ width: "20%" }}>Cùng kì (m3/h)</th>
-              {/* <th className="border border-gray-300 px-3 py-2 w-1/5">Nhiệt độ(°C)</th> */}
-              {/* <th className="border border-gray-300 px-3 py-2 w-1/6" style={{ width: "10%" }}>Pin(%)</th> */}
             </tr>
           </thead>
         </table>
@@ -61,16 +137,10 @@ export const TableModal = (props) => {
                     {dateString(index, props.offset, props.startDate, props.startHour)}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {props.dataModal.sensorH[index] !== null ? props.dataModal.sensorH[index]?.toFixed(1) : ""}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {props.dataModal.sensorY[index] !== null ? props.dataModal.sensorY[index]?.toFixed(1) : ""}
+                    {props.dataModal.sensorH[index] !== null ? (props.dataModal.sensorH[index] + props.adj).toFixed(1) : ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
                     {props.dataModal.flowH[index] !== null ? props.dataModal.flowH[index]?.toFixed(2) : ""}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {props.dataModal.flowY[index] !== null ? props.dataModal.flowY[index]?.toFixed(2) : ""}
                   </td>
                 </tr>
               ))}
@@ -98,7 +168,7 @@ const ScrollableTable = (device) => {
         const container = tableContainerRef.current;
         const scrollWidth = container.offsetWidth - container.clientWidth;
         headerRef.current.style.paddingRight = `${scrollWidth}px`;
-        container.scrollTop = (container.scrollHeight - container.clientHeight) * device.currentTimeDate[device.step];
+        container.scrollTop = (container.scrollHeight - container.clientHeight) * device.currentTimeDate;
       }
     };
     syncScrollBar();
@@ -161,15 +231,17 @@ const ScrollableTable = (device) => {
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
                     {`${String(Math.floor(index * device.watch / 3600)).padStart(2, "0")}:${String((index * device.watch / 60) % 60).padStart(2, "0")}`}
                   </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">{row?.Pressure ?? ""}</td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
-                    {device.data[device.step].sensorYRest[index] !== null ? device.data[device.step].sensorYRest[index] : ""}
+                    {row ? (row?.Pressure + device.adj).toFixed(1) : ""}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
+                    {typeof device.data.sensorYRest[index] === 'number' ? (device.data.sensorYRest[index] + device.adj).toFixed(1) : ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
                     {row?.flow ?? ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
-                    {device.data[device.step].flowYRest[index] !== null ? device.data[device.step].flowYRest[index] : ""}
+                    {device.data.flowYRest[index] !== null ? device.data.flowYRest[index] : ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/6">
                     {row?.battery != null ? `${row.battery}%` : ""}

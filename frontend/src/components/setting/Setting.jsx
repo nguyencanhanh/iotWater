@@ -4,13 +4,7 @@ import SetSample from "./SetSample";
 import { produce } from "immer";
 import { intervalUpdatePut } from '../../api/index';
 import { useAuth } from '../../context/authContext'
-
-function minutesToTime(totalMinutes) {
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-}
-
+import ScheduleViewer from './settingFlowAlarm'
 
 const SettingsButton = (profs) => {
   const { user } = useAuth()
@@ -19,7 +13,6 @@ const SettingsButton = (profs) => {
   const [isEditingAdj, setIsEditingAdj] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
   const [isEditingT, setIsEditingT] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
   const [isEditingWP, setIsEditingWP] = useState(false);
-  const [isEditingWPTime, setIsEditingWPTime] = useState(false);
   const [FlowSum, setFlowSum] = useState();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -72,15 +65,6 @@ const SettingsButton = (profs) => {
     profs.setdataInfo(prevData =>
       produce(prevData, draft => {
         draft[profs.step].wPress = event.target.value;
-      })
-    );
-  };
-
-  const handleInputChangeWPTime = (event) => {
-    event.preventDefault();
-    profs.setdataInfo(prevData =>
-      produce(prevData, draft => {
-        draft[profs.step].wPressTime = event.target.value;
       })
     );
   };
@@ -153,56 +137,10 @@ const SettingsButton = (profs) => {
     try {
       const res = await intervalUpdatePut(
         localStorage.getItem("token"),
-        { wPress: profs.info[profs.step].wPress, sen_id: profs.info[profs.step].id, user: user.user }
+        { wPress: Number(profs.info[profs.step].wPress) + Number(profs.adj), sen_id: profs.info[profs.step].id, user: user.user }
       )
       if (res.data.success) {
         setIsEditingWP(false);
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
-    }
-  };
-
-  const handleSubmitWPTime = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { timeAlarm: profs.info[profs.step].timeAlarm, wPressTime: profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
-        setIsEditingWPTime(false);
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
-    }
-  };
-
-  const handleTimeChangeTime = async (event) => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    const value = event.target.value
-    const [hours, minutes] = value.split(":").map(Number);
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { timeAlarm: hours * 60 + minutes, wPressTime: profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
-        profs.setdataInfo(prevData =>
-          produce(prevData, draft => {
-            draft[profs.step].timeAlarm = hours * 60 + minutes;
-          })
-        );
       }
     } catch (error) {
       if (error.res && !error.res.data.success) {
@@ -291,30 +229,6 @@ const SettingsButton = (profs) => {
     }
   }
 
-  const handleOnOffWPTime = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { wPressTime: -profs.info[profs.step].wPressTime, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
-        profs.setdataInfo(prevData =>
-          produce(prevData, draft => {
-            draft[profs.step].wPressTime = -draft[profs.step].wPressTime;
-          })
-        );
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
-    }
-  }
-
   return (
     <div className="relative inline-block text-left z-[1]">
       {/* Nút cài đặt */}
@@ -329,7 +243,7 @@ const SettingsButton = (profs) => {
       {isOpen && (
         <div
           className="absolute right-0 mt-2 w-85 bg-teal-600 rounded-lg shadow-lg"
-          style={{ maxHeight: "400px", overflowY: "auto" }}
+          style={{ maxHeight: "400px", overflowY: "auto", width: "min(500px, 90vw)", overflowX: "auto" }}
         >
           <ul className="py-3 px-4 space-y-3 max-h-96 overflow-y-auto">
             {/* Cài đặt thời gian hiển thị */}
@@ -375,7 +289,7 @@ const SettingsButton = (profs) => {
                   ) : (
                     <>
                       {/* Nếu không chỉnh sửa, hiển thị giá trị */}
-                      <span className="text-white">{profs.info[profs.step].tracking || 1.5} kg/m2</span>
+                      <span className="text-white">{profs.info[profs.step].tracking || 1.5} m</span>
                       <button
                         onClick={() => setIsEditing(true)} // Chuyển sang chế độ chỉnh sửa
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
@@ -411,7 +325,7 @@ const SettingsButton = (profs) => {
                   ) : (
                     <>
                       {/* Nếu không chỉnh sửa, hiển thị giá trị */}
-                      <span className="text-white">{profs.info[profs.step].adj} kg/m2</span>
+                      <span className="text-white">{profs.info[profs.step].adj} m</span>
                       <button
                         onClick={() => setIsEditingAdj(true)} // Chuyển sang chế độ chỉnh sửa
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
@@ -531,7 +445,7 @@ const SettingsButton = (profs) => {
                   ) : (
                     <>
                       {/* Nếu không chỉnh sửa, hiển thị giá trị */}
-                      <span className="text-white">{profs.info[profs.step].wPress} kg/m2</span>
+                      <span className="text-white">{profs.info[profs.step].wPress} m</span>
                       <button
                         onClick={() => setIsEditingWP(true)} // Chuyển sang chế độ chỉnh sửa
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
@@ -544,76 +458,17 @@ const SettingsButton = (profs) => {
               </div>
             </li>
             <li>
-              <div className="flex flex-col space-y-2 bg-gray-800 p-4 rounded-lg">
-                {/* Checkbox Cảnh báo */}
-                <div className="flex justify-between items-center">
-                  <label htmlFor="checkbox" className="text-white flex items-center space-x-2">
-                    <input
-                      id="checkbox"
-                      type="checkbox"
-                      checked={profs.info[profs.step].wPressTime && profs.info[profs.step].wPressTime >= 0}
-                      onChange={handleOnOffWPTime}
-                      className="w-5 h-5"
-                    />
-                    <span>Cảnh báo áp đạt mức:</span>
-                  </label>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  {isEditingWPTime ? (
-                    <>
-                      <input
-                        id="input-value"
-                        type="text"
-                        value={profs.info[profs.step].wPressTime}
-                        onChange={handleInputChangeWPTime}
-                        placeholder="Nhập giá trị"
-                        className="px-2 py-1 rounded-lg text-black w-20"
-                      />
-                      <button
-                        onClick={handleSubmitWPTime}
-                        className="px-4 py-2 bg-teal-500 text-white rounded-lg"
-                      >
-                        OK
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-white">{profs.info[profs.step].wPressTime || 1.1} kg/m2</span>
-                      <button
-                        onClick={() => setIsEditingWPTime(true)}
-                        className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition-all duration-200"
-                      >
-                        Chỉnh sửa
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {/* Ô chọn giờ */}
-                <div className="flex justify-between items-center">
-                  <label htmlFor="time-input" className="text-white">
-                    Chọn giờ:
-                  </label>
-                  <input
-                    id="time-input"
-                    type="time"
-                    value={minutesToTime(profs.info[profs.step].timeAlarm)}
-                    onChange={handleTimeChangeTime}
-                    className="px-2 py-1 rounded-lg text-black w-25"
-                  />
-                </div>
-              </div>
+              <ScheduleViewer sen_name={profs.info[profs.step].id}/>
             </li>
             <li>
               <div className="flex justify-between items-center">
                 <label htmlFor="input-value" className="text-white">
-                  Nhập áp tổng khởi tạo:
+                  Nhập lưu lượng tổng khởi tạo:
                 <input
                   type="number"
                   value={FlowSum}
                   onChange={(e) => setFlowSum(e.target.value)}
-                  placeholder="Nhập áp suất (kg/m²)"
+                  placeholder="Nhập lưu lượng tổng m3"
                   className="border text-black border-gray-300 p-2 rounded w-full mb-4"
                 />
                 </label>

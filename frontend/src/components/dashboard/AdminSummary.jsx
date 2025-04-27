@@ -56,7 +56,7 @@ function AdminSummary() {
                 ...prevData,
                 [messageData.n]: {
                     Pressure: messageData.d.reduce((sum, msg) => sum + msg.p, 0) / messageData.d.length,
-                    flow: messageData.f
+                    flow: messageData.d[messageData.d.length - 1].f
                 },
             }));
         });

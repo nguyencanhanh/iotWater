@@ -7,6 +7,7 @@ const sensorSchema = new mongoose.Schema({
     battery: { type: Number },
     flow: {type: Number},
     temperature: { type: Number },
+    sum: { type: Number },
     createAt: {type: Date},
 });
 sensorSchema.index({ user: 1, createAt: 1, index: 1 });

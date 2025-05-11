@@ -87,6 +87,7 @@ function SensorList() {
         data.forEach((sensor, index) => {
           addDataSensor(index, sensor.sensorT, sensor.dataPressure, sensor.dataFlow)
         })
+        console.log(res.data.timeTrackingRet)
         setTimeTracking(res.data.timeTrackingRet)
         setBatteryInit(res.data.battery)
         setTemp(res.data.temperature)

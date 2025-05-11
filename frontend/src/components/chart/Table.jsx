@@ -49,15 +49,15 @@ export const SensorDataDisplay = (profs) => {
                 </button>
               </td>
               <td className="border border-gray-300 px-4 py-2">{total}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.avgPressure.toFixed(1)}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.minPressure?.pressure.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.avgPressure?.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.minPressure?.pressure?.toFixed(1)}</td>
               <td className="border border-gray-300 px-4 py-2">{profs.param?.minPressure?.createAt}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxPressure?.pressure.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxPressure?.pressure?.toFixed(1)}</td>
               <td className="border border-gray-300 px-4 py-2">{profs.param?.maxPressure?.createAt}</td>
               <td className="border border-gray-300 px-4 py-2">{profs.param?.avgFlow?.toFixed(1)}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.minFlow?.flow.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.minFlow?.flow?.toFixed(1)}</td>
               <td className="border border-gray-300 px-4 py-2">{profs.param?.minFlow?.createAt}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxFlow?.flow.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxFlow?.flow?.toFixed(1)}</td>
               <td className="border border-gray-300 px-4 py-2">{profs.param?.maxFlow?.createAt}</td>
             </tr>
 
@@ -69,14 +69,14 @@ export const SensorDataDisplay = (profs) => {
                   <td className="border border-gray-300 px-4 py-2">{item._id.day}</td>
                   <td className="border border-gray-300 px-4 py-2">{total}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.avgPressure?.toFixed(1)}</td>
-                  <td className="border border-gray-300 px-4 py-2">{item.minPressure?.pressure.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.minPressure?.pressure?.toFixed(1)}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.minPressure?.createAt}</td>
-                  <td className="border border-gray-300 px-4 py-2">{item.maxPressure?.pressure.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.maxPressure?.pressure?.toFixed(1)}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.maxPressure?.createAt}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.avgFlow?.toFixed(1)}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.minFlow?.flow.toFixed(1)}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.minFlow?.createAt}</td>
-                  <td className="border border-gray-300 px-4 py-2">{item.maxFlow?.flow.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.maxFlow?.flow?.toFixed(1)}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.maxFlow?.createAt}</td>
                 </tr>
               )

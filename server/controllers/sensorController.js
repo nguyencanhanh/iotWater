@@ -24,6 +24,29 @@ function timeToCronExpr(timeStr) {
   return `${minute} ${hour} * * *`;
 }
 
+function timeToMinutes(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+}
+
+const fetchTimeAlarm = async (user, id) => {
+  const data = await Alarm.find({ user: user, id: id });
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  let closest = null;
+  let maxMinutes = -1;
+  data.forEach((item) => {
+    const itemMinutes = timeToMinutes(item.time);
+    if (itemMinutes <= nowMinutes && itemMinutes > maxMinutes) {
+      maxMinutes = itemMinutes;
+      closest = item;
+    }
+  })
+  if (closest) {
+    publishMessage("high_threshold", closest.flow * 1000, closest.id)
+  }
+}
 
 const publishMessage = (key, message, sen_id) => {
   client.publish(
@@ -82,16 +105,27 @@ const formatDate = (dateString) => {
 
   return `${datePart} ${timePart}`; // Kết quả dạng "dd/mm/yyyy HH:MM"
 };
+function getRowIndexFromTime(timeStr) {
+  const [hourStr, minStr] = timeStr.split(":");
+  const hour = parseInt(hourStr, 10);
+  const minute = parseInt(minStr, 10);
+  const slot = hour * 4 + Math.floor(minute / 15);
+  return 3 + slot; // bắt đầu từ dòng 3
+}
 
 const exportFakeDataToExcel = async (sensorData, res, adj) => {
   try {
     const workbook = new ExcelJS.Workbook();
-    
+
     // === 1. Viết phần Tổng Hợp (All Stats) ===
     const summarySheet = workbook.addWorksheet("Summary");
+    const worksheet = workbook.addWorksheet("Sensors");
     const stats = sensorData[0].stats
-    
+
     // === 2. Viết phần Từng Ngày (EndOfDay Summary) ===
+    worksheet.getRow(1).getCell(1).value = 'Thời gian';
+    worksheet.getRow(1).getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    worksheet.mergeCells(1, 1, 2, 1); // merge ô thời gian (A1:A2)
     const endOfDaySum = sensorData[0].endOfDaySum
     summarySheet.columns = [
       { header: "Ngày", key: "day", width: 12 },
@@ -108,8 +142,13 @@ const exportFakeDataToExcel = async (sensorData, res, adj) => {
       { header: "Thời gian max", key: "maxFlowTime", width: 15 },
       { header: "Tổng cuối ngày", key: "totalSum", width: 12 },
     ];
-    
-    endOfDaySum.forEach(daySum => {
+    for (let i = 0; i < 96; i++) {
+      const hour = Math.floor(i / 4);
+      const minute = (i % 4) * 15;
+      const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      worksheet.getRow(3 + i).getCell(1).value = timeStr;
+    }
+    endOfDaySum.forEach((daySum, idx) => {
       summarySheet.addRow({
         day: daySum._id?.day ?? "",
         production: daySum.lastSum && daySum.firstSum ? (daySum.lastSum - daySum.firstSum).toFixed(1) : "",
@@ -125,7 +164,31 @@ const exportFakeDataToExcel = async (sensorData, res, adj) => {
         maxFlowTime: daySum.maxFlow?.createAt ?? "",
         totalSum: daySum.lastSum?.toFixed(1) ?? "",
       });
-      
+      const startCol = 2 + idx * 3; // mỗi ngày chiếm 3 cột
+      const endCol = startCol + 2;
+
+      // Merge 3 ô thành 1 cho ngày
+      worksheet.mergeCells(1, startCol, 1, endCol);
+      worksheet.getRow(1).getCell(startCol).value = daySum._id?.day ?? "";
+      worksheet.getRow(1).getCell(startCol).alignment = { horizontal: 'center' };
+
+      // Ghi tên cột con
+      worksheet.getRow(2).getCell(startCol).value = 'Áp suất';
+      worksheet.getRow(2).getCell(startCol + 1).value = 'Lưu lượng';
+      worksheet.getRow(2).getCell(startCol + 2).value = 'Sản lượng';
+      daySum.data?.forEach(entry => {
+        if (Math.floor(entry.createAt / 60000) % 15) {
+          return; // chỉ lấy mỗi 15 phút 1 lần
+        }
+        const date = new Date(entry.createAt);
+        const timeStr = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // HH:mm
+        const rowIndex = getRowIndexFromTime(timeStr);
+        const row = worksheet.getRow(rowIndex);
+
+        row.getCell(startCol).value = entry.Pressure;
+        row.getCell(startCol + 1).value = entry.flow;
+        row.getCell(startCol + 2).value = (entry.sum - daySum.firstSum).toFixed(1);
+      });
     });
     summarySheet.addRow([]);
     summarySheet.addRow(["TỔNG HỢP TOÀN BỘ"]);
@@ -135,26 +198,26 @@ const exportFakeDataToExcel = async (sensorData, res, adj) => {
     summarySheet.addRow(["Lưu lượng avg", stats.avgFlow?.toFixed(2) ?? ""]);
     summarySheet.addRow(["Lưu lượng min", stats.minFlow?.flow?.toFixed(2) ?? "", "Lúc", stats.minFlow?.createAt ?? ""]);
     summarySheet.addRow(["Lưu lượng max", stats.maxFlow?.flow?.toFixed(2) ?? "", "Lúc", stats.maxFlow?.createAt ?? ""]);
-        
-    // === 3. Viết phần Data Chi Tiết ===
-    const worksheet = workbook.addWorksheet("Sensors");
-    worksheet.addRow(["DỮ LIỆU CHI TIẾT"]);
-    worksheet.columns = [
-      { header: "Thời gian", key: "createAt", width: 30 },
-      { header: "Áp suất", key: "Pressure", width: 15 },
-      { header: "Lưu lượng", key: "flow", width: 15 },
-    ];
 
-    sensorData[0]?.data?.forEach(sensor => {
-      if (Math.floor(sensor.createAt / 60000) % 15) {
-        return; // chỉ lấy mỗi 15 phút 1 lần
-      }
-      worksheet.addRow({
-        createAt: formatDate(sensor.createAt),
-        Pressure: (sensor.Pressure + adj)?.toFixed(2),
-        flow: sensor.flow,
-      });
-    });
+    // === 3. Viết phần Data Chi Tiết ===
+    // worksheet.addRow(["DỮ LIỆU CHI TIẾT"]);
+    // worksheet.columns = [
+    //   { header: "Thời gian", key: "createAt", width: 30 },
+    //   { header: "Áp suất", key: "Pressure", width: 15 },
+    //   { header: "Lưu lượng", key: "flow", width: 15 },
+    //   { header: "Số tổng", key: "sum", width: 15 },
+    // ];
+    // sensorData[0]?.data?.forEach(sensor => {
+    //   if (Math.floor(sensor.createAt / 60000) % 15) {
+    //     return; // chỉ lấy mỗi 15 phút 1 lần
+    //   }
+    //   worksheet.addRow({
+    //     createAt: formatDate(sensor.createAt),
+    //     Pressure: (sensor.Pressure + adj)?.toFixed(1),
+    //     flow: sensor.flow?.toFixed(2),
+    //     sum: sensor.sum?.toFixed(1)
+    //   });
+    // });
 
     // ✅ Ghi ra buffer
     const excelBuffer = await workbook.xlsx.writeBuffer();
@@ -186,14 +249,14 @@ export const exportSensors = async (req, res) => {
         $match: {
           index: sen_name,
           user: user,
-          createAt: { $gte: startOfToday, $lte: endOfToday }
+          createAt: { $gte: startOfToday, $lte: endOfToday },
         }
       },
       { $sort: { createAt: 1 } },
       {
         $facet: {
           data: [
-            { $project: { _id: 0, Pressure: 1, flow: 1, createAt: 1 } }
+            { $project: { _id: 0, Pressure: 1, flow: 1, createAt: 1, sum: 1 } }
           ],
           stats: [
             {
@@ -235,6 +298,14 @@ export const exportSensors = async (req, res) => {
               $group: {
                 _id: {
                   day: { $dateToString: { format: "%Y-%m-%d", date: "$createAt", timezone: "+07:00" } }
+                },
+                data: {
+                  $push: {
+                    createAt: "$createAt",
+                    Pressure: "$Pressure",
+                    flow: "$flow",
+                    sum: "$sum"
+                  }
                 },
                 firstSum: { $first: "$sum" }, // sum đầu tiên trong ngày
                 lastSum: { $last: "$sum" },    // sum cuối cùng trong ngày
@@ -502,8 +573,8 @@ export const getSensors = async (req, res) => {
         user: profs.user,
         createAt: { $gte: yesterday, $lt: startOfToday },
       })
-      .select('flow Pressure createAt')
-      .sort({ createAt: 1 });      
+        .select('flow Pressure createAt')
+        .sort({ createAt: 1 });
       const result = await Sensor.aggregate([
         {
           $match: {
@@ -558,11 +629,9 @@ export const getSensors = async (req, res) => {
         flowYRest[index] = sensor.flow
       })
       result[0].data.forEach((sensor) => {
-        // if(profs.info[i].id === 255)console.log("sensor", sensor)
         const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
         addDateElement(dataPressure, sensor, index, "Pressure")
         addDateElement(dataFlow, sensor, index, "flow")
-        sensorT[index] = sensor
         if (profs.info) {
           if (sensor.Pressure >= profs.info[i].tracking) {
             const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
@@ -572,15 +641,22 @@ export const getSensors = async (req, res) => {
           }
         }
         currentStart = sensor.createAt
+        sensorT[index] = sensor
       })
       if (result[0].data && result[0].data.length > 0) {
+        const sensorY24 = await Sensor.findOne({
+          index: profs.info[i].id,
+          user: profs.user,
+          createAt: { $gte: result[0].data[result[0].data.length - 1].createAt - 86400000 },
+        }).select('sum -_id').lean();
         const stats = result[0].stats
         battery[i] = stats.battery
         temperature[i] = stats.temperature
         pram[i] = { max: stats.maxPressure, min: stats.minPressure, avg: stats.avgPressure }
-        pramFlow[i] = { max: stats.maxFlow, min: stats.minFlow, total: stats.lastSum - stats.firstSum, avg: stats.avgFlow, sum: stats.lastSum };
+        pramFlow[i] = { max: stats.maxFlow, min: stats.minFlow, total24: stats.lastSum - sensorY24.sum, total: stats.lastSum - stats.firstSum, avg: stats.avgFlow, sum: stats.lastSum };
       }
       sensors[i] = { sensorYRest, flowYRest, dataFlow, sensorT, dataPressure }
+      timeTrackingRet[i] = Math.round(timeTracking / 60)
     }
     return res.status(200).json({ success: true, sensors, timeTrackingRet, battery, temperature, pram, pramFlow })
   } catch (error) {
@@ -755,8 +831,8 @@ export const addGroup = async (req, res) => {
 export const addAlarm = async (req, res) => {
   try {
     const profs = req.body;
-    scheduledJobs[`${profs.name}-${profs.user}-${profs.id}`] = cron.schedule(timeToCronExpr(profs.time), () => { 
-      // publishMessage("high_threshold", profs.flow * 1000, profs.id)
+    scheduledJobs[`${profs.name}-${profs.user}-${profs.id}`] = cron.schedule(timeToCronExpr(profs.time), () => {
+      publishMessage("high_threshold", profs.flow * 1000, profs.id)
     });
     const newAlarm = new Alarm({
       name: profs.name,
@@ -766,6 +842,7 @@ export const addAlarm = async (req, res) => {
       flow: profs.flow
     })
     await newAlarm.save()
+    fetchTimeAlarm(profs.user, profs.id)
     return res.status(200).json({ success: true });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Alarm add failed due to some reason" });
@@ -777,9 +854,9 @@ export const getAlarm = async (req, res) => {
     const { user, sen_name } = req.body
     const data = await Alarm.find({ user: user, id: sen_name });
     data.forEach((alarm) => {
-      if(!scheduledJobs[`${alarm.name}-${user}-${sen_name}`]) {
-        scheduledJobs[`${alarm.name}-${user}-${sen_name}`] = cron.schedule(timeToCronExpr(alarm.time), () => { 
-          // publishMessage("high_threshold", alarm.flow * 1000, sen_name)
+      if (!scheduledJobs[`${alarm.name}-${user}-${sen_name}`]) {
+        scheduledJobs[`${alarm.name}-${user}-${sen_name}`] = cron.schedule(timeToCronExpr(alarm.time), () => {
+          publishMessage("high_threshold", alarm.flow * 1000, sen_name)
         });
       }
     });
@@ -794,11 +871,14 @@ export const deleteAlarm = async (req, res) => {
     const { user, sen_name, name } = req.body
     scheduledJobs[`${name}-${user}-${sen_name}`].stop();
     delete scheduledJobs[`${name}-${user}-${sen_name}`];
-    if(!scheduledJobs){
-      // publishMessage("high_threshold", 300000, sen_name)
-    } 
-    const data = await Alarm.deleteOne({ user: user, id: sen_name, name: name });
-    return res.status(200).json({ success: true, data });
+    await Alarm.deleteOne({ user: user, id: sen_name, name: name });
+    if (Object.keys(scheduledJobs).length === 0) {
+      publishMessage("high_threshold", 300000, sen_name)
+    }
+    else {
+      fetchTimeAlarm(user, sen_name)
+    }
+    return res.status(200).json({ success: true });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
   }

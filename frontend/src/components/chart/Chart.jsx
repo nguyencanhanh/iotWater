@@ -81,7 +81,7 @@ export const connectMqtt = (timeTrackingRet, info, idMap) => {
       await semaphore.acquire();
       try {
         messageData = JSON.parse(messageData.toString());
-        const sen_name = idMap[Number(messageData.n) === 255 ? 0 : messageData.n];
+        const sen_name = idMap[Number(messageData.n)];
         const msg_id = Number(messageData.m);
         if (msg_id === 1 && sen_name != null) {
           const dataMess = messageData.d
@@ -462,9 +462,9 @@ export const TimeComparison = (profs) => {
 export const Param = (profs) => {
   return (
     <div className="flex">
-      <p>max: {profs.pram?.max}</p>
-      <p className='ml-3'>min: {profs.pram?.min}</p>
-      <p className='ml-3'>avg: {profs.pram?.avg?.toFixed(2)}</p>
+      <p className='text-sm'>max: {profs.pram?.max}</p>
+      <p className='ml-3 text-sm'>min: {profs.pram?.min}</p>
+      <p className='ml-3 text-sm'>avg: {profs.pram?.avg?.toFixed(2)}</p>
     </div>
   );
 };
@@ -480,11 +480,12 @@ export const ParamFlow = (profs) => {
   }, [changeData]);
   return (
     <div className="flex">
-      <p>max: {profs.pram?.max}</p>
-      <p className='ml-3'>min: {profs.pram?.min}</p>
-      <p className='ml-3'>avg: {profs.pram?.avg?.toFixed(2)}</p>
-      <p className='ml-3'>total: {total}</p>
-      <p className='ml-3'>sum: {sumFlow}</p>
+      <p className='text-sm'>max: {profs.pram?.max}</p>
+      <p className='ml-3 text-sm'>min: {profs.pram?.min}</p>
+      <p className='ml-3 text-sm'>avg: {profs.pram?.avg?.toFixed(2)}</p>
+      <p className='ml-3 text-sm'>total: {total}</p>
+      <p className='ml-3 text-sm'>total24: {profs.pram?.total24?.toFixed(1)}</p>
+      <p className='ml-3 text-sm'>sum: {sumFlow}</p>
     </div>
   );
 };

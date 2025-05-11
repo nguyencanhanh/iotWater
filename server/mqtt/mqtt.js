@@ -98,7 +98,7 @@ const connectMqtt = async () => {
   client.on("message", async (topic, messageData) => {
     try {
       messageData = JSON.parse(messageData.toString());
-      const sen_name = Number(messageData.n) === 255 ? 0 : messageData.n;
+      const sen_name = Number(messageData.n);
       const user = Number(messageData.u) || 0;
       if(!allSensors[user][sen_name]) {
         newSensor(user, sen_name)
@@ -152,6 +152,9 @@ const connectMqtt = async () => {
         }
         if (messageData.p && info[0].wPress > 0) {
           await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo áp suất dưới thấp ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`)
+        }
+        if (messageData.f && Number(messageData.f) < 300) {
+          await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo lưu lượng cao ${messageData.f}m3/h tại cảm biến ${name} vào lúc ${currentDate}`)
         }
       }
     } catch (error) {

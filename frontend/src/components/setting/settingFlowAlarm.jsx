@@ -12,7 +12,6 @@ const ScheduleManager = ({sen_name}) => {
   const fetchAlarm = async () => {
       try {
         const res = await getAlarm(localStorage.getItem("token"), { user: user.user, sen_name: sen_name })
-        console.log(res.data.data)
         setJobs(res.data.data)
       } catch (error) {
         console.error("An unexpected error occurred:", error);

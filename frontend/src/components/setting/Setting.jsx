@@ -14,6 +14,7 @@ const SettingsButton = (profs) => {
   const [isEditingT, setIsEditingT] = useState(false);  // Trạng thái để hiển thị ô nhập liệu
   const [isEditingWP, setIsEditingWP] = useState(false);
   const [FlowSum, setFlowSum] = useState();
+  const [FlowUnit, setFlowUnit] = useState();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
@@ -27,7 +28,27 @@ const SettingsButton = (profs) => {
         localStorage.getItem("token"),
         { sum: FlowSum, sen_id: profs.info[profs.step].id, user: user.user }
       )
-      if(res.data.success){
+      if (res.data.success) {
+        alert("Cập nhật thành công");
+      }
+    } catch (error) {
+      if (error.res && !error.res.data.success) {
+        alert(error.res.data.error);
+      }
+    }
+  }
+
+  const handleSendUnit = async () => {
+    if (user.role === 'trial') {
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
+    }
+    try {
+      const res = await intervalUpdatePut(
+        localStorage.getItem("token"),
+        { unit: FlowUnit, sen_id: profs.info[profs.step].id, user: user.user }
+      )
+      if (res.data.success) {
         alert("Cập nhật thành công");
       }
     } catch (error) {
@@ -343,22 +364,30 @@ const SettingsButton = (profs) => {
                 <input
                   type="datetime-local"
                   value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="border px-2 py-1"
-                  style={{
-                    width: "160px",
+                  onChange={(e) => {
+                    const [d, t] = e.target.value.split("T");
+                    const [h, m] = t.split(":").map(Number);
+                    const rm = Math.round(m / 5) * 5;
+                    setFromDate(`${d}T${String(h).padStart(2, "0")}:${String(rm % 60).padStart(2, "0")}`);
                   }}
+                  className="border px-2 py-1"
+                  style={{ width: "160px" }}
                 />
+
                 <span className="text-white">đến</span>
                 <input
                   type="datetime-local"
                   value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="border px-2 py-1"
-                  style={{
-                    width: "160px",
+                  onChange={(e) => {
+                    const [d, t] = e.target.value.split("T");
+                    const [h, m] = t.split(":").map(Number);
+                    const rm = Math.round(m / 5) * 5;
+                    setToDate(`${d}T${String(h).padStart(2, "0")}:${String(rm % 60).padStart(2, "0")}`);
                   }}
+                  className="border px-2 py-1"
+                  style={{ width: "160px" }}
                 />
+
                 <button
                   onClick={handleSubmitHistory}
                   className="bg-teal-500 text-white px-3 py-1 rounded hover:bg-teal-600"
@@ -458,22 +487,42 @@ const SettingsButton = (profs) => {
               </div>
             </li>
             <li>
-              <ScheduleViewer sen_name={profs.info[profs.step].id}/>
+              <ScheduleViewer sen_name={profs.info[profs.step].id} />
             </li>
             <li>
               <div className="flex justify-between items-center">
                 <label htmlFor="input-value" className="text-white">
                   Nhập lưu lượng tổng khởi tạo:
-                <input
-                  type="number"
-                  value={FlowSum}
-                  onChange={(e) => setFlowSum(e.target.value)}
-                  placeholder="Nhập lưu lượng tổng m3"
-                  className="border text-black border-gray-300 p-2 rounded w-full mb-4"
-                />
+                  <input
+                    type="number"
+                    value={FlowSum}
+                    onChange={(e) => setFlowSum(e.target.value)}
+                    placeholder="Nhập lưu lượng tổng m3"
+                    className="border text-black border-gray-300 p-2 rounded w-full mb-4"
+                  />
                 </label>
                 <button
                   onClick={handleSend}
+                  className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                >
+                  Gửi đi
+                </button>
+              </div>
+            </li>
+            <li>
+              <div className="flex justify-between items-center">
+                <label htmlFor="input-value" className="text-white">
+                  Nhập số đơn vị mỗi xung (lit):
+                  <input
+                    type="number"
+                    value={FlowUnit}
+                    onChange={(e) => setFlowUnit(e.target.value)}
+                    placeholder="Nhập đơn vị mỗi xung (lit)"
+                    className="border text-black border-gray-300 p-2 rounded w-full mb-4"
+                  />
+                </label>
+                <button
+                  onClick={handleSendUnit}
                   className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                 >
                   Gửi đi

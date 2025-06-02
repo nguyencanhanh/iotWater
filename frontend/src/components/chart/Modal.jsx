@@ -7,43 +7,49 @@ import { exportDataPost } from '../../api/index';
 import { useAuth } from '../../context/authContext'
 import {differenceInCalendarDays} from 'date-fns'
 
-function generateLabelsAndData(watch, hourStart) {
+function generateLabelsAndData(watch, hourStart, listDate) {
+  const minuteS = listDate[0].getMinutes()
   const labels = [];
   const verticalLines = [];
-  for (let i = 0; i < watch; i += 5) {
-    const hour = watch < 288 ? Math.floor(i / 60) % 24 + hourStart : Math.floor(i / 60 + hourStart) % 24;
-    const minute = i % 60;
-    const index = Math.floor(i / 5);
-
-    if (index % 288 === 0) {
-      const step = index !== 0 ? 288 - hourStart * 12 : (24 - hourStart) * 12;
+  let dateStep = 0
+  let hour = hourStart
+  for (let i = 0; i < watch; i++) {
+    const minute = (minuteS + i * 5) % 60;
+    if(i !== 0 && minute === 0) hour++;
+    if(hour === 24) hour = 0
+    if(hour === 0 && minute === 0){
       verticalLines.push({
         type: "line",
         mode: "vertical",
         scaleID: "x",
-        value: index + step,
+        value: i,
         borderColor: "rgba(255, 0, 0, 0.5)",
         borderWidth: 2,
         borderDash: [5, 5],
       });
+      labels.push(`${listDate[++dateStep].toISOString().split("T")[0]} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
     }
-    labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+    else{
+      labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+    }
   }
   return { labels, verticalLines };
 }
 
 function getLength(lengModal, listDate, start, end) {
   const lengDate = listDate.length;
+  const minute_s = listDate[0].getMinutes();
+  const minute_e = listDate[lengDate - 1].getMinutes();
   if (lengDate !== 1) {
-    return lengModal * lengDate - lengModal * 2 + (24 - listDate[0].getHours() + listDate[lengDate - 1].getHours()) * 60
+    return lengModal * lengDate - lengModal * 2 + (24 - listDate[0].getHours() + listDate[lengDate - 1].getHours()) * 12 + Math.floor((minute_e - minute_s) / 5)
   }
   else {
-    return (end - start) * 60
+    return (end - start) * 12 + Math.floor((minute_e - minute_s) / 5)
   }
 }
 
 function convertTime(timeConvert, watch) {
-  return timeConvert.getHours() * 3600 / watch
+  return (timeConvert.getHours() * 3600 + timeConvert.getMinutes() * 60) / watch
 }
 
 function getDatesInRange(startDate, endDate) {
@@ -70,7 +76,8 @@ const ModalData = (props) => {
   const [listDate, setListDate] = useState(getDatesInRange(dateData[0], new Date(dateData[1])));
   const startDate = new Date(fromDate).getHours();
   const endDate = new Date(toDate).getHours();
-  const [dataLabel, setDataLabel] = useState(generateLabelsAndData(getLength(1440, listDate, startDate, endDate), startDate));
+  
+  const [dataLabel, setDataLabel] = useState(generateLabelsAndData(getLength(288, listDate, startDate, endDate), startDate, listDate));
   const fetchSensors = async () => {
     try {
       const res = await sensorListGet(localStorage.getItem("token"), { sen_name: dateData[2], timeGet: [fromDate, toDate], user: user.user });
@@ -96,11 +103,18 @@ const ModalData = (props) => {
     if (!fromDate || !toDate) {
       return;
     }
-    const listDateNew = getDatesInRange(fromDate, new Date(toDate));
-    setListDate(listDateNew);
-    setOffset(Math.floor(convertTime(new Date(listDateNew[0]), 300)))
-    setDataLabel(generateLabelsAndData(getLength(1440, listDateNew), listDateNew[0].getHours()));
-    fetchSensors();
+    const startDate = new Date(fromDate);
+    const endDate = new Date(toDate);
+    const listDateTemp = getDatesInRange(startDate, endDate);
+    try {
+      setOffset(Math.floor(convertTime(new Date(fromDate), 300)))
+      setDataLabel(generateLabelsAndData(getLength(288, listDateTemp, startDate.getHours(), endDate.getHours()), startDate.getHours(), listDateTemp));
+      setListDate(listDateTemp);
+    } catch (e){
+      console.error("An unexpected error occurred:", error);
+    } finally {
+      fetchSensors();
+    }
   };
 
   const handleExportExcel = async () => {

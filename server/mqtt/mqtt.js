@@ -19,19 +19,14 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function sendTelegramMessage(token, chatId, message, retries = 3) {
+async function sendTelegramMessage(token, authorization, message, retries = 3) {
   // const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  const curlCommand = `curl -X POST "https://api.telegram.org/bot${token}/sendMessage" \
-     -H "Content-Type: application/json" \
-     -d '{"chat_id": "${chatId}", "text": "${message}"}'`;
+  const curlCommand = `curl -X POST https://discord.com/api/v9/channels/${token}/messages \
+  -H "Authorization: ${authorization}" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "${message}"}'`;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      // const response = await axios.get(url, {
-      //   params: {
-      //     chat_id: chatId,
-      //     text: message
-      //   }
-      // });
       exec(curlCommand);
       return true;
     } catch (error) {
@@ -54,7 +49,7 @@ const newSensor = async (user, id) => {
       wPressTime: 0,
       timeAlarm: 300,
       watch: 60,
-      adj: 0, 
+      adj: 0,
       id: id,
       name: id,
       lat: 0,
@@ -77,7 +72,7 @@ const connectMqtt = async () => {
     const info = await Info.find({ user: user });
     if (info.length > 0) {
       info.forEach((sensor) => {
-        if(!allSensors[user]) {
+        if (!allSensors[user]) {
           allSensors[user] = {}
         }
         allSensors[user][sensor.id] = 1
@@ -100,7 +95,7 @@ const connectMqtt = async () => {
       messageData = JSON.parse(messageData.toString());
       const sen_name = Number(messageData.n);
       const user = Number(messageData.u) || 0;
-      if(!allSensors[user][sen_name]) {
+      if (!allSensors[user][sen_name] && sen_name != 255) {
         newSensor(user, sen_name)
         allSensors[user][sen_name] = 1
       }
@@ -136,7 +131,7 @@ const connectMqtt = async () => {
           hour12: false // Buộc không dùng định dạng 12 giờ 
         })
         if (messageData.res < info[0].wPressTime) {
-          await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo chưa đạt mức áp ${messageData.res}m tại cảm biến ${name} vào lúc ${currentDate}`)
+          await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo chưa đạt mức áp ${messageData.res}m tại cảm biến ${name} vào lúc ${currentDate}`)
         }
       }
       else if (msg_id === 3) {
@@ -148,13 +143,13 @@ const connectMqtt = async () => {
           hour12: false // Buộc không dùng định dạng 12 giờ 
         })
         if (messageData.t && info[0].temperature > 0) {
-          await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo nhiệt độ cao ${messageData.t}°C tại cảm biến ${name} vào lúc ${currentDate}`)
+          await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo nhiệt độ cao ${messageData.t}°C tại cảm biến ${name} vào lúc ${currentDate}`)
         }
-        if (messageData.p && info[0].wPress > 0) {
-          await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo áp suất dưới thấp ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`)
+        if (messageData.p != null && info[0].wPress > 0) {
+          await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo áp suất dưới thấp ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`)
         }
         if (messageData.f && Number(messageData.f) < 300) {
-          await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo lưu lượng cao ${messageData.f}m3/h tại cảm biến ${name} vào lúc ${currentDate}`)
+          await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo lưu lượng cao ${messageData.f}m3/h tại cảm biến ${name} vào lúc ${currentDate}`)
         }
       }
     } catch (error) {

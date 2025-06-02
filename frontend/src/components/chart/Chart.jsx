@@ -206,7 +206,42 @@ export const ChartMadal = (profs) => {
       },
     },
     scales: {
-      x: { min: 0, max: profs.length, grid: { display: false } },
+      x: { min: 0, 
+        max: profs.length, 
+        grid: { display: false },
+        ticks: {
+          autoSkip: false,
+          callback: function (value, index, ticks) {
+            const label = profs.dataLabel.labels[index];
+            const lengthLabels = profs.dataLabel.labels.length
+            if (label.includes('-')) return label
+            const hour = parseInt(label.split(':')[0]);
+            const minute = parseInt(label.split(':')[1]);
+            if(lengthLabels < 288){
+              if (minute === 0) return label;
+            }
+            else if(lengthLabels < 576){
+              if (minute === 0 && hour % 2 === 0) return label;
+            }
+            else if(lengthLabels < 864){
+              if (minute === 0 && hour % 3 === 0) return label;
+            }
+            else if(lengthLabels < 1152){
+              if (minute === 0 && hour % 4 === 0) return label;
+            }
+            else if(lengthLabels < 1728){
+              if (minute === 0 && hour % 6 === 0) return label;
+            }
+            else if(lengthLabels < 2340){
+              if (minute === 0 && hour % 8 === 0) return label;
+            }
+            else if(lengthLabels < 3456){
+              if (minute === 0 && hour % 12 === 0) return label;
+            }
+            return '';
+          }
+        }
+      },
       y1: {
         position: "left",
         title: { display: true, text: "Áp suất (m)" },
@@ -452,9 +487,9 @@ export const TimeComparison = (profs) => {
   return (
     <div className="flex items-center w-1/2">
       <span className="text-sm font-medium text-gray-700 mr-2">
-        Lớn hơn <span className="text-red-600">{profs.info?.tracking}</span> m:
+        Lớn hơn <span className="text-red-600">{profs.info?.tracking}</span>m:
       </span>
-      <span className="text-lg font-bold text-teal-700">{Math.floor(timeMoreThan / 60)}H {timeMoreThan % 60}P</span>
+      <span className="text-lg font-bold text-teal-700">{Math.floor(timeMoreThan / 60)}H{timeMoreThan % 60}P</span>
     </div>
   );
 };

@@ -5,14 +5,12 @@ import bcrypt from 'bcrypt'
 const userRegister = async () => {
   connectToDatabase()
   try {
-    const hashPassword = await bcrypt.hash("trial", 10)
-    const info = new User({
+    const hashPassword = await bcrypt.hash("2", 10)
+    const info = await User.findOneAndUpdate({
       name: "guest",
-      email: "guest@gmail.com",
-      password: hashPassword,
+      email: "dnpbg@gmail.com",
       role: "trial",
-    })
-    await info.save()
+    }, { $set: { email: 'cnbg@gmail.com', password: hashPassword } }, { new: true })
   } catch (error) {
     console.log(error)
   }

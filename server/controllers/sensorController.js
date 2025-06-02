@@ -90,21 +90,23 @@ function getDatesInRange(startDate, endDate) {
 
 function getLength(lengModal, listDate) {
   const lengDate = listDate.length;
+  const minute_s = listDate[0].getMinutes();
+  const minute_e = listDate[lengDate - 1].getMinutes();
   if (lengDate !== 1) {
-    return lengModal * lengDate - lengModal * 2 + (24 - listDate[0].getHours() + listDate[lengDate - 1].getHours()) * 12
+    return lengModal * lengDate - lengModal * 2 + (24 - listDate[0].getHours() + listDate[lengDate - 1].getHours()) * 12 + Math.floor((minute_e - minute_s) / 5)
   }
   else {
-    return (listDate[lengDate - 1].getHours() - listDate[0].getHours()) * 12
+    return (listDate[lengDate - 1].getHours() - listDate[0].getHours()) * 12 + Math.floor((minute_e - minute_s) / 5)
   }
 }
 
-const formatDate = (dateString) => {
-  const date = new Date(dateString);
-  const datePart = date.toLocaleDateString("vi-VN"); // Định dạng dd/mm/yyyy
-  const timePart = date.toLocaleTimeString("vi-VN", { hour12: false, hour: "2-digit", minute: "2-digit" }); // HH:MM
+// const formatDate = (dateString) => {
+//   const date = new Date(dateString);
+//   const datePart = date.toLocaleDateString("vi-VN"); // Định dạng dd/mm/yyyy
+//   const timePart = date.toLocaleTimeString("vi-VN", { hour12: false, hour: "2-digit", minute: "2-digit" }); // HH:MM
 
-  return `${datePart} ${timePart}`; // Kết quả dạng "dd/mm/yyyy HH:MM"
-};
+//   return `${datePart} ${timePart}`; // Kết quả dạng "dd/mm/yyyy HH:MM"
+// };
 function getRowIndexFromTime(timeStr) {
   const [hourStr, minStr] = timeStr.split(":");
   const hour = parseInt(hourStr, 10);
@@ -242,8 +244,8 @@ export const exportSensors = async (req, res) => {
     const { sen_name, adj, date, user } = req.body;
     const startOfToday = new Date(date[0]);
     const endOfToday = new Date(date[1]);
-    startOfToday.setUTCMinutes(0, 0, 0);
-    endOfToday.setUTCMinutes(0, 0, 999);
+    startOfToday.setUTCSeconds(0, 0);
+    endOfToday.setUTCSeconds(0, 999);
     const sensorData = await Sensor.aggregate([
       {
         $match: {
@@ -378,6 +380,12 @@ export const upInterval = async (req, res) => {
       }
       return res.status(200).json({ success: true })
     }
+    if (profs.unit != null) {
+      if (publishMessage('content_unit', Number(profs.unit), profs.sen_id)) {
+        return res.status(500).json({ success: false, error: "Not publish" })
+      }
+      return res.status(200).json({ success: true })
+    }
     if (profs.adj != null) {
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { adj: profs.adj } }, { new: true })
       return res.status(200).json({ success: true })
@@ -443,8 +451,8 @@ export const getSensors = async (req, res) => {
       const lengModal = 288
       const startOfToday = new Date(profs.timeGet[0]);
       const endOfToday = new Date(profs.timeGet[1]);
-      startOfToday.setUTCMinutes(0, 0, 0);
-      endOfToday.setUTCMinutes(0, 0, 999);
+      startOfToday.setUTCSeconds(0, 0);
+      endOfToday.setUTCSeconds(0, 999);
       const result = await Sensor.aggregate([
         {
           $match: {
@@ -549,12 +557,13 @@ export const getSensors = async (req, res) => {
       const sensorT = Array(lengArray).fill(null)
       const startDate = startOfToday
       const offSetHour = startOfToday.getHours() * 12
+      const offSetMinute = Math.floor(startOfToday.getMinutes() / 5)
       result[0].data.forEach((sensor) => {
         const dateOfSensor = new Date(sensor.createAt)
         const currentDate = dateOfSensor
         const convert = differenceInCalendarDays(currentDate, startDate)
         const convertTimeValue = Math.floor(convertTime(sensor.createAt, 300))
-        const index = convert * lengModal + convertTimeValue - offSetHour;
+        const index = convert * lengModal + convertTimeValue - offSetHour - offSetMinute;
         addDateElement(sensorH, sensor, index, "Pressure");
         addDateElement(flowH, sensor, index, "flow");
         sensorT[index] = sensor

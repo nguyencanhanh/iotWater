@@ -12,7 +12,7 @@ import connectMqtt from './mqtt/mqtt.js'
 connectToDatabase()
 connectMqtt()
 const app = express()
-app.use(cors())
+app.use(cors({origin: ['https://iotwater2024.mooo.com']}))
 app.use(express.json())
 app.use(bodyParser.raw({ type: 'image/jpeg', limit: '5mb' }));
 app.use('/api/auth', authRouter)

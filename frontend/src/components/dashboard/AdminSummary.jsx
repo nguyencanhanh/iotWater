@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import mqtt from "mqtt";
 import { useAuth } from "../../context/authContext";
-import { intervalUpdatePut, sensorListGet } from "../../api/index";
+import { intervalUpdatePut, sensorListGet, getGroup } from "../../api/index";
 import ModalData from "../chart/Modal";
 
 function AdminSummary() {
@@ -14,10 +14,12 @@ function AdminSummary() {
     const [newLat, setNewLat] = useState("");
     const [newLng, setNewLng] = useState("");
     const [selectedId, setSelectedId] = useState(null);
+    // const [selectedG, setSelectedG] = useState(null);
     const [errorMessage, setErrorMessage] = useState("");
     const [showSettings, setShowSettings] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [dateData, setDateData] = useState([]);
+    const [groups, setGroups] = useState([]);
 
     // MQTT Setup
     const host = "iotwater2024.mooo.com";
@@ -44,6 +46,19 @@ function AdminSummary() {
                 setSensorLoading(false);
             }
         };
+        
+          const fetchGroups = async () => {
+            try {
+              const res = await getGroup(localStorage.getItem("token"), { user: user.user })
+              setGroups(res.data.group)
+            } catch (error) {
+              console.error("An unexpected error occurred:", error);
+              alert(
+                error.response?.data?.error || "Something went wrong. Please try again."
+              );
+            }
+          }
+          fetchGroups();
         fetchSensors();
     }, []);
 
@@ -95,6 +110,10 @@ function AdminSummary() {
         setDateData([startDate, endDate, point.id]);
     };
 
+    const changeGroupMap = (e) => {
+        setWeatherData(info.filter((group) => group.group.toLowerCase().includes(e.target.value.toLowerCase())))
+    }
+
     return (
         <div className="relative h-screen w-full">
             {/* Bản đồ ở lớp dưới */}
@@ -113,16 +132,16 @@ function AdminSummary() {
                                 }}
                             >
                                 <Tooltip permanent direction="top" className="w-150">
-                                    <h3 className="text-lg font-semibold">{point.name}</h3>
+                                    <h3 className="font-semibold">{point.name}</h3>
                                     <table className="w-full">
                                         <tbody>
                                             <tr>
-                                                <td className="text-left text-gray-600 text-lg border border-gray-300">Áp suất</td>
-                                                <td className="text-left text-gray-600 text-lg border text-center border-gray-300">{data[point.id]?.Pressure?.toFixed(2)} m</td>
+                                                <td className="text-left text-gray-600 border border-gray-300">Áp suất</td>
+                                                <td className="text-left text-gray-600 border text-center border-gray-300">{data[point.id]?.Pressure?.toFixed(2)} m</td>
                                             </tr>
                                             <tr>
-                                                <td className="text-left text-gray-600 text-lg border border-gray-300">Lưu lượng</td>
-                                                <td className="text-left text-gray-600 text-lg border text-center border-gray-300">{data[point.id]?.flow} m3/h</td>
+                                                <td className="text-left text-gray-600 border border-gray-300">Lưu lượng</td>
+                                                <td className="text-left text-gray-600 border text-center border-gray-300">{data[point.id]?.flow} m3/h</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -144,6 +163,16 @@ function AdminSummary() {
             {showSettings && (
                 <div className="absolute top-16 right-4 bg-white p-4 rounded shadow-lg z-10 w-64">
                     <h3 className="text-xl font-semibold mb-2">Cập nhật tọa độ trạm</h3>
+                    <div className="mb-2">
+                        <label htmlFor="group" className="block mb-1">Chọn nhóm</label>
+                        <select id="group" className="w-full p-2 border rounded" onChange={changeGroupMap}>
+                            <option value="">Chọn nhóm</option>
+                            <option value="">Tất cả</option>
+                            {groups.map((point) => (
+                                <option value={point}>{point}</option>
+                            ))}
+                        </select>
+                    </div>
                     <div className="mb-2">
                         <label htmlFor="station" className="block mb-1">Chọn trạm</label>
                         <select id="station" className="w-full p-2 border rounded" onChange={(e) => setSelectedId(Number(e.target.value))}>

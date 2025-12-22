@@ -10,7 +10,7 @@ export default function GroupNameTable() {
 
   const fetchGroups = async () => {
     try {
-      const res = await getGroup(localStorage.getItem("token"), { user: user.user })
+      const res = await getGroup(localStorage.getItem("token"), user.user )
       setGroups(res.data.group)
       setData(res.data.sen_group)
     } catch (error) {

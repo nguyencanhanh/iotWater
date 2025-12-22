@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { changeData } from "../sensor/SensorList"
-import mqtt from 'mqtt';
+// import mqtt from 'mqtt';
 import { Sema } from 'async-sema'
+import { client } from "../../pages/AdminDashboard";
 import annotationPlugin from "chartjs-plugin-annotation";
 import { Line } from "react-chartjs-2";
 import {
@@ -55,23 +56,22 @@ export const addDataSensor = (indexSensors, data, dataPressure, dataFlow) => {
 
 export const connectMqtt = (timeTrackingRet, info, idMap) => {
   const [data, setData] = useState();
-  const host = 'iotwater2024.mooo.com';
-  const port = 9001;
-  const clientId = `mqtt_${Math.random().toString(16).slice(3)}`;
-  const connectUrl = `wss://${host}:${port}/mqtt`;
+  // const host = 'iotwater2024.mooo.com';
+  // const port = 9001;
+  // const clientId = `mqtt_${ip_local}`;
+  // const connectUrl = `wss://${host}:${port}/mqtt`;
   const topic = 'iotwatter@2024';
-  // let check = false;
-  const options = {
-    clientId,
-    clean: true,
-    connectTimeout: 4000,
-    reconnectPeriod: 5000,
-  }
-  const client = mqtt.connect(connectUrl, options);
-  
+  // // let check = false;
+  // const options = {
+  //   clientId,
+  //   clean: true,
+  //   connectTimeout: 4000,
+  //   reconnectPeriod: 5000,
+  // }
+  // const client = mqtt.connect(connectUrl, options);
+
   timeReach = timeTrackingRet;
   useEffect(() => {
-
     const semaphore = new Sema(1);
     client.on('connect', () => {
       console.log('Connected to MQTT broker');
@@ -87,7 +87,7 @@ export const connectMqtt = (timeTrackingRet, info, idMap) => {
           const dataMess = messageData.d
           const lastValue = dataMess[dataMess.length - 1];
           battery[sen_name] = lastValue.b || messageData.b;
-          flowsum[sen_name] = messageData.s;
+          flowsum[sen_name] = messageData.s / 10;
           temperature[sen_name] = messageData.t;
           let currentStart = dataMess[0].t * 1000;
           dataMess.forEach(async (mess, index) => {
@@ -133,6 +133,54 @@ export const addData = async (indexSensor, data, newDate, dataPressure, watch) =
   listDataSensor[indexSensor][index] = dataPressure
   listDataTable[indexSensor][index] = data
 };
+
+export const ChartPrv = (profs) => {
+  const chartRef = useRef(null);
+  const chartData = {
+    labels: profs.label,
+    datasets: profs.dataset
+  }
+  // Tùy chọn biểu đồ
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: 'nearest', // <<== điểm gần nhất
+      axis: 'x', // hoặc 'xy' nếu muốn cả 2 chiều
+      intersect: false, // <<== quan trọng: không cần trỏ đúng vào điểm
+    },
+    plugins: {
+      legend: { display: true, position: "top" },
+      tooltip: { enabled: true },
+    },
+    scales: {
+      x: {
+        min: 0,
+        max: profs.length,
+      },
+      y1: {
+        position: "left",
+        title: { display: true, text: "Áp suất(m)" },
+        min: 0,
+        max: 50,
+        grid: { color: "rgba(43, 41, 41, 0.2)" },
+      },
+      y2: {
+        position: "right",
+        title: { display: true, text: "Lưu lượng m3/h" },
+        min: 0,
+        max: 500,
+      },
+    },
+  };
+
+
+  return (
+    <div className="w-full h-80 mb-3">
+      <Line ref={chartRef} data={chartData} options={options} />
+    </div>
+  );
+}
 
 export const ChartMadal = (profs) => {
   const chartRef = useRef(null);
@@ -206,8 +254,9 @@ export const ChartMadal = (profs) => {
       },
     },
     scales: {
-      x: { min: 0, 
-        max: profs.length, 
+      x: {
+        min: 0,
+        max: profs.length,
         grid: { display: false },
         ticks: {
           autoSkip: false,
@@ -217,25 +266,25 @@ export const ChartMadal = (profs) => {
             if (label.includes('-')) return label
             const hour = parseInt(label.split(':')[0]);
             const minute = parseInt(label.split(':')[1]);
-            if(lengthLabels < 288){
+            if (lengthLabels < 288) {
               if (minute === 0) return label;
             }
-            else if(lengthLabels < 576){
+            else if (lengthLabels < 576) {
               if (minute === 0 && hour % 2 === 0) return label;
             }
-            else if(lengthLabels < 864){
+            else if (lengthLabels < 864) {
               if (minute === 0 && hour % 3 === 0) return label;
             }
-            else if(lengthLabels < 1152){
+            else if (lengthLabels < 1152) {
               if (minute === 0 && hour % 4 === 0) return label;
             }
-            else if(lengthLabels < 1728){
+            else if (lengthLabels < 1728) {
               if (minute === 0 && hour % 6 === 0) return label;
             }
-            else if(lengthLabels < 2340){
+            else if (lengthLabels < 2340) {
               if (minute === 0 && hour % 8 === 0) return label;
             }
-            else if(lengthLabels < 3456){
+            else if (lengthLabels < 3456) {
               if (minute === 0 && hour % 12 === 0) return label;
             }
             return '';
@@ -253,7 +302,7 @@ export const ChartMadal = (profs) => {
         position: "right",
         title: { display: true, text: "Lưu lượng (m3/h)" },
         min: 0,
-        max: 300,
+        max: 500,
         grid: { drawOnChartArea: false }, // Ẩn lưới của trục này
       },
     },
@@ -269,98 +318,106 @@ export const ChartMadal = (profs) => {
 
 const RealTimeLineChart = (profs) => {
   const chartRef = useRef(null);
+
+  // Đọc trạng thái ẩn/hiện từ localStorage
+  const hiddenStates = JSON.parse(localStorage.getItem("chartHiddenStates") || "[]");
+
   const [chartData, setData] = useState({
     labels: profs.label,
     datasets: [
       {
         label: "Áp(m)",
         data: profs.data.dataPressure,
-        borderColor: "#FF0000", // Màu xanh lá
-        tension: 0.1, // Độ cong của đường
-        pointRadius: pointLage, // Độ lớn điểm
+        borderColor: "#FF0000",
+        tension: 0.1,
+        pointRadius: pointLage,
         borderWidth: 1,
-        pointBackgroundColor: "#FF0000", // Màu điểm
+        pointBackgroundColor: "#FF0000",
         yAxisID: "y1",
+        hidden: hiddenStates[0] ?? true,  // <-- Gán từ localStorage
         spanGaps: true
       },
       {
         label: "Áp cùng kỳ(m)",
         data: profs.data.sensorYRest,
-        borderColor: "#000000", // Màu xanh
-        tension: 0.1, // Độ cong của đường
-        pointRadius: pointLage, // Độ lớn điểm
+        borderColor: "#000000",
+        tension: 0.1,
+        pointRadius: pointLage,
         borderWidth: 1,
-        pointBackgroundColor: "#000000", // Màu điểm
+        pointBackgroundColor: "#000000",
         yAxisID: "y1",
+        hidden: hiddenStates[1] ?? true,
         spanGaps: true
       },
       {
         label: "Lưu lượng(m3/h)",
         data: profs.data.dataFlow,
-        borderColor: "#000080", // Màu xanh
-        tension: 0.1, // Độ cong của đường
-        pointRadius: pointLage, // Độ lớn điểm
+        borderColor: "#000080",
+        tension: 0.1,
+        pointRadius: pointLage,
         borderWidth: 1,
-        pointBackgroundColor: "#000080", // Màu điểm
+        pointBackgroundColor: "#000080",
         yAxisID: "y2",
+        hidden: hiddenStates[2] ?? true,
         spanGaps: true
       },
       {
         label: "Lưu lượng cùng kỳ(m3/h)",
         data: profs.data.flowYRest,
-        borderColor: "#FFFF00", // Màu xanh
-        tension: 0.1, // Độ cong của đường
-        pointRadius: pointLage, // Độ lớn điểm
+        borderColor: "#FFFF00",
+        tension: 0.1,
+        pointRadius: pointLage,
         borderWidth: 1,
-        pointBackgroundColor: "#FFFF00", // Màu điểm
+        pointBackgroundColor: "#FFFF00",
         yAxisID: "y2",
+        hidden: hiddenStates[3] ?? true,
         spanGaps: true
       },
     ],
-  })
+  });
 
-  // Tùy chọn biểu đồ
   const [options, setOptions] = useState({
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
-      mode: 'nearest', // <<== điểm gần nhất
-      axis: 'x', // hoặc 'xy' nếu muốn cả 2 chiều
-      intersect: false, // <<== quan trọng: không cần trỏ đúng vào điểm
+      mode: 'nearest',
+      axis: 'x',
+      intersect: false,
     },
     plugins: {
       legend: {
         display: true,
-        labels: {
-          boxWidth: 10, // Điều chỉnh kích thước ô vuông
-        },
+        labels: { boxWidth: 10 },
+        onClick: (e, legendItem, legend) => {
+          const index = legendItem.datasetIndex;
+          const chart = chartRef.current;
+
+          const meta = chart.getDatasetMeta(index);
+          meta.hidden = !meta.hidden;
+          chart.update();
+
+          // Ghi lại trạng thái hidden
+          const newHiddenStates = chart.data.datasets.map((_, i) => chart.getDatasetMeta(i).hidden ?? false);
+          localStorage.setItem("chartHiddenStates", JSON.stringify(newHiddenStates));
+        }
       },
-      tooltip: {
-        enabled: true,
-      },
+      tooltip: { enabled: true },
       zoom: {
-        pan: {
-          enabled: true,
-          mode: "x", // Kéo ngang
-        },
+        pan: { enabled: true, mode: "x" },
         zoom: {
-          wheel: {
-            enabled: true, // Zoom bằng cuộn chuột
-          },
-          pinch: {
-            enabled: true, // Zoom trên màn hình cảm ứng
-          },
-          mode: "x", // Zoom theo trục X
-          speed: 0.1, // Tăng độ nhạy zoom
+          wheel: { enabled: true },
+          pinch: { enabled: true },
+          mode: "x",
+          speed: 0.1,
         },
       },
       annotation: {
         annotations: {
           highlightBox: {
             type: "box",
-            xMin: 0,  // Điều chỉnh vị trí vùng màu
+            xMin: 0,
             xMax: 5,
-            backgroundColor: "rgba(255, 0, 0, 0.3)", // Màu đỏ trong suốt
+            backgroundColor: "rgba(255, 0, 0, 0.3)",
             borderWidth: 1,
           },
         },
@@ -370,9 +427,7 @@ const RealTimeLineChart = (profs) => {
       x: {
         min: 0,
         max: profs.label?.length,
-        grid: {
-          display: false,
-        },
+        grid: { display: false },
       },
       y1: {
         position: "left",
@@ -385,30 +440,30 @@ const RealTimeLineChart = (profs) => {
         position: "right",
         title: { display: true, text: "Lưu lượng (m3/h)" },
         min: 0,
-        max: 300,
-        grid: { drawOnChartArea: false }, // Ẩn lưới của trục này
+        max: 500,
+        grid: { drawOnChartArea: false },
       },
     },
-  })
+  });
 
   useEffect(() => {
     setData((prevData) => {
-      prevData.datasets[0].data = listDataSensor[profs.name];
-      prevData.datasets[2].data = flowDataSensor[profs.name];
-      return prevData;
+      const updated = { ...prevData };
+      updated.datasets[0].data = listDataSensor[profs.name];
+      updated.datasets[2].data = flowDataSensor[profs.name];
+      return updated;
     });
   }, [changeData]);
 
   useEffect(() => {
     if (chartRef.current) {
-      const chart = chartRef.current; // Truy cập biểu đồ
+      const chart = chartRef.current;
       const annotation = chart.options.plugins.annotation;
 
-      // Cập nhật giá trị xMin và xMax
       annotation.annotations.highlightBox.xMin = profs.scrollPosition;
       annotation.annotations.highlightBox.xMax = profs.scrollPosition + 5;
 
-      chart.update(); // Cập nhật biểu đồ mà không reset trạng thái
+      chart.update();
     }
   }, [profs.scrollPosition]);
 
@@ -419,7 +474,7 @@ const RealTimeLineChart = (profs) => {
   );
 };
 
-export const Battery = ({step, data, temp, dataInfo}) => {
+export const Battery = ({ step, data, temp, dataInfo }) => {
   const [batteryLevel, setBatteryLevel] = useState(data);
   const [tem, setTempurature] = useState(temp);
   const [signalStrength, setSingnals] = useState(0)
@@ -514,14 +569,28 @@ export const ParamFlow = (profs) => {
     setSumFlow(flowsum[profs.step] ? flowsum[profs.step].toFixed(1) : profs.pram?.sum?.toFixed(1));
   }, [changeData]);
   return (
-    <div className="flex">
-      <p className='text-sm'>max: {profs.pram?.max}</p>
-      <p className='ml-3 text-sm'>min: {profs.pram?.min}</p>
-      <p className='ml-3 text-sm'>avg: {profs.pram?.avg?.toFixed(2)}</p>
-      <p className='ml-3 text-sm'>total: {total}</p>
-      <p className='ml-3 text-sm'>total24: {profs.pram?.total24?.toFixed(1)}</p>
-      <p className='ml-3 text-sm'>sum: {sumFlow}</p>
-    </div>
+    <table className="min-w-full border border-gray-300 text-sm mt-2 text-center">
+      <thead className="bg-gray-100 font-semibold">
+        <tr>
+          <th className="border border-gray-300 p-2">Max</th>
+          <th className="border border-gray-300 p-2">Min</th>
+          <th className="border border-gray-300 p-2">Avg</th>
+          <th className="border border-gray-300 p-2">Total</th>
+          <th className="border border-gray-300 p-2">Total24</th>
+          <th className="border border-gray-300 p-2">Sum</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td className="border border-gray-300 p-2">{profs.pram?.max}</td>
+          <td className="border border-gray-300 p-2">{profs.pram?.min}</td>
+          <td className="border border-gray-300 p-2">{profs.pram?.avg?.toFixed(2)}</td>
+          <td className="border border-gray-300 p-2">{total}</td>
+          <td className="border border-gray-300 p-2">{profs.pram?.total24?.toFixed(1)}</td>
+          <td className="border border-gray-300 p-2">{sumFlow}</td>
+        </tr>
+      </tbody>
+    </table>
   );
 };
 

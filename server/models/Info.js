@@ -4,9 +4,11 @@ const infoSchema = new mongoose.Schema({
     user:{type:Number},
     tracking: {type: Number},
     interval: {type: Number},
-    wPress: {type: Number},
-    wPressTime: {type: Number},
-    timeAlarm: {type: Number},
+    highAlerts: [Number],
+    lowAlerts: [Number],
+    alertTimes: [Number],
+    flowHighs:[Number],
+    flowLows:[Number],
     watch: {type: Number},
     adj: {type: Number}, 
     id: {type: Number},
@@ -18,6 +20,10 @@ const infoSchema = new mongoose.Schema({
     sample: {type: Number},
     description: {type: String},
     temperature: {type: Number},
+    isWarning:{type: Boolean},
+    onP:{type: Boolean},
+    onF:{type: Boolean},
+    createAt: { type: Date, default: Date.now }
 })
 
 const Info = mongoose.model("Info", infoSchema)

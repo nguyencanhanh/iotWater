@@ -4,17 +4,25 @@ import Info from './models/Info.js'
 const userRegister = async () => {
   connectToDatabase()
   try {
-    const info = new Info({
-      interval: 300,
-      sample: 300,
-      tracking: 1.5,
-      sen_id: 2,
-      name: "bacgiang3",
-      lat: 21.054073,
-      lng: 105.179155,
-      temperature: 99
+    const newSen = new Info({
+      user: 0,
+      tracking: 0,
+      interval: 60,
+      wPress: 0,
+      wPressTime: 0,
+      timeAlarm: 300,
+      watch: 60,
+      adj: 0,
+      id: 102,
+      name: "Điểm cuối prv 2",
+      lat: 0,
+      lng: 0,
+      group: "Không có",
+      sample: 60,
+      description: "",
+      temperature: 25,
     })
-    await info.save()
+    await newSen.save()
   } catch (error) {
     console.log(error)
   }

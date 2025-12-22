@@ -9,6 +9,8 @@ import PrivateRoutes from './utils/PrivateRoutes'
 import RoleBaseRoutes from './utils/RoleBaseRoutes'
 import SettingGroup from './components/setting/SettingGroup';
 import GroupSensor from './components/sensor/GroupSensor';
+import PrvControl from './pages/PrvControl'
+import Compare from './pages/Compare'
 
 function App() {
 
@@ -30,7 +32,8 @@ function App() {
           <Route path='/admin-dashboard/sensors/:group' element={<SensorList/>}></Route>
           <Route path='/admin-dashboard/add-sensors' element={<AddSensor/>}></Route>
           <Route path='/admin-dashboard/setting' element={<SettingGroup/>}></Route>
-
+          <Route path='/admin-dashboard/prv' element={<PrvControl/>}></Route>
+          <Route path='/admin-dashboard/compare' element={<Compare/>}></Route>
         </Route>
         <Route path="/employee-dashboard" element={<EmployeeDashboard />}></Route>
       </Routes>

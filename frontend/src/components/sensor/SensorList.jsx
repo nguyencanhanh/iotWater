@@ -63,7 +63,7 @@ function SensorList() {
   const [scrollPosition, setScrollPosition] = useState(Array(groupID.length).fill(0));
   const fetchSetting = async (total, info) => {
     try {
-      const res = await getSensorInGroup(localStorage.getItem("token"), { group: groupPram, user: user.user });
+      const res = await getSensorInGroup(localStorage.getItem("token"), `group=${encodeURIComponent(groupPram)}&user=${encodeURIComponent(user.user)}`);
       if (res.data.success) {
         const resInfo = res.data.senInGroup
         setdataInfo(resInfo)
@@ -81,7 +81,8 @@ function SensorList() {
   };
   const fetchSensors = async (total, info) => {
     try {
-      const res = await sensorListGet(localStorage.getItem("token"), { total: total, info: info, user: user.user });
+      const startOfToday = new Date();
+      const res = await sensorListGet(localStorage.getItem("token"), { total: total, info: info, user: user.user, date: [startOfToday,null]});
       if (res.data.success) {
         const data = res.data.sensors
         data.forEach((sensor, index) => {

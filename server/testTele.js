@@ -9,5 +9,5 @@ const curlCommand = `curl -X POST "https://api.telegram.org/bot${TOKEN}/sendMess
      -H "Content-Type: application/json" \
      -d '{"chat_id": "${CHAT_ID}", "text": "${MESSAGE}"}'`;
 
-// Sử dụng exec để chạy lệnh curl
+// Sử dụng exec để chạy lệnh curlsdfg
 exec(curlCommand);

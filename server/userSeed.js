@@ -10,7 +10,7 @@ const userRegister = async () => {
       name: "guest",
       email: "dnpbg@gmail.com",
       role: "trial",
-    }, { $set: { email: 'cnbg@gmail.com', password: hashPassword } }, { new: true })
+    }, { $set: { email: 'cnb@gcmail.com', password: hashPassword } }, { new: true })
   } catch (error) {
     console.log(error)
   }

@@ -1,3 +1,46 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@keyframes marquee-twice {
+  0% {
+    transform: translateX(100%);
+  }
+
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.animate-marquee-twice {
+  display: inline-block;
+  animation: marquee-twice 30s linear 2 forwards;
+}
+
+.alert-marker {
+  position: relative;
+}
+
+/* ===== MQTT ALERT MARKER ===== */
+@keyframes leaflet-blink {
+  0% {
+    opacity: 1;
+    stroke-width: 2;
+  }
+  50% {
+    opacity: 0.2;
+    stroke-width: 10;
+  }
+  100% {
+    opacity: 1;
+    stroke-width: 2;
+  }
+}
+
+.leaflet-warning {
+  animation: leaflet-blink 1s infinite;
+}
+
+.leaflet-danger {
+  animation: leaflet-blink 0.5s infinite;
+}

@@ -6,9 +6,10 @@ import ExcelJS from 'exceljs';
 import { client } from "../mqtt/mqtt.js";
 import cron from 'node-cron'
 import { differenceInCalendarDays } from 'date-fns'
+import { clientRedis } from "../mqtt/redis.js";
 
 const scheduledJobs = {};
-const userGlobal = [0];
+// const userGlobal = [0];
 
 // cron.schedule('1 0 * * *', () => {
 
@@ -29,7 +30,7 @@ function timeToMinutes(timeStr) {
   return h * 60 + m;
 }
 
-const fetchTimeAlarm = async (user, id) => {
+export const fetchTimeAlarm = async (user, id) => {
   const data = await Alarm.find({ user: user, id: id });
   const now = new Date();
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -48,19 +49,68 @@ const fetchTimeAlarm = async (user, id) => {
   }
 }
 
-const publishMessage = (key, message, sen_id) => {
-  client.publish(
-    'watter/setInterval',
-    JSON.stringify({ [key]: message, sen_name: sen_id }),
-    (error) => {
-      if (error) {
-        return false
-      } else {
-        return true
+// const publishMessage = (type, message, sen_id) => {
+//   // console.log(JSON.stringify({n:sen_id,m:type,d:message}))
+//   client.publish(
+//     'lg/rec',
+//     JSON.stringify({ n: sen_id, m: type, d: message }),
+//     { qos: 2 },
+//     (error) => {
+//       if (error) {
+//         return false
+//       } else {
+//         return true
+//       }
+//     }
+//   )
+// }
+
+const publishMessage = (type, message, sen_id, timeout = 5000) => {
+  return new Promise((resolve) => {
+    const ackTopic = "iotwatter@2024"
+    let finished = false
+
+    const cleanup = () => {
+      client.removeListener("message", onMessage)
+      clearTimeout(timer)
+    }
+
+    const onMessage = (topic, payload) => {
+      if (finished) return
+      const data = JSON.parse(payload.toString())
+      if (topic === ackTopic && data.m === 2) {
+        finished = true
+        cleanup()
+        return resolve({ ok: true, data })
       }
     }
-  )
+
+    client.on("message", onMessage)
+
+    client.publish(
+      "lg/rec",
+      JSON.stringify({ n: sen_id, m: type, d: message }),
+      { qos: 2 },
+      (error) => {
+        if (finished) return
+        if (error) {
+          finished = true
+          cleanup()
+          return resolve(data)
+        }
+      }
+    )
+
+    const timer = setTimeout(() => {
+      if (finished) return
+      finished = true
+      cleanup()
+      resolve({ ok: false, timeout: true })
+    }, timeout)
+  })
 }
+
+
 
 function addDateElement(dataArray, sensor, index, type) {
   if (dataArray[index]) {
@@ -72,6 +122,7 @@ function addDateElement(dataArray, sensor, index, type) {
 }
 
 function convertTime(timeConvert, watch) {
+  timeConvert = new Date(timeConvert)
   return (timeConvert.getHours() * 60 + timeConvert.getMinutes()) * 60 / watch
 }
 
@@ -375,14 +426,38 @@ export const upInterval = async (req, res) => {
       return res.status(200).json({ success: true })
     }
     if (profs.sum != null) {
-      if (publishMessage('sum_content', Number(profs.sum).toFixed(1) * 1000, profs.sen_id)) {
-        return res.status(500).json({ success: false, error: "Not publish" })
+      // if (publishMessage(14, Number(profs.sum).toFixed(1) * 10, profs.sen_id)) {
+      //   return res.status(500).json({ success: false, error: "Not publish" })
+      // }
+      const result = await publishMessage(
+        14,
+        Number(profs.sum).toFixed(1) * 10,
+        profs.sen_id,
+        10000
+      )
+      if (!result.ok) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
       }
       return res.status(200).json({ success: true })
     }
     if (profs.unit != null) {
-      if (publishMessage('content_unit', Number(profs.unit), profs.sen_id)) {
-        return res.status(500).json({ success: false, error: "Not publish" })
+      // if (publishMessage(4, Number(profs.unit), profs.sen_id)) {
+      //   return res.status(500).json({ success: false, error: "Not publish" })
+      // }
+      const result = await publishMessage(
+        4,
+        Number(profs.unit),
+        profs.sen_id,
+        10000
+      )
+      if (!result.ok) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
       }
       return res.status(200).json({ success: true })
     }
@@ -394,35 +469,204 @@ export const upInterval = async (req, res) => {
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { watch: profs.watch } }, { new: true })
       return res.status(200).json({ success: true })
     }
-    if (profs.wPress != null) {
-      const inputPress = profs.wPress < 0 ? 0 : Number(profs.wPress).toFixed(2) * 100;
-      if (publishMessage('wPress', inputPress, profs.sen_id)) {
-        return res.status(500).json({ success: false, error: "Not publish" })
+    if (profs.alertTimes != null) {
+      const result = profs.alertTimes
+        .reduce((arr, v, i) => {
+          if (v === "" && i > 0) {
+            arr.push(arr[i - 1])
+          } else {
+            arr.push(v)
+          }
+          return arr
+        }, [])
+        .map(v => String(Number(v)))
+        .join(" ")
+      // if (publishMessage(6, result, profs.sen_id)) {
+      //   return res.status(500).json({ success: false, error: "Not publish" })
+      // }
+      const result1 = await publishMessage(
+        6,
+        result,
+        profs.sen_id,
+        10000
+      )
+      if (!result1.ok) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
       }
-      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { wPress: profs.wPress } }, { new: true })
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { alertTimes: profs.alertTimes } }, { new: true })
+      return res.status(200).json({ success: true, alertTimes: profs.alertTimes })
+    }
+    if (profs.highAlerts != null) {
+      // const inputPress = profs.wPress < 0 ? 0 : Number(profs.wPress).toFixed(2) * 100;
+      // if (publishMessage(7, profs.highAlerts.map((v) => `${Number(v) * 10}`).join(" "), profs.sen_id)) {
+      //   return res.status(500).json({ success: false, error: "Not publish" })
+      // }
+      const result1 = await publishMessage(
+        7,
+        profs.highAlerts.map((v) => `${Number(v) * 10}`).join(" "),
+        profs.sen_id,
+        10000
+      )
+      if (!result1.ok) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
+      }
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { highAlerts: profs.highAlerts } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    if (profs.lowAlerts != null) {
+      // const inputPress = profs.wPress < 0 ? 0 : Number(profs.wPress).toFixed(2) * 100;
+      // if (publishMessage('wPress', inputPress, profs.sen_id)) {
+      //   return res.status(500).json({ success: false, error: "Not publish" })
+      // }
+      // if (publishMessage(8, profs.lowAlerts.map((v) => `${Number(v) * 10}`).join(" "), profs.sen_id)) {
+      //   return res.status(500).json({ success: false, error: "Not publish" })
+      // }
+      const result1 = await publishMessage(
+        8,
+        profs.lowAlerts.map((v) => `${Number(v) * 10}`).join(" "),
+        profs.sen_id,
+        10000
+      )
+      if (!result1.ok) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
+      }
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { lowAlerts: profs.lowAlerts } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    if (profs.flowHighs != null) {
+      // if (publishMessage(9, profs.flowHighs.map((v) => `${Number(v) * 10}`).join(" "), profs.sen_id)) {
+      //   return res.status(500).json({ success: false, error: "Not publish" })
+      // }
+      const result1 = await publishMessage(
+        9,
+        profs.flowHighs.map((v) => `${Number(v) * 10}`).join(" "),
+        profs.sen_id,
+        10000
+      )
+      if (!result1.ok) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
+      }
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { flowHighs: profs.flowHighs } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    if (profs.flowLows != null) {
+      // if (publishMessage(10, profs.flowLows.map((v) => `${Number(v) * 10}`).join(" "), profs.sen_id)) {
+      //   return res.status(500).json({ success: false, error: "Not publish" })
+      // }
+      const result1 = await publishMessage(
+        10,
+        profs.flowLows.map((v) => `${Number(v) * 10}`).join(" "),
+        profs.sen_id,
+        10000
+      )
+      if (!result1.ok) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
+      }
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { flowLows: profs.flowLows } }, { new: true })
       return res.status(200).json({ success: true })
     }
     if (profs.tracking != null) {
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { tracking: profs.tracking } }, { new: true })
       return res.status(200).json({ success: true })
     }
+    if (profs.isWarning != null) {
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { isWarning: profs.isWarning } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
+    if (profs.onP != null) {
+      const result = await publishMessage(
+        11,
+        Number(profs.onP),
+        profs.sen_id,
+        10000
+      )
+      if (result.data.d.onP !== Number(profs.onP)) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
+      }
+    
+      await InfoSen.findOneAndUpdate(
+        { id: profs.sen_id, user: profs.user },
+        { $set: { onP: profs.onP } },
+        { new: true }
+      )
+      return res.status(200).json({ success: true })
+    }
+    
+    if (profs.onF != null) {
+      const result = await publishMessage(
+        12,
+        Number(profs.onF),
+        profs.sen_id,
+        10000
+      )
+      if (result.data.d.onF !== Number(profs.onF)) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
+      }
+      const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { onF: profs.onF } }, { new: true })
+      return res.status(200).json({ success: true })
+    }
     if (profs.temp != null) {
       const inputTemp = profs.temp < 0 ? 100 : Math.floor(Number(profs.temp));
-      if (publishMessage('temp', inputTemp, profs.sen_id)) {
+      if (publishMessage(3, inputTemp, profs.sen_id)) {
         return res.status(500).json({ success: false, error: "Not publish" })
       }
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { temperature: profs.temp } }, { new: true })
       return res.status(200).json({ success: true })
     }
     if (profs.sample != null) {
-      if (publishMessage('sample', profs.sample, profs.sen_id)) {
-        return res.status(500).json({ success: false, error: "Not publish" })
+      // if (publishMessage(2, profs.sample, profs.sen_id)) {
+      //   return res.status(500).json({ success: false, error: "Not publish" })
+      // }
+      const result = await publishMessage(
+        2,
+        Number(profs.sample),
+        profs.sen_id,
+        10000
+      )
+      if (result.data.d.sample !== Number(profs.sample)) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
       }
       const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { sample: profs.sample } }, { new: true })
       return res.status(200).json({ success: true, sample: info.sample })
     }
-    if (publishMessage('interval', profs.interval, profs.sen_id)) {
-      return res.status(500).json({ success: false, error: "Not publish" })
+    // if (publishMessage(1, profs.interval, profs.sen_id)) {
+    //   return res.status(500).json({ success: false, error: "Not publish" })
+    // }
+    const result = await publishMessage(
+      1,
+      Number(profs.interval),
+      profs.sen_id,
+      10000
+    )
+    if (result.data.d.interval !== Number(profs.interval)) {
+      return res.status(500).json({
+        success: false,
+        error: "MQTT timeout or publish failed"
+      })
     }
     const info = await InfoSen.findOneAndUpdate({ id: profs.sen_id, user: profs.user }, { $set: { interval: profs.interval } }, { new: true })
     return res.status(200).json({ success: true, interval: info.interval })
@@ -430,6 +674,27 @@ export const upInterval = async (req, res) => {
     return res.status(500).json({ success: false, error: "Sensor not found" })
   }
 }
+
+function compare(profs, i, start) {
+  if (profs.date[1]) {
+    const startOfToday = new Date(profs.date[i]);
+    const nowDay = new Date(profs.date[i]);
+    startOfToday.setHours(0, 0, 0, 0);
+    nowDay.setHours(23, 59, 59, 59);
+    return { $gte: startOfToday, $lte: nowDay };
+  }
+  return { $gte: start };
+}
+
+function secondsUntilEndOfDay() {
+  const now = new Date();
+  const end = new Date();
+
+  end.setHours(23, 59, 59, 999); // cuối ngày
+
+  return Math.floor((end - now) / 1000); // đổi ms → s
+}
+
 
 export const getSensors = async (req, res) => {
   try {
@@ -441,11 +706,12 @@ export const getSensors = async (req, res) => {
     const pram = []
     const pramFlow = []
     if (profs.totalMap) {
-      for (let i = 0; i < Number(profs.totalMap); i++) {
-        const sensor = await Sensor.findOne({ index: i, user: profs.user }).sort({ $natural: -1 });
-        sensors[i] = sensor
+      const senMap = {};
+      for (let i = 0; i < Number(profs.totalMap.length); i++) {
+        const sensor = await Sensor.findOne({ index: profs.totalMap[i].id, user: profs.totalMap[0].user }).sort({ $natural: -1 });
+        senMap[profs.totalMap[i].id] = sensor
       }
-      return res.status(200).json({ success: true, sensors })
+      return res.status(200).json({ success: true, sensors: senMap })
     }
     if (profs.timeGet) {
       const lengModal = 288
@@ -570,26 +836,39 @@ export const getSensors = async (req, res) => {
       })
       return res.status(200).json({ success: true, sensorH, flowH, sum: result[0].endOfDaySum, param: result[0].stats, sensorT })
     }
-    const startOfToday = new Date();
-    const yesterday = new Date(startOfToday);
-    yesterday.setDate(startOfToday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-    startOfToday.setHours(0, 0, 0, 0);
+    const startOfToday = new Date(profs.date[0]);
+    const yesterday = new Date(profs.date[0]);
+    if (!profs.date[1]) {
+      yesterday?.setDate(startOfToday.getDate() - 1);
+      startOfToday.setHours(0, 0, 0, 0);
+      yesterday?.setHours(0, 0, 0, 0);
+    }
     for (let i = 0; i < Number(profs.total); i++) {
       timeTrackingRet[i] = 0;
-      const sensorY = await Sensor.find({
-        index: profs.info[i].id,
-        user: profs.user,
-        createAt: { $gte: yesterday, $lt: startOfToday },
-      })
-        .select('flow Pressure createAt')
-        .sort({ createAt: 1 });
+      const sensorY = await (async () => {
+        if (!profs.date[1]) {
+          if (await clientRedis.exists(`sensorY:${profs.info[i].id}`)) {
+            return JSON.parse(await clientRedis.get(`sensorY:${profs.info[i].id}`))
+          }
+          const dataR = await Sensor.find({
+            index: profs.info[i].id,
+            user: profs.user,
+            createAt: { $gte: yesterday, $lt: startOfToday },
+          })
+            .select("flow Pressure createAt")
+            .sort({ createAt: 1 });
+          clientRedis.set(`sensorY:${profs.info[i].id}`, JSON.stringify(dataR), { EX: secondsUntilEndOfDay() });
+          return dataR;
+        } else {
+          return [];
+        }
+      })();
       const result = await Sensor.aggregate([
         {
           $match: {
             index: profs.info[i].id,
             user: profs.user,
-            createAt: { $gte: startOfToday }
+            createAt: compare(profs, i, startOfToday)
           }
         },
         { $sort: { createAt: 1 } },
@@ -624,34 +903,55 @@ export const getSensors = async (req, res) => {
           }
         }
       ]);
-      const sensorT = Array(86400 / profs.info[i].watch).fill(null)
-      const sensorYRest = []
-      const flowYRest = []
-      const dataPressure = []
-      const dataFlow = []
+      let sensorT = Array(86400 / profs.info[i].watch).fill(null)
+      let sensorYRest = []
+      let flowYRest = []
+      let dataPressure = []
+      let dataFlow = []
       let timeTracking = 0
       let currentStart = 0;
-
-      sensorY.forEach((sensor) => {
-        const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
-        sensorYRest[index] = sensor.Pressure
-        flowYRest[index] = sensor.flow
-      })
-      result[0].data.forEach((sensor) => {
-        const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
-        addDateElement(dataPressure, sensor, index, "Pressure")
-        addDateElement(dataFlow, sensor, index, "flow")
-        if (profs.info) {
-          if (sensor.Pressure >= profs.info[i].tracking) {
-            const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
-            if (timeAdd < 1000) {
-              timeTracking += timeAdd
+      if (!profs.date[1] && await clientRedis.exists(`sensorYRest:${profs.info[i].id}`)) {
+        sensorYRest = JSON.parse(await clientRedis.get(`sensorYRest:${profs.info[i].id}`))
+        flowYRest = JSON.parse(await clientRedis.get(`flowYRest:${profs.info[i].id}`))
+      }
+      else {
+        sensorY.forEach((sensor) => {
+          const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
+          sensorYRest[index] = sensor.Pressure
+          flowYRest[index] = sensor.flow
+        })
+        if (!profs.date[1]) {
+          clientRedis.set(`sensorYRest:${profs.info[i].id}`, JSON.stringify(sensorYRest), { EX: secondsUntilEndOfDay() });
+          clientRedis.set(`flowYRest:${profs.info[i].id}`, JSON.stringify(flowYRest), { EX: secondsUntilEndOfDay() });
+        }
+      }
+      if (!profs.date[1] && await clientRedis.exists(`dataPressure:${profs.info[i].id}`)) {
+        dataPressure = JSON.parse(await clientRedis.get(`dataPressure:${profs.info[i].id}`))
+        dataFlow = JSON.parse(await clientRedis.get(`dataFlow:${profs.info[i].id}`))
+        sensorT = JSON.parse(await clientRedis.get(`sensorT:${profs.info[i].id}`))
+      }
+      else {
+        result[0].data.forEach((sensor) => {
+          const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
+          addDateElement(dataPressure, sensor, index, "Pressure")
+          addDateElement(dataFlow, sensor, index, "flow")
+          if (profs.info[i]?.tracking) {
+            if (sensor.Pressure >= profs.info[i].tracking) {
+              const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
+              if (timeAdd < 1000) {
+                timeTracking += timeAdd
+              }
             }
           }
+          currentStart = sensor.createAt
+          sensorT[index] = sensor
+        })
+        if (!profs.date[1]) {
+          clientRedis.set(`dataPressure:${profs.info[i].id}`, JSON.stringify(dataPressure), { EX: 60 });
+          clientRedis.set(`dataFlow:${profs.info[i].id}`, JSON.stringify(dataFlow), { EX: 60 });
+          clientRedis.set(`sensorT:${profs.info[i].id}`, JSON.stringify(sensorT), { EX: 60 });
         }
-        currentStart = sensor.createAt
-        sensorT[index] = sensor
-      })
+      }
       if (result[0].data && result[0].data.length > 0) {
         const sensorY24 = await Sensor.findOne({
           index: profs.info[i].id,
@@ -736,7 +1036,7 @@ export const updateSensor = async (req, res) => {
 
 export const getGroup = async (req, res) => {
   try {
-    const { user } = req.body;
+    const { user } = req.query;
     const sen_group = []
     const group = []
     const Groups = await Group.find({ user: user });
@@ -756,8 +1056,8 @@ export const getGroup = async (req, res) => {
 
 export const getSensorInGroup = async (req, res) => {
   try {
-    const { group, user } = req.body
-    const senInGroup = await InfoSen.find({ group: group, user: user });
+    const { group, user } = req.query
+    const senInGroup = await InfoSen.find({ group: group, user: user }).sort({ createAt: -1 });
     return res.status(200).json({ success: true, senInGroup });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
@@ -766,13 +1066,12 @@ export const getSensorInGroup = async (req, res) => {
 
 export const getGroupInfo = async (req, res) => {
   try {
-    const { user } = req.body
+    const { user } = req.query
     const data = {}
     const valueSenS = []
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const senGroup = await InfoSen.find({ user: user });
+    const senGroup = await InfoSen.find({ user: user }).sort({ createAt: -1 });
     for (let i = 0; i < senGroup.length; i++) {
+      const startOfToday = new Date() - senGroup[i].interval * 2000;
       const valueSen = await Sensor.findOne({ index: senGroup[i].id, user: user, createAt: { $gte: startOfToday } }).sort({ createAt: -1 });
       valueSenS[senGroup[i].id] = valueSen
     }
@@ -801,7 +1100,8 @@ export const changeGroup = async (req, res) => {
       { name: profs.name, user: profs.user },
       {
         $set: {
-          group: profs.newGroup // Thêm name vào đây
+          group: profs.newGroup, // Thêm name vào đây
+          createAt: Date.now(),
         }
       },
       { new: true }

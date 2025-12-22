@@ -1,16 +1,17 @@
 import React, { useEffect, useState, useRef } from "react";
 import { listDataTable } from "./Chart";
 
-function dateString(index, offset, startDate, startHour) {
-  const minute = (startDate[0].getMinutes() + index * 5) % 60;
-  if(index !== 0 && minute === 0) startHour[0]++;
-  if(startHour[0] === 24) startHour[0] = 0
-  if (offset && startDate[Math.floor((index + offset) / 288)]) {
-    return `${startDate[Math.floor((index + offset) / 288)].toISOString().split("T")[0]} - ${String(startHour[0]).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
-  }
-  return `${String(startHour[0]).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
-}
+let startHour = 0;
 
+function dateString(index, offset, startDate) {
+  const minute = (startDate[0].getMinutes() + index * 5) % 60;
+  if(index !== 0 && minute === 0) startHour++;
+  if(startHour === 24) startHour = 0
+  if (offset != null && startDate[Math.floor((index + offset) / 288)]) {
+    return `${startDate[Math.floor((index + offset) / 288)].toISOString().split("T")[0]} - ${String(startHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+  }
+  return `${String(startHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+}
 
 export const SensorDataDisplay = (profs) => {
   const [openDetail, setOpenDetail] = useState(false);
@@ -95,8 +96,7 @@ export const TableModal = (props) => {
   const tableData = props.dataModal.sensorT;
   const tableContainerRef = useRef(null);
   const headerRef = useRef(null);
-  const hour = [props.startHour]
-
+  startHour = props.startHour
   useEffect(() => {
     // Đồng bộ thanh cuộn
     const syncScrollBar = () => {
@@ -138,7 +138,7 @@ export const TableModal = (props) => {
               {tableData.map((row, index) => (
                 <tr key={index} className="h-8 text-lg">
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight" style={{ width: "30%" }}>
-                    {dateString(index, props.offset, props.startDate, hour)}
+                    {dateString(index, props.offset, props.startDate)}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
                     {props.dataModal.sensorH[index] !== null ? (props.dataModal.sensorH[index] + props.adj).toFixed(1) : ""}

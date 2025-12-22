@@ -67,8 +67,8 @@ function getDatesInRange(startDate, endDate) {
 const ModalData = (props) => {
   const { user } = useAuth()
   const dateData = props.dateData;
-  const name = props.idMap ? props.info[props.idMap[dateData[2]]].name : props.info[props.dateData[2]].name;
-  const adj = props.idMap ? props.info[props.idMap[dateData[2]]].adj : props.info[props.dateData[2]].adj;
+  const name = props.idMap ? props.info[props.idMap[dateData[2]]].name : props.dateData[3];
+  const adj = props.idMap ? props.info[props.idMap[dateData[2]]].adj : props.dateData[4];
   const [dataModal, setDataModal] = useState(null);
   const [fromDate, setFromDate] = useState(dateData[0]);
   const [toDate, setToDate] = useState(dateData[1]);

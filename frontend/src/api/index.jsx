@@ -5,6 +5,7 @@ const URL_DASHBOARD = import.meta.env.VITE_URL_DASHBOARD
 const URL_SENSOR = import.meta.env.VITE_URL_SENSOR
 const URL_GROUP = import.meta.env.VITE_URL_GROUP
 const URL_ALARM = import.meta.env.VITE_URL_ALARM
+const URL_PRV_TIME = import.meta.env.VITE_URL_PRV_TIME
 
 const axiosConfig = (token) => ({
     headers: {
@@ -31,25 +32,22 @@ export const infoGet = (token) => {
 }
 
 export const getGroup = (token, user) => {
-    return axios.post(
-        `${URL_GROUP}`,
-        user,
+    return axios.get(
+        `${URL_GROUP}?user=${encodeURIComponent(user)}`,
         axiosConfig(token)
     )
 }
 
 export const getGroupInfo = (token, user) => {
-    return axios.post(
-        `${URL_GROUP}/info`,
-        user,
+    return axios.get(
+        `${URL_GROUP}/info?user=${encodeURIComponent(user)}`,
         axiosConfig(token)
     )
 }
 
 export const getSensorInGroup = (token, group) => {
-    return axios.post(
-        `${URL_GROUP}/group`,
-        group,
+    return axios.get(
+        `${URL_GROUP}/group?${group}`,
         axiosConfig(token)
     )
 }
@@ -99,6 +97,49 @@ export const deleteAlarm = (token, sen) => {
         `${URL_ALARM}/delete`,
         sen,
         axiosConfig(token)
+    )
+}
+
+export const getPrv = (token, prv_name) => {
+    return axios.post(
+        `${URL_PRV_TIME}`,
+        prv_name,
+        axiosConfig(token)
+    )
+}
+
+export const getAllPrv = (token) => {
+    return axios.get(
+        `${URL_PRV_TIME}/get`,
+        axiosConfig(token)
+    )
+}
+
+export const changePrv = (token, prv_name) => {
+    return axios.put(
+        `${URL_PRV_TIME}/change`,
+        prv_name,
+        axiosConfig(token)
+    )
+}
+
+export const addPrv_time = (token, prv_name) => {
+    return axios.post(
+        `${URL_PRV_TIME}/add`,
+        prv_name,
+        axiosConfig(token)
+    )
+}
+
+export const deletePrv_time = (token, prv_name) => {
+    return axios.delete(
+        `${URL_PRV_TIME}/delete`,
+        {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+            data: prv_name
+        }
     )
 }
 

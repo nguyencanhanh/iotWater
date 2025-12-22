@@ -1,16 +1,51 @@
-import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
+import React, { useEffect, useState, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Tooltip, GeoJSON, CircleMarker } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import mqtt from "mqtt";
+// import mqtt from "mqtt";
 import { useAuth } from "../../context/authContext";
 import { intervalUpdatePut, sensorListGet, getGroup } from "../../api/index";
 import ModalData from "../chart/Modal";
+import { client } from "../../pages/AdminDashboard";
+// import { produce } from "immer";
+// import L from "leaflet";
+
+
+const AlertMarker = ({ lat, lng, level }) => {
+    const markerRef = useRef();
+  
+    useEffect(() => {
+      if (!markerRef.current || !level || level === "normal") return;
+  
+      let visible = true;
+      const interval = setInterval(() => {
+        markerRef.current.setStyle({
+          fillOpacity: visible ? 0.2 : 0.8,
+        });
+        visible = !visible;
+      }, 500);
+  
+      return () => clearInterval(interval);
+    }, [level]);
+  
+    if (!level || level === "normal") return null;
+  
+    const color = level === "danger" ? "red" : "orange";
+  
+    return (
+      <CircleMarker
+        ref={markerRef}
+        center={[lat, lng]}
+        radius={10}
+        pathOptions={{ color, fillColor: color, fillOpacity: 0.8 }}
+      />
+    );
+  };
 
 function AdminSummary() {
     const { user, info } = useAuth();
     const [weatherData, setWeatherData] = useState(info);
     const [data, setData] = useState(null);
-    const [sensorLoading, setSensorLoading] = useState(false);
+    // const [sensorLoading, setSensorLoading] = useState(false);
     const [newLat, setNewLat] = useState("");
     const [newLng, setNewLng] = useState("");
     const [selectedId, setSelectedId] = useState(null);
@@ -20,20 +55,16 @@ function AdminSummary() {
     const [showModal, setShowModal] = useState(false);
     const [dateData, setDateData] = useState([]);
     const [groups, setGroups] = useState([]);
-
-    // MQTT Setup
-    const host = "iotwater2024.mooo.com";
-    const port = 9001;
-    const clientId = `mqtt_${Math.random().toString(16).slice(3)}`;
-    const connectUrl = `wss://${host}:${port}/mqtt`;
+    const [pipeLayer, setPipesLayer] = useState(null);
+    const [metersLayer, setMetersLayer] = useState(null);
+    const [warning, setWarning] = useState({})
     const topic = "iotwatter@2024";
-    const options = { clientId, clean: true, connectTimeout: 4000, reconnectPeriod: 5000 };
-    const client = mqtt.connect(connectUrl, options);
+    const topicWarning = "khca/warning"
 
     useEffect(() => {
         const fetchSensors = async () => {
             try {
-                const res = await sensorListGet(localStorage.getItem("token"), { totalMap: info.length, user: user.user });
+                const res = await sensorListGet(localStorage.getItem("token"), { totalMap: info, user: user.user });
                 if (res.data.success) {
                     setData(res.data.sensors);
                 } else {
@@ -42,41 +73,56 @@ function AdminSummary() {
             } catch (error) {
                 console.error("An unexpected error occurred:", error);
                 alert(error.response?.data?.error || "Something went wrong. Please try again.");
-            } finally {
-                setSensorLoading(false);
             }
         };
-        
-          const fetchGroups = async () => {
+
+        const fetchGroups = async () => {
             try {
-              const res = await getGroup(localStorage.getItem("token"), { user: user.user })
-              setGroups(res.data.group)
+                const res = await getGroup(localStorage.getItem("token"), user.user)
+                setGroups(res.data.group)
             } catch (error) {
-              console.error("An unexpected error occurred:", error);
-              alert(
-                error.response?.data?.error || "Something went wrong. Please try again."
-              );
+                console.error("An unexpected error occurred:", error);
+                alert(
+                    error.response?.data?.error || "Something went wrong. Please try again."
+                );
             }
-          }
-          fetchGroups();
+        }
+        fetchGroups();
         fetchSensors();
     }, []);
 
     useEffect(() => {
         client.on("connect", () => console.log("Connected to MQTT broker"));
-        client.on("message", (topic, messageData) => {
-            messageData = JSON.parse(messageData.toString());
-            if(messageData.m !== 1 || messageData.n > info.length) return;
-            setData((prevData) => ({
-                ...prevData,
-                [messageData.n]: {
-                    Pressure: messageData.d.reduce((sum, msg) => sum + msg.p, 0) / messageData.d.length,
-                    flow: messageData.d[messageData.d.length - 1].f
-                },
-            }));
+        client.on("message", (topicGet, messageData) => {
+            if (topicGet === topic) {
+                messageData = JSON.parse(messageData.toString());
+                if (messageData.m !== 1 || messageData.n > info.length) return;
+                setData((prevData) => ({
+                    ...prevData,
+                    [messageData.n]: {
+                        Pressure: messageData.d.reduce((sum, msg) => sum + msg.p, 0) / messageData.d.length,
+                        flow: messageData.d[messageData.d.length - 1].f
+                    },
+                }));
+            }
+            else if (topicGet === topicWarning) {
+                console.log(messageData.toString())
+                messageData = JSON.parse(messageData.toString());
+                setWarning((prev) => ({
+                    ...prev,
+                    [messageData.n]: messageData.d
+                }));
+            }
         });
         client.subscribe(topic);
+        client.subscribe(topicWarning, { qos: 2 })
         return () => client.end();
+    }, []);
+
+    useEffect(() => {
+        fetch("/json/pipes1.json").then(res => res.json()).then(setPipesLayer);
+        fetch("/json/pipes2.json").then(res => res.json()).then(setMetersLayer);
+        // fetch("/json/pipes3.json").then(res => res.json()).then(setValvesLayer);
     }, []);
 
     const updateCoordinates = async () => {
@@ -106,8 +152,8 @@ function AdminSummary() {
         const startDate = new Date();
         const endDate = new Date();
         startDate.setHours(0, 0, 0, 0);
-        endDate.setHours(24);
-        setDateData([startDate, endDate, point.id]);
+        endDate.setHours(24, 0, 0, 0);
+        setDateData([startDate, endDate, point.id, point.name, point.adj]);
     };
 
     const changeGroupMap = (e) => {
@@ -123,30 +169,105 @@ function AdminSummary() {
                         url="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
                         subdomains={["mt1", "mt2", "mt3"]}
                     />
+                    {/* ✅ HIỂN THỊ ĐƯỜNG ỐNG */}
+                    {pipeLayer && (
+                        <>
+                            {/* Lớp phụ để bắt sự kiện click, nhưng không hiển thị gì */}
+                            <GeoJSON
+                                data={pipeLayer}
+                                style={() => ({
+                                    color: "#ffffff",
+                                    weight: 40,
+                                    opacity: 0, // Vô hình
+                                })}
+                                onEachFeature={(feature, layer) => {
+                                    const name = feature.properties?.name || "Không tên";
+                                    const desc = feature.properties?.description || "";
+                                    layer.bindPopup(`<strong>${name}</strong><br/>${desc}`);
+                                }}
+                            />
+
+                            {/* Lớp chính để hiển thị đường ống thật sự */}
+                            <GeoJSON
+                                data={pipeLayer}
+                                style={(feature) => ({
+                                    color: feature.properties?.stroke || "#0000FF",
+                                    weight: feature.properties?.["stroke-width"] || 2,
+                                    opacity: feature.properties?.["stroke-opacity"] || 1,
+                                })}
+                            />
+                        </>
+                    )}
+                    {metersLayer && (
+                        <>
+                            {/* Lớp phụ để bắt click, vô hình nhưng rộng */}
+                            <GeoJSON
+                                data={metersLayer}
+                                style={() => ({
+                                    color: "#ffffff",       // Màu trắng để dễ phân biệt (nhưng opacity = 0)
+                                    weight: 40,             // Rộng hơn để dễ click
+                                    opacity: 0,             // Vô hình
+                                })}
+                                onEachFeature={(feature, layer) => {
+                                    if (feature.properties?.name || feature.properties?.description) {
+                                        const name = feature.properties.name || "Không tên";
+                                        const desc = feature.properties.description || "";
+                                        layer.bindPopup(`<strong>${name}</strong><br/>${desc}`);
+                                    }
+                                }}
+                            />
+
+                            {/* Lớp chính hiển thị thật sự */}
+                            <GeoJSON
+                                data={metersLayer}
+                                style={(feature) => ({
+                                    color: feature.properties?.stroke || "#0000FF", // fallback màu xanh dương
+                                    weight: feature.properties?.["stroke-width"] || 2,
+                                    opacity: feature.properties?.["stroke-opacity"] || 1,
+                                })}
+                            />
+                        </>
+                    )}
+                    {/* {valvesLayer && (
+                        <GeoJSON
+                            data={valvesLayer}
+                            style={{ color: "red", weight: 2, dashArray: "4" }}
+                            onEachFeature={(f, layer) => layer.bindPopup(f.properties.name || "Van")}
+                        />
+                    )} */}
+
+
                     {weatherData &&
                         data &&
                         weatherData.map((point, index) => (
-                            <Marker key={index} position={[point.lat, point.lng]}
-                                eventHandlers={{
-                                    click: () => handleMarkerClick(point)
-                                }}
-                            >
-                                <Tooltip permanent direction="top" className="w-150">
-                                    <h3 className="font-semibold">{point.name}</h3>
-                                    <table className="w-full">
-                                        <tbody>
-                                            <tr>
-                                                <td className="text-left text-gray-600 border border-gray-300">Áp suất</td>
-                                                <td className="text-left text-gray-600 border text-center border-gray-300">{data[point.id]?.Pressure?.toFixed(2)} m</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="text-left text-gray-600 border border-gray-300">Lưu lượng</td>
-                                                <td className="text-left text-gray-600 border text-center border-gray-300">{data[point.id]?.flow} m3/h</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </Tooltip>
-                            </Marker>
+                            <React.Fragment key={point.id}>
+                                <AlertMarker
+                                    lat={point.lat}
+                                    lng={point.lng}
+                                    level={point.warning}
+                                />
+                                <Marker position={[point.lat, point.lng]}
+                                    eventHandlers={{
+                                        click: () => handleMarkerClick(point)
+                                    }}
+                                >
+                                    <Tooltip permanent direction="top" className="w-150">
+                                        <h3 className="font-semibold">{point.name}</h3>
+                                        <table className="w-full">
+                                            <tbody>
+                                                <tr>
+                                                    <td className="text-left text-gray-600 border border-gray-300">Áp suất</td>
+                                                    <td className="text-left text-gray-600 border text-center border-gray-300">{(data[point.id]?.Pressure + point.adj)?.toFixed(2)} m</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="text-left text-gray-600 border border-gray-300">Lưu lượng</td>
+                                                    <td className="text-left text-gray-600 border text-center border-gray-300">{data[point.id]?.flow} m3/h</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </Tooltip>
+                                </Marker>
+                            </React.Fragment>
                         ))}
                 </MapContainer>
             </div>

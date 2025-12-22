@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import Info from '../models/Info.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken'
+import { clientRedis } from "../mqtt/redis.js";
 
 export const login = async (req, res) => {
   try {
@@ -29,14 +30,19 @@ export const verify = (req, res) => {
 
 export const info = async (req, res) => {
   try {
-    const info = await Info.find()
-    if (!info) {
-      return res.status(404).json({ success: false, error: "Info not found" })
-    }
-    return res.status(200).json({ success: true, info })
-  } catch (error) {
-    console.log('info error', error)
-    return res.status(500).json({ success: false, error: error.message })
+    const info = await Info.find().lean()
+
+    const keys = info.map(sensor => `warning:${sensor.id}`)
+    const values = await clientRedis.mGet(keys)
+
+    info.forEach((sensor, i) => {
+      sensor.warning = values[i] // null | "warning"
+    })
+
+    return res.json({ success: true, info })
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message })
   }
 }
+
 

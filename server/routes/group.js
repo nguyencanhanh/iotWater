@@ -4,9 +4,9 @@ import { getGroup, changeGroup, deleteGroup, addGroup, getGroupInfo, getSensorIn
 
 const router = express.Router()
 
-router.post('/' , verifyUser , getGroup )
-router.post('/info' , verifyUser , getGroupInfo )
-router.post('/group' , verifyUser , getSensorInGroup )
+router.get('/' , verifyUser , getGroup )
+router.get('/info' , verifyUser , getGroupInfo )
+router.get('/group' , verifyUser , getSensorInGroup )
 router.put('/change' , verifyUser, changeGroup )
 router.post('/delete' , verifyUser, deleteGroup )
 router.post('/add' , verifyUser, addGroup )

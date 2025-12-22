@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { FaBuilding, FaTachometerAlt, FaTools, FaChevronLeft, FaChevronRight } from "react-icons/fa";
+import { FaChartBar, FaMapMarkedAlt, FaFileContract, FaTools, FaChevronLeft, FaChevronRight, FaExchangeAlt } from "react-icons/fa";
 
 const Admin_Sidebar = ({ isOpen, toggleSidebar }) => {
   return (
@@ -21,7 +21,7 @@ const Admin_Sidebar = ({ isOpen, toggleSidebar }) => {
             }
             end
           >
-            <FaTachometerAlt />
+            <FaMapMarkedAlt />
             <span>Trang chủ</span>
           </NavLink>
           {/* <NavLink
@@ -39,8 +39,26 @@ const Admin_Sidebar = ({ isOpen, toggleSidebar }) => {
               `${isActive ? "bg-teal-600" : ""} flex items-center space-x-4 py-2.5 px-4 rounded`
             }
           >
-            <FaBuilding />
+            <FaChartBar />
             <span>Biểu đồ</span>
+          </NavLink>
+          <NavLink
+            to="/admin-dashboard/compare"
+            className={({ isActive }) =>
+              `${isActive ? "bg-teal-600" : ""} flex items-center space-x-4 py-2.5 px-4 rounded`
+            }
+          >
+            <FaExchangeAlt />
+            <span>So sánh biểu đồ</span>
+          </NavLink>
+          <NavLink
+            to="/admin-dashboard/prv"
+            className={({ isActive }) =>
+              `${isActive ? "bg-teal-600" : ""} flex items-center space-x-4 py-2.5 px-4 rounded`
+            }
+          >
+            <FaFileContract />
+            <span>Van điều áp</span>
           </NavLink>
           <NavLink
             to="/admin-dashboard/setting"

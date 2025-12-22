@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon --env-file=.env index.js"
+    "start": "node --env-file=.env index.js",
+    "dev": "nodemon --env-file=.env index.js"
   },
   "keywords": [],
   "author": "",
@@ -26,7 +27,8 @@
     "mqtt": "^5.10.3",
     "multer": "^1.4.5-lts.2",
     "node-cron": "^3.0.3",
-    "path": "^0.12.7"
+    "path": "^0.12.7",
+    "redis": "^5.10.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

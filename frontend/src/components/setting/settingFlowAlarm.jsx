@@ -2,24 +2,34 @@ import React, { useState, useEffect } from 'react';
 import { getAlarm, addAlarm, deleteAlarm } from "../../api";
 import { useAuth } from '../../context/authContext'
 
-const ScheduleManager = ({sen_name}) => {
+const ScheduleManager = ({ sen_name }) => {
   const { user } = useAuth()
   const [jobs, setJobs] = useState([]);
   const [jobId, setJobId] = useState('');
   const [time, setTime] = useState('');
   const [flow, setFlow] = useState('');
 
+  const timeToMinutes = (t) => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const updateSchedules = (list) => {
+    const sorted = [...list].sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+    setJobs(sorted);
+  };
+
   const fetchAlarm = async () => {
-      try {
-        const res = await getAlarm(localStorage.getItem("token"), { user: user.user, sen_name: sen_name })
-        setJobs(res.data.data)
-      } catch (error) {
-        console.error("An unexpected error occurred:", error);
-        alert(
-          error.response?.data?.error || "Something went wrong. Please try again."
-        );
-      }
+    try {
+      const res = await getAlarm(localStorage.getItem("token"), { user: user.user, sen_name: sen_name })
+      updateSchedules(res.data.data)
+    } catch (error) {
+      console.error("An unexpected error occurred:", error);
+      alert(
+        error.response?.data?.error || "Something went wrong. Please try again."
+      );
     }
+  }
 
   useEffect(() => {
     fetchAlarm();
@@ -31,20 +41,24 @@ const ScheduleManager = ({sen_name}) => {
       return;
     }
     if (!jobId || !time || !flow || jobs.length > 5) return;
+    if (jobs.some(item => item.name === jobId)) {
+      alert("Đã tồn tại");
+      return;
+    }
     try {
-      const res = await addAlarm(localStorage.getItem("token"), { 
+      const res = await addAlarm(localStorage.getItem("token"), {
         user: user.user,
         name: jobId,
         id: sen_name,
         time: time,
         flow: flow
-    })
-    if(res.data.success){
-      setJobs(prev => [...prev, { name:jobId, time, flow: parseFloat(flow) }]);
-      setJobId('');
-      setTime('');
-      setFlow('');
-    }
+      })
+      if (res.data.success) {
+        updateSchedules([...jobs, { name: jobId, time: time, flow: parseFloat(flow) }]);
+        setJobId('');
+        setTime('');
+        setFlow('');
+      }
     } catch (error) {
       console.error("An unexpected error occurred:", error);
       alert(
@@ -60,8 +74,8 @@ const ScheduleManager = ({sen_name}) => {
     }
     try {
       const res = await deleteAlarm(localStorage.getItem("token"), { user: user.user, sen_name: sen_name, name: id })
-      if(res.data.success){
-        setJobs(prev => prev.filter(job => job.name !== id));
+      if (res.data.success) {
+        updateSchedules(jobs.filter(job => job.name !== id));
       }
     } catch (error) {
       console.error("An unexpected error occurred:", error);

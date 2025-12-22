@@ -53,7 +53,7 @@ function EditComponent({ step, id, setIsEdit }) {
             {sensorLoading ? (
                 <p>Loading...</p>
             ) : (
-                <div className="absolute bg-white p-6 rounded-md shadow-lg w-96">
+                <div className="absolute bg-white p-6 rounded-md shadow-lg w-96 z-[2]">
                     {/* Nút đóng ở góc phải trên cùng */}
                     <button
                         onClick={() => setIsEdit(prevData =>

@@ -11,7 +11,7 @@ export default defineConfig({
     },
     hmr: {
       protocol: 'wss', // dùng 'wss' nếu bạn dùng HTTPS
-      host: 'iotwater2024.mooo.com',
+      host: 'khca-s.static.good-dns.net',
       port: 5173, // cổng mà Vite dev server đang chạy
     },
   },

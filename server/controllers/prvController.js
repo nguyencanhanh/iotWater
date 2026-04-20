@@ -64,8 +64,9 @@ function addDateElement(dataArray, sensor, index, type) {
 }
 
 export const getAllPrv = async (req, res) => {
+    const { user } = req.query;
     try {
-        const info_prv = await PrvInfo.find().select("id name");;
+        const info_prv = await PrvInfo.find({ user: user }).select("id name");;
         return res.status(200).json({ success: true, info: info_prv });
     } catch (error) {
         return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
@@ -80,11 +81,12 @@ export const getPrv = async (req, res) => {
         const prvDataF = []
         const startOfToday = new Date();
         startOfToday.setHours(0, 0, 0, 0);
-        const { prv_name } = req.body
-        const info_prv = await PrvInfo.findOne({ id: prv_name });
-        const time = await PrvTime.find({ id: prv_name });
+        const { prv_name, user } = req.body
+        const info_prv = await PrvInfo.findOne({ id: prv_name, user: user});
+        const time = await PrvTime.find({ id: prv_name, user: user });
         const prvD = await Prv.find({
             index: prv_name,
+            user: user,
             createAt: { $gte: startOfToday }
         });
         const control = await PrvControl.find({
@@ -136,6 +138,12 @@ export const changePrv = async (req, res) => {
         const { info, field } = req.body;
         if (field === "rst") {
             if (publishMessage(11, info.id, info.id)) {
+                return res.status(500).json({ success: false, error: "Not publish" })
+            }
+            return res.status(200).json({ success: true });
+        }
+        if (field === "init") {
+            if (publishMessage(12, info.id, Math.floor(Date.now() / 1000))) {
                 return res.status(500).json({ success: false, error: "Not publish" })
             }
             return res.status(200).json({ success: true });

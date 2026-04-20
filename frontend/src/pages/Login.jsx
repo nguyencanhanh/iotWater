@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
-import {loginPost} from '../api/index';
+import { loginPost } from '../api/index';
 import { useAuth } from '../context/authContext'
 import { useNavigate } from 'react-router-dom'
 
 function Login() {
-  const [email, setEmail] = useState(localStorage.getItem("Login") || "")
-  const [password, setPassword] = useState(localStorage.getItem("password") || "")
+  const [email, setEmail] = useState(localStorage.getItem("Login") || "cnbg@gmail.com")
+  const [password, setPassword] = useState(localStorage.getItem("password") || "2")
   const [error, setError] = useState(null)
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -59,9 +59,11 @@ function Login() {
           </div>
           <div className='mb-4'>
             <button type='submit' className='w-full bg-teal-600 text-white py-2'>Login</button>
-
           </div>
-
+          <div className='mb-4'>
+            email: cnbg@gmail.com <br />
+            password: 2
+          </div>
         </form>
       </div>
 

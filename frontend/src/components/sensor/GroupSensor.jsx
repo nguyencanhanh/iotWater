@@ -6,6 +6,7 @@ import { useAuth } from '../../context/authContext';
 function GroupSensor() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  user.user = 0
 
   const [dataGroup, setDataGroup] = useState({});
   const [currentData, setCurrentData] = useState([]);
@@ -18,10 +19,11 @@ function GroupSensor() {
 
   const fetchSensors = async () => {
     try {
-      const res = await getGroupInfo(localStorage.getItem("token"), user.user);
+      const res = await getGroupInfo(localStorage.getItem("token"), 0);
       if (res.data.success) {
         setCurrentData(res.data.valueSenS);
-
+        // dataSensorOnline = res.data.dataSensorOnline;
+        // console.log("dataSensorOnline", dataSensorOnline);
         const dg = res.data.data || {};
         setDataGroup(dg);
 
@@ -121,7 +123,7 @@ function GroupSensor() {
     if (swapMode) return; // đang bật swap → không navigate
     if (swapSelect) return; // đang chọn swap → không navigate
 
-    const sensorIDs = dataGroup[group];
+    const sensorIDs = getOrderedSensors(group);
     const sensorMap = {};
     sensorIDs.forEach((s, i) => sensorMap[s.id] = i);
 

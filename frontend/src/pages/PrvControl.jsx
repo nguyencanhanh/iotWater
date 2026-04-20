@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 // import ValveScheduleControl from '../components/prv/TimeAlarm'
 import SettingsPanel from '../components/prv/settingPrv'
 import { ChartPrv } from "../components/chart/Chart";
-import mqtt from "mqtt";
+// import mqtt from "mqtt";
 import { useAuth } from "../context/authContext";
 import { getPrv, getAllPrv } from '../api/index';
 import { produce } from "immer";
+import { getMqttClient } from './AdminDashboard';
 
 function generateLabelsAndData(watch) {
   const labels = [];
@@ -90,6 +91,7 @@ const ControlData = ({ control }) => {
 
 export default function PrvControl() {
   const { user } = useAuth();
+  user.user = 0;
   // const [schedules, setSchedules] = useState([]);
   const [name_prv, setSchsetNamePrv] = useState();
   const [allPrv, setAllPrv] = useState();
@@ -102,20 +104,21 @@ export default function PrvControl() {
   const [dataset, setDataset] = useState([])
   // const [pressureTop, setPressureTop] = useState([]);
   const [prvData, setPrvData] = useState({});
-  const [selectedIndex, setSelectedIndex] = useState(localStorage.getItem('name_prv') || 0);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const label = generateLabelsAndData(60)
+  const client = getMqttClient();
 
-  const host = "iotwater2024.mooo.com";
-  const port = 9001;
-  const clientId = `mqtt_${Math.random().toString(16).slice(3)}`;
-  const connectUrl = `wss://${host}:${port}/mqtt`;
+  // const host = "khca-s.static.good-dns.net";
+  // const port = 9001;
+  // const clientId = `mqtt_${Math.random().toString(16).slice(3)}`;
+  // const connectUrl = `wss://${host}/mqtt`;
   const topic = "prv/send";
-  const options = { clientId, clean: true, connectTimeout: 4000, reconnectPeriod: 5000 };
-  const client = mqtt.connect(connectUrl, options);
+  // const options = { clientId, clean: true, connectTimeout: 4000, reconnectPeriod: 5000 };
+  // const client = mqtt.connect(connectUrl, options);
   useEffect(() => {
     // localStorage.removeItem("prv_d");
-    client.on("connect", () => console.log("Connected to MQTT broker"));
-    client.on("message", (topic, messageData) => {
+    // client.on("connect", () => console.log("Connected to MQTT broker"));
+    const handleMessage = (topic, messageData) => {
       messageData = JSON.parse(messageData.toString());
       if (!messageData.p1) return
       setPrvData(prevData =>
@@ -123,11 +126,14 @@ export default function PrvControl() {
           draft[messageData.n] = messageData;
         })
       );
-    });
+    }
+    client.on("message", handleMessage);
     client.subscribe(topic);
 
     return () => {
-      client.end();
+      client.off("message", handleMessage);
+      client.unsubscribe(topic);
+    //   client.end();
     };
   }, []);
   // useEffect(() => {
@@ -193,7 +199,7 @@ export default function PrvControl() {
             yAxisID: "y2",
             spanGaps: true
           },
-    ])
+        ])
       } else {
         alert("Failed to fetch prv");
       }
@@ -206,7 +212,7 @@ export default function PrvControl() {
   }
   const fetchDataInfo = async () => {
     try {
-      const resAll = await getAllPrv(localStorage.getItem("token"));
+      const resAll = await getAllPrv(localStorage.getItem("token"), user.user);
       if (resAll.data.success) {
         setAllPrv(resAll.data.info)
         fetchPrv(resAll.data.info[selectedIndex].id)
@@ -271,7 +277,7 @@ export default function PrvControl() {
           </div>
           <div className="text-center mt-5">
             <h3 className="text-lg font-bold">Biểu đồ áp van</h3>
-            <ChartPrv label={label} dataset={dataset}/>
+            <ChartPrv label={label} dataset={dataset} />
           </div>
           <hr className="my-6 border-t-2 border-gray-300 w-full" />
           <div className="flex flex-wrap mt-5 gap-5 justify-center items-stretch">

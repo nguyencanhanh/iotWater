@@ -1,11 +1,8 @@
 import mongoose from "mongoose";
 
 const AlarmFlow = new mongoose.Schema({
-  user: {type: Number},
-  id: {type: Number},
   name: {type: String},
-  time: {type: String},
-  flow: {type: Number}
+  createAt: { type: Date, default: Date.now }
 })
 
 const Alarm = mongoose.model("Alarm", AlarmFlow)

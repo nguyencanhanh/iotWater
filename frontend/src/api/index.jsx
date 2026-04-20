@@ -4,7 +4,7 @@ const URL_AUTH = import.meta.env.VITE_URL_AUTH;
 const URL_DASHBOARD = import.meta.env.VITE_URL_DASHBOARD
 const URL_SENSOR = import.meta.env.VITE_URL_SENSOR
 const URL_GROUP = import.meta.env.VITE_URL_GROUP
-const URL_ALARM = import.meta.env.VITE_URL_ALARM
+// const URL_ALARM = import.meta.env.VITE_URL_ALARM
 const URL_PRV_TIME = import.meta.env.VITE_URL_PRV_TIME
 
 const axiosConfig = (token) => ({
@@ -76,29 +76,29 @@ export const deleteGroup = (token, sen) => {
     )
 }
 
-export const getAlarm = (token, sen_name) => {
-    return axios.post(
-        `${URL_ALARM}`,
-        sen_name,
-        axiosConfig(token)
-    )
-}
+// export const getAlarm = (token, sen_name) => {
+//     return axios.post(
+//         `${URL_ALARM}`,
+//         sen_name,
+//         axiosConfig(token)
+//     )
+// }
 
-export const addAlarm = (token, sen) => {
-    return axios.post(
-        `${URL_ALARM}/add`,
-        sen,
-        axiosConfig(token)
-    )
-}
+// export const addAlarm = (token, sen) => {
+//     return axios.post(
+//         `${URL_ALARM}/add`,
+//         sen,
+//         axiosConfig(token)
+//     )
+// }
 
-export const deleteAlarm = (token, sen) => {
-    return axios.post(
-        `${URL_ALARM}/delete`,
-        sen,
-        axiosConfig(token)
-    )
-}
+// export const deleteAlarm = (token, sen) => {
+//     return axios.post(
+//         `${URL_ALARM}/delete`,
+//         sen,
+//         axiosConfig(token)
+//     )
+// }
 
 export const getPrv = (token, prv_name) => {
     return axios.post(
@@ -108,9 +108,9 @@ export const getPrv = (token, prv_name) => {
     )
 }
 
-export const getAllPrv = (token) => {
+export const getAllPrv = (token, user) => {
     return axios.get(
-        `${URL_PRV_TIME}/get`,
+        `${URL_PRV_TIME}/get?user=${encodeURIComponent(user)}`,
         axiosConfig(token)
     )
 }

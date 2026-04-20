@@ -4,9 +4,10 @@ import Info from "../models/Info.js";
 import Prv from "../models/PrvData.js";
 import PrvInfo from "../models/Prv.js";
 import PrvControl from "../models/PrvControl.js"
+import Alarm from "../models/AlarmFlow.js";
 import cron from 'node-cron'
 import axios from 'axios';
-import { fetchTimeAlarm } from "../controllers/sensorController.js"
+// import { fetchTimeAlarm } from "../controllers/sensorController.js"
 import { exec } from 'child_process';
 import { clientRedis } from "./redis.js";
 
@@ -14,7 +15,7 @@ const allUser = [0]
 const allSensors = []
 const allPrv = []
 const countLost = []
-const host = 'iotwater2024.mooo.com';
+const host = 'khca-s.static.good-dns.net';
 const port = 1883;
 const clientId = `mqtt_${Math.random().toString(16).slice(3)}`
 
@@ -84,26 +85,26 @@ cron.schedule('*/6 * * * *', () => {
       allSensors[User][key] = 2;
     }
 
-    for (const key in Prvs) {
-      const id = Number(key)
-      if (Prvs[key] !== 1 && key !== null && !isNaN(id)) {
-        const currentDate = new Date(Date.now()).toLocaleString('en-GB', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        });
+    // for (const key in Prvs) {
+    //   const id = Number(key)
+    //   if (Prvs[key] !== 1 && key !== null && !isNaN(id)) {
+    //     const currentDate = new Date(Date.now()).toLocaleString('en-GB', {
+    //       hour: '2-digit',
+    //       minute: '2-digit',
+    //       hour12: false
+    //     });
 
-        const info = await PrvInfo.findOne({ user: User, id: id });
-        if (info) {
-          await sendTelegramMessage(
-            process.env.TOKEN,
-            process.env.AUTHORIZATION,
-            `Cảnh báo mất kết nối van ${info.name} vào lúc ${currentDate}`
-          );
-        }
-      }
-      allPrv[User][key] = 2;
-    }
+    //     const info = await PrvInfo.findOne({ user: User, id: id });
+    //     if (info) {
+    //       await sendTelegramMessage(
+    //         process.env.TOKEN,
+    //         process.env.AUTHORIZATION,
+    //         `Cảnh báo mất kết nối van ${info.name} vào lúc ${currentDate}`
+    //       );
+    //     }
+    //   }
+    //   allPrv[User][key] = 2;
+    // }
   });
 });
 
@@ -168,6 +169,7 @@ const newSensor = async (user, id) => {
 
 const connectMqtt = async () => {
   // let sumFlow = 0;
+  allSensors[0] = {}
   for (const user of allUser) {
     const info = await Info.find({ user: user });
     const prvInfo = await PrvInfo.find({ user: user });
@@ -177,7 +179,7 @@ const connectMqtt = async () => {
           allSensors[user] = {}
         }
         allSensors[user][sensor.id] = 1
-        fetchTimeAlarm(user, sensor.id)
+        // fetchTimeAlarm(user, sensor.id)
       })
     }
     prvInfo.forEach((prv) => {
@@ -204,9 +206,10 @@ const connectMqtt = async () => {
     try {
       messageData = JSON.parse(messageData.toString());
       const sen_name = Number(messageData.n);
+      if (isNaN(sen_name)) return;
       const user = Number(messageData.u) || 0;
       if (topicRec === topic) {
-        if (!allSensors[user][sen_name] && sen_name != 255) {
+        if (!allSensors[user][sen_name]) {
           newSensor(user, sen_name)
         }
         allSensors[user][sen_name] = 1
@@ -216,12 +219,12 @@ const connectMqtt = async () => {
           data.forEach(async (message, index) => {
             message.t = message.t * 1000
             const newSensor = new Sensor({
-              index: sen_name,
+              index: sen_name ,
               user: user,
               battery: message.b || messageData.b,
               Pressure: message.p,
               temperature: messageData.t,
-              sum: messageData.s / 10,
+              sum: isNaN(messageData.s) ? 0 : messageData.s / 10,
               flow: message.f,
               createAt: message.t
             });
@@ -253,13 +256,20 @@ const connectMqtt = async () => {
           }
           if (messageData.p != null) {
             // client.publish("khca/warning", `{"n":${sen_name},"d":"warning"}`, { qos: 2 })
+            let  warningStr = ""
             await clientRedis.set(`warning:${sen_name}`, "warning", { EX: 60 });
             if (messageData.l === 0) {
-              await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo áp suất cao trên ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`)
+              warningStr = `Cảnh báo áp suất cao trên ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`
+              await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, warningStr)
             }
             else {
-              await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo áp suất thấp dưới ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`)
+              warningStr = `Cảnh báo áp suất thấp dưới ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`
+              await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, warningStr)
             }
+            const newAlarm  = new Alarm({
+              name: warningStr
+            })
+            await newAlarm.save()
           }
           if (messageData.f && Number(messageData.f) < 300) {
             // await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo lưu lượng cao ${messageData.f}m3/h tại cảm biến ${name} vào lúc ${currentDate}`)
@@ -289,6 +299,7 @@ const connectMqtt = async () => {
           if (messageData.s) {
             const newPrvControl = new PrvControl({
               id: sen_name,
+              user: user,
               control: messageData.s,
               min: messageData.min,
               max: messageData.max,

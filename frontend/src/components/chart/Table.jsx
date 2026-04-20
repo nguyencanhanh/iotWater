@@ -8,7 +8,7 @@ function dateString(index, offset, startDate) {
   if(index !== 0 && minute === 0) startHour++;
   if(startHour === 24) startHour = 0
   if (offset != null && startDate[Math.floor((index + offset) / 288)]) {
-    return `${startDate[Math.floor((index + offset) / 288)].toISOString().split("T")[0]} - ${String(startHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+    return `${startDate[Math.floor((index + offset) / 288)].toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" })} - ${String(startHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
   }
   return `${String(startHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
 }

@@ -7,6 +7,7 @@ import { clientRedis } from "../mqtt/redis.js";
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log('user', email)       
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ success: false, error: "User not found" })

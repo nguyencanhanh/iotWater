@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const PrvControl = new mongoose.Schema({
   id: {type: Number},
+  user: {type: Number},
   control: {type: String},
   min: {type: Number},
   max: {type: Number},

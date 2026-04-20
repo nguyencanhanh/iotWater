@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css";
 import { useAuth } from "../../context/authContext";
 import { intervalUpdatePut, sensorListGet, getGroup } from "../../api/index";
 import ModalData from "../chart/Modal";
-import { client } from "../../pages/AdminDashboard";
+import { getMqttClient } from "../../pages/AdminDashboard";
 // import { produce } from "immer";
 // import L from "leaflet";
 
@@ -58,6 +58,7 @@ function AdminSummary() {
     const [pipeLayer, setPipesLayer] = useState(null);
     const [metersLayer, setMetersLayer] = useState(null);
     const [warning, setWarning] = useState({})
+    const client = getMqttClient();
     const topic = "iotwatter@2024";
     const topicWarning = "khca/warning"
 
@@ -92,11 +93,11 @@ function AdminSummary() {
     }, []);
 
     useEffect(() => {
-        client.on("connect", () => console.log("Connected to MQTT broker"));
+        // client.on("connect", () => console.log("Connected to MQTT broker"));
         client.on("message", (topicGet, messageData) => {
             if (topicGet === topic) {
                 messageData = JSON.parse(messageData.toString());
-                if (messageData.m !== 1 || messageData.n > info.length) return;
+                if (messageData.m !== 1) return;
                 setData((prevData) => ({
                     ...prevData,
                     [messageData.n]: {
@@ -116,7 +117,7 @@ function AdminSummary() {
         });
         client.subscribe(topic);
         client.subscribe(topicWarning, { qos: 2 })
-        return () => client.end();
+        // return () => client.end();
     }, []);
 
     useEffect(() => {
@@ -164,7 +165,7 @@ function AdminSummary() {
         <div className="relative h-screen w-full">
             {/* Bản đồ ở lớp dưới */}
             <div className="absolute inset-0 z-0">
-                <MapContainer center={[weatherData[0].lat, weatherData[0].lng]} zoom={15} className="h-full w-full" zoomControl={false}>
+                <MapContainer center={[weatherData[0]?.lat, weatherData[0]?.lng]} zoom={15} className="h-full w-full" zoomControl={false}>
                     <TileLayer
                         url="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
                         subdomains={["mt1", "mt2", "mt3"]}

@@ -6,6 +6,27 @@ import { intervalUpdatePut } from '../../api/index';
 import { useAuth } from '../../context/authContext'
 // import ScheduleViewer from './settingFlowAlarm'
 
+export const initData = async (profs) => {
+  if (user.role === 'trial') {
+    alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+    return;
+  }
+  
+  try {
+    const res = await intervalUpdatePut(
+      localStorage.getItem("token"),
+      { upTime:  1, sen_id: profs.info[profs.step].id, user: user.user }
+    )
+    if (res.data.success) {
+      alert("Cập nhật thành công");
+    }
+  } catch (error) {
+    if (error.res && !error.res.data.success) {
+      alert(error.res.data.error);
+    }
+  }
+}
+
 const SettingsButton = (profs) => {
   const { user } = useAuth()
   const [isOpen, setIsOpen] = useState(false);
@@ -36,10 +57,6 @@ const SettingsButton = (profs) => {
         alert(error.res.data.error);
       }
     }
-  }
-
-  const initData = async () => {
-    
   }
 
   const handleSendUnit = async () => {
@@ -430,13 +447,13 @@ const SettingsButton = (profs) => {
   return (
     <div className="relative inline-block text-left z-[1]">
       {/* Nút cài đặt */}
-      <button
-        // onClick={() => initData()}
+      {/* <button
+        onClick={() => initData()}
         className="px-3 py-1 transition"
         title="Khởi tạo lại dữ liệu ban đầu"
       >
         🔄
-      </button>
+      </button> */}
       <button
         onClick={() => setIsOpen((prev) => !prev)}
         className="px-5 py-3 text-sm"
@@ -611,6 +628,52 @@ const SettingsButton = (profs) => {
                   className="bg-teal-500 text-white px-3 py-1 rounded hover:bg-teal-600"
                 >
                   Ok
+                </button>
+              </div>
+            </li>
+            <li>
+              <div className="flex justify-center space-x-2 mb-2">
+                <button
+                  onClick={() => {
+                    const today = new Date();
+                    const yesterday = new Date(today);
+                    yesterday.setDate(today.getDate() - 1);
+                    const from = `${yesterday.toISOString().split("T")[0]}T06:00`;
+                    const to = `${today.toISOString().split("T")[0]}T06:00`;
+                    setFromDate(from);
+                    setToDate(to);
+                  }}
+                  className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm"
+                >
+                  6h hôm qua đến 6h hôm nay
+                </button>
+                <button
+                  onClick={() => {
+                    const today = new Date();
+                    const yesterday = new Date(today);
+                    yesterday.setDate(today.getDate() - 1);
+                    const from = `${yesterday.toISOString().split("T")[0]}T09:00`;
+                    const to = `${today.toISOString().split("T")[0]}T09:00`;
+                    setFromDate(from);
+                    setToDate(to);
+                  }}
+                  className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm"
+                >
+                  9h hôm qua đến 9h hôm nay
+                </button>
+                <button
+                  onClick={() => {
+                    const today = new Date();
+                    const yesterday = new Date(today);
+                    yesterday.setDate(today.getDate() - 1);
+                    const from = `${yesterday.toISOString().split("T")[0]}T00:00`;
+                    const to = `${today.toISOString().split("T")[0]}T00:00`;
+                    setFromDate(from);
+                    setToDate(to);
+                  }}
+                  className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm"
+                >
+                  0h hôm qua đến 0h hôm nay
                 </button>
               </div>
             </li>

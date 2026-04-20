@@ -30,24 +30,24 @@ function timeToMinutes(timeStr) {
   return h * 60 + m;
 }
 
-export const fetchTimeAlarm = async (user, id) => {
-  const data = await Alarm.find({ user: user, id: id });
-  const now = new Date();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+// export const fetchTimeAlarm = async (user, id) => {
+//   const data = await Alarm.find({ user: user, id: id });
+//   const now = new Date();
+//   const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
-  let closest = null;
-  let maxMinutes = -1;
-  data.forEach((item) => {
-    const itemMinutes = timeToMinutes(item.time);
-    if (itemMinutes <= nowMinutes && itemMinutes > maxMinutes) {
-      maxMinutes = itemMinutes;
-      closest = item;
-    }
-  })
-  if (closest) {
-    publishMessage("high_threshold", closest.flow * 1000, closest.id)
-  }
-}
+//   let closest = null;
+//   let maxMinutes = -1;
+//   data.forEach((item) => {
+//     const itemMinutes = timeToMinutes(item.time);
+//     if (itemMinutes <= nowMinutes && itemMinutes > maxMinutes) {
+//       maxMinutes = itemMinutes;
+//       closest = item;
+//     }
+//   })
+//   if (closest) {
+//     publishMessage("high_threshold", closest.flow * 1000, closest.id)
+//   }
+// }
 
 // const publishMessage = (type, message, sen_id) => {
 //   // console.log(JSON.stringify({n:sen_id,m:type,d:message}))
@@ -425,6 +425,22 @@ export const upInterval = async (req, res) => {
       )
       return res.status(200).json({ success: true })
     }
+    if(profs.upTime != null) {
+      const timeNow = Math.floor(Date.now() / 1000);
+      const result = await publishMessage(
+        5,
+        timeNow,
+        profs.sen_id,
+        10000
+      )
+      if (!result.ok) {
+        return res.status(500).json({
+          success: false,
+          error: "MQTT timeout or publish failed"
+        })
+      }
+      return res.status(200).json({ success: true })
+    }
     if (profs.sum != null) {
       // if (publishMessage(14, Number(profs.sum).toFixed(1) * 10, profs.sen_id)) {
       //   return res.status(500).json({ success: false, error: "Not publish" })
@@ -595,7 +611,7 @@ export const upInterval = async (req, res) => {
         profs.sen_id,
         10000
       )
-      if (result.data.d.onP !== Number(profs.onP)) {
+      if (!result.ok) {
         return res.status(500).json({
           success: false,
           error: "MQTT timeout or publish failed"
@@ -617,7 +633,7 @@ export const upInterval = async (req, res) => {
         profs.sen_id,
         10000
       )
-      if (result.data.d.onF !== Number(profs.onF)) {
+      if (!result.ok) {
         return res.status(500).json({
           success: false,
           error: "MQTT timeout or publish failed"
@@ -642,9 +658,9 @@ export const upInterval = async (req, res) => {
         2,
         Number(profs.sample),
         profs.sen_id,
-        10000
+        3000
       )
-      if (result.data.d.sample !== Number(profs.sample)) {
+      if (!result.ok) {
         return res.status(500).json({
           success: false,
           error: "MQTT timeout or publish failed"
@@ -660,9 +676,9 @@ export const upInterval = async (req, res) => {
       1,
       Number(profs.interval),
       profs.sen_id,
-      10000
+      3000
     )
-    if (result.data.d.interval !== Number(profs.interval)) {
+    if (!result.ok) {
       return res.status(500).json({
         success: false,
         error: "MQTT timeout or publish failed"
@@ -929,13 +945,14 @@ export const getSensors = async (req, res) => {
         dataPressure = JSON.parse(await clientRedis.get(`dataPressure:${profs.info[i].id}`))
         dataFlow = JSON.parse(await clientRedis.get(`dataFlow:${profs.info[i].id}`))
         sensorT = JSON.parse(await clientRedis.get(`sensorT:${profs.info[i].id}`))
+        timeTracking = JSON.parse(await clientRedis.get(`timeTracking:${profs.info[i].id}`))
       }
       else {
         result[0].data.forEach((sensor) => {
           const index = Math.floor(convertTime(sensor.createAt, profs.info[i].watch))
           addDateElement(dataPressure, sensor, index, "Pressure")
           addDateElement(dataFlow, sensor, index, "flow")
-          if (profs.info[i]?.tracking) {
+          if (profs.info[i].tracking) {
             if (sensor.Pressure >= profs.info[i].tracking) {
               const timeAdd = Math.floor((sensor.createAt - currentStart) / 1000)
               if (timeAdd < 1000) {
@@ -950,6 +967,7 @@ export const getSensors = async (req, res) => {
           clientRedis.set(`dataPressure:${profs.info[i].id}`, JSON.stringify(dataPressure), { EX: 60 });
           clientRedis.set(`dataFlow:${profs.info[i].id}`, JSON.stringify(dataFlow), { EX: 60 });
           clientRedis.set(`sensorT:${profs.info[i].id}`, JSON.stringify(sensorT), { EX: 60 });
+          clientRedis.set(`timeTracking:${profs.info[i].id}`, JSON.stringify(timeTracking), { EX: 60 });
         }
       }
       if (result[0].data && result[0].data.length > 0) {
@@ -1069,18 +1087,22 @@ export const getGroupInfo = async (req, res) => {
     const { user } = req.query
     const data = {}
     const valueSenS = []
+    let dataSensorOnline = 0;
     const senGroup = await InfoSen.find({ user: user }).sort({ createAt: -1 });
     for (let i = 0; i < senGroup.length; i++) {
       const startOfToday = new Date() - senGroup[i].interval * 2000;
       const valueSen = await Sensor.findOne({ index: senGroup[i].id, user: user, createAt: { $gte: startOfToday } }).sort({ createAt: -1 });
       valueSenS[senGroup[i].id] = valueSen
+      if (valueSen) {
+        dataSensorOnline += 1;
+      }
     }
     senGroup.forEach((sensor) => {
       // if (!sensor.group || sensor.group === "") sensor.group = "Khong co"
       if (!data[sensor.group]) data[sensor.group] = []
       data[sensor.group].push(sensor)
     })
-    return res.status(200).json({ success: true, data, valueSenS });
+    return res.status(200).json({ success: true, data, valueSenS, dataSensorOnline });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
   }
@@ -1137,59 +1159,59 @@ export const addGroup = async (req, res) => {
   }
 }
 
-export const addAlarm = async (req, res) => {
-  try {
-    const profs = req.body;
-    scheduledJobs[`${profs.name}-${profs.user}-${profs.id}`] = cron.schedule(timeToCronExpr(profs.time), () => {
-      publishMessage("high_threshold", profs.flow * 1000, profs.id)
-    });
-    const newAlarm = new Alarm({
-      name: profs.name,
-      user: profs.user,
-      id: profs.id,
-      time: profs.time,
-      flow: profs.flow
-    })
-    await newAlarm.save()
-    fetchTimeAlarm(profs.user, profs.id)
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: "Alarm add failed due to some reason" });
-  }
-}
+// export const addAlarm = async (req, res) => {
+//   try {
+//     const profs = req.body;
+//     scheduledJobs[`${profs.name}-${profs.user}-${profs.id}`] = cron.schedule(timeToCronExpr(profs.time), () => {
+//       publishMessage("high_threshold", profs.flow * 1000, profs.id)
+//     });
+//     const newAlarm = new Alarm({
+//       name: profs.name,
+//       user: profs.user,
+//       id: profs.id,
+//       time: profs.time,
+//       flow: profs.flow
+//     })
+//     await newAlarm.save()
+//     fetchTimeAlarm(profs.user, profs.id)
+//     return res.status(200).json({ success: true });
+//   } catch (error) {
+//     return res.status(500).json({ success: false, error: "Alarm add failed due to some reason" });
+//   }
+// }
 
-export const getAlarm = async (req, res) => {
-  try {
-    const { user, sen_name } = req.body
-    const data = await Alarm.find({ user: user, id: sen_name });
-    data.forEach((alarm) => {
-      if (!scheduledJobs[`${alarm.name}-${user}-${sen_name}`]) {
-        scheduledJobs[`${alarm.name}-${user}-${sen_name}`] = cron.schedule(timeToCronExpr(alarm.time), () => {
-          publishMessage("high_threshold", alarm.flow * 1000, sen_name)
-        });
-      }
-    });
-    return res.status(200).json({ success: true, data });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
-  }
-}
+// export const getAlarm = async (req, res) => {
+//   try {
+//     const { user, sen_name } = req.body
+//     const data = await Alarm.find({ user: user, id: sen_name });
+//     data.forEach((alarm) => {
+//       if (!scheduledJobs[`${alarm.name}-${user}-${sen_name}`]) {
+//         scheduledJobs[`${alarm.name}-${user}-${sen_name}`] = cron.schedule(timeToCronExpr(alarm.time), () => {
+//           publishMessage("high_threshold", alarm.flow * 1000, sen_name)
+//         });
+//       }
+//     });
+//     return res.status(200).json({ success: true, data });
+//   } catch (error) {
+//     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
+//   }
+// }
 
-export const deleteAlarm = async (req, res) => {
-  try {
-    const { user, sen_name, name } = req.body
-    scheduledJobs[`${name}-${user}-${sen_name}`].stop();
-    delete scheduledJobs[`${name}-${user}-${sen_name}`];
-    await Alarm.deleteOne({ user: user, id: sen_name, name: name });
-    if (Object.keys(scheduledJobs).length === 0) {
-      publishMessage("high_threshold", 300000, sen_name)
-    }
-    else {
-      fetchTimeAlarm(user, sen_name)
-    }
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
-  }
-}
+// export const deleteAlarm = async (req, res) => {
+//   try {
+//     const { user, sen_name, name } = req.body
+//     scheduledJobs[`${name}-${user}-${sen_name}`].stop();
+//     delete scheduledJobs[`${name}-${user}-${sen_name}`];
+//     await Alarm.deleteOne({ user: user, id: sen_name, name: name });
+//     if (Object.keys(scheduledJobs).length === 0) {
+//       publishMessage("high_threshold", 300000, sen_name)
+//     }
+//     else {
+//       fetchTimeAlarm(user, sen_name)
+//     }
+//     return res.status(200).json({ success: true });
+//   } catch (error) {
+//     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
+//   }
+// }
 

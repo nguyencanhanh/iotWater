@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { changeData } from "../sensor/SensorList"
 // import mqtt from 'mqtt';
 import { Sema } from 'async-sema'
-import { client } from "../../pages/AdminDashboard";
+import { getMqttClient } from "../../pages/AdminDashboard";
 import annotationPlugin from "chartjs-plugin-annotation";
 import { Line } from "react-chartjs-2";
 import {
@@ -54,73 +54,82 @@ export const addDataSensor = (indexSensors, data, dataPressure, dataFlow) => {
   flowDataSensor[indexSensors] = dataFlow;
 }
 
-export const connectMqtt = (timeTrackingRet, info, idMap) => {
-  const [data, setData] = useState();
-  // const host = 'iotwater2024.mooo.com';
-  // const port = 9001;
-  // const clientId = `mqtt_${ip_local}`;
-  // const connectUrl = `wss://${host}:${port}/mqtt`;
-  const topic = 'iotwatter@2024';
-  // // let check = false;
-  // const options = {
-  //   clientId,
-  //   clean: true,
-  //   connectTimeout: 4000,
-  //   reconnectPeriod: 5000,
-  // }
-  // const client = mqtt.connect(connectUrl, options);
 
-  timeReach = timeTrackingRet;
+export function connectMqtt(timeTrackingRet, info, idMap) {
+  const [data, setData] = useState(null);
+
   useEffect(() => {
-    const semaphore = new Sema(1);
-    client.on('connect', () => {
-      console.log('Connected to MQTT broker');
-    });
+    const client = getMqttClient();
+    if (!client) return;
 
-    client.on('message', async (topic, messageData) => {
+    const topic = "iotwatter@2024";
+    const semaphore = new Sema(1);
+
+    // ✅ TẠO HANDLER RIÊNG (QUAN TRỌNG)
+    const handleMessage = async (topic, messageData) => {
       await semaphore.acquire();
       try {
-        messageData = JSON.parse(messageData.toString());
-        const sen_name = idMap[Number(messageData.n)];
-        const msg_id = Number(messageData.m);
+        const parsed = JSON.parse(messageData.toString());
+
+        const sen_name = idMap[Number(parsed.n)];
+        const msg_id = Number(parsed.m);
         if (msg_id === 1 && sen_name != null) {
-          const dataMess = messageData.d
+          const dataMess = parsed.d;
           const lastValue = dataMess[dataMess.length - 1];
-          battery[sen_name] = lastValue.b || messageData.b;
-          flowsum[sen_name] = messageData.s / 10;
-          temperature[sen_name] = messageData.t;
+
+          battery[sen_name] = lastValue.b || parsed.b;
+          flowsum[sen_name] = parsed.s / 10;
+          temperature[sen_name] = parsed.t;
+
           let currentStart = dataMess[0].t * 1000;
-          dataMess.forEach(async (mess, index) => {
+
+          for (const mess of dataMess) {
             const message = {
-              createAt: mess.t,
+              createAt: mess.t * 1000,
               Pressure: mess.p,
               flow: mess.f,
-              battery: mess.b || messageData.b
-            }
-            message.createAt = message.createAt * 1000
+              battery: mess.b || parsed.b,
+            };
+
             if (message.Pressure >= info[sen_name].tracking) {
-              timeReach[sen_name] += Math.floor((message.createAt - currentStart) / 60000)
+              timeTrackingRet[sen_name] += Math.floor(
+                (message.createAt - currentStart) / 60000
+              );
             }
-            currentStart = message.createAt
-            await addData(sen_name, message, message.createAt, message.Pressure, info[sen_name].watch);
-          })
+
+            currentStart = message.createAt;
+
+            await addData(
+              sen_name,
+              message,
+              message.createAt,
+              message.Pressure,
+              info[sen_name].watch
+            );
+          }
         }
-      } catch (error) {
-        if (error.res && !error.res.data.success) {
-          alert(error.res.data.error);
-        }
+
+        setData(parsed);
+      } catch (err) {
+        console.error("MQTT message error:", err);
       } finally {
-        setData(messageData);
         semaphore.release();
       }
-    });
-    client.subscribe(topic)
-    return () => {
-      client.end();
     };
-  }, []);
+
+    // ✅ ĐĂNG KÝ LISTENER
+    client.on("message", handleMessage);
+    client.subscribe(topic);
+
+    // 🔥 CLEANUP KHI RỜI TRANG
+    return () => {
+      client.off("message", handleMessage);
+    };
+  }, [idMap, info, timeTrackingRet]);
+
   return data;
 }
+
 
 export const addData = async (indexSensor, data, newDate, dataPressure, watch) => {
   if (!listDataSensor[indexSensor]) {
@@ -533,18 +542,18 @@ export const Battery = ({ step, data, temp, dataInfo }) => {
 
 
 export const TimeComparison = (profs) => {
-  const [timeMoreThan, setTimeMoreThan] = useState(profs.init)
-  if (!profs.dataModal) {
-    useEffect(() => {
-      setTimeMoreThan(timeReach[profs.step]);
-    }, [changeData]);
-  }
+  // const [timeMoreThan, setTimeMoreThan] = useState(profs.init)
+  // if (!profs.dataModal) {
+  //   useEffect(() => {
+  //     setTimeMoreThan(timeReach[profs.step]);
+  //   }, [changeData]);
+  // }
   return (
     <div className="flex items-center w-1/2">
       <span className="text-sm font-medium text-gray-700 mr-2">
         Lớn hơn <span className="text-red-600">{profs.info?.tracking}</span>m:
       </span>
-      <span className="text-lg font-bold text-teal-700">{Math.floor(timeMoreThan / 60)}H{timeMoreThan % 60}P</span>
+      <span className="text-lg font-bold text-teal-700">{Math.floor(profs.init / 60)}H{profs.init % 60}P</span>
     </div>
   );
 };

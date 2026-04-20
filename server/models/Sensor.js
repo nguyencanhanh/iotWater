@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const sensorSchema = new mongoose.Schema({
-    index: { type: Number, required: true},
+    index: { type: Number},
     user: {type: Number},
     Pressure: { type: Number },
     battery: { type: Number },

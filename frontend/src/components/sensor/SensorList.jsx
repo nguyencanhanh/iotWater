@@ -5,7 +5,7 @@ import { Battery, battery } from "../chart/Chart";
 import RealTimeLineChart, { addDataSensor, connectMqtt, TimeComparison, Param, ParamFlow } from "../chart/Chart";
 import ModalData from "../chart/Modal";
 import { sensorListGet, getSensorInGroup } from "../../api/index"
-import SettingsButton from "../setting/Setting";
+import SettingsButton, {initData} from "../setting/Setting";
 import ScrollableTable from "../chart/Table";
 import EditComponent from "./EditComponent";
 import { useLocation, useParams } from "react-router-dom";
@@ -82,7 +82,7 @@ function SensorList() {
   const fetchSensors = async (total, info) => {
     try {
       const startOfToday = new Date();
-      const res = await sensorListGet(localStorage.getItem("token"), { total: total, info: info, user: user.user, date: [startOfToday,null]});
+      const res = await sensorListGet(localStorage.getItem("token"), { total: total, info: info, user: user.user, date: [startOfToday, null] });
       if (res.data.success) {
         const data = res.data.sensors
         data.forEach((sensor, index) => {
@@ -111,8 +111,9 @@ function SensorList() {
     fetchSetting()
     battery.length = 0;
   }, []);
-
   changeData = connectMqtt(timeTracking, dataInfo, idMap)
+
+
   const filterSensor = (e) => {
     const records = dataInfo.filter((dep) => dep.name.toLowerCase().includes(e.target.value.toLowerCase()))
     setFilteredDevices(records)
@@ -184,10 +185,17 @@ function SensorList() {
                       step={step}
                     />
                   </div>
-                  <div className="w-full justify-between">
+                  <div className="flex w-full justify-between">
                     <Param pram={pram[step]} />
-                    <ParamFlow step={step} pram={pramFlow[step]} />
+                    <button
+                      onClick={() => initData(dataInfo)}
+                      className="px-5 transition"
+                      title="Khởi tạo lại dữ liệu ban đầu"
+                    >
+                      🔄
+                    </button>
                   </div>
+                  <ParamFlow step={step} pram={pramFlow[step]} />
                   <RealTimeLineChart name={step} adj={device.adj} label={laInit(dataInfo)[step]} data={dataPressure[step]} scrollPosition={scrollPosition[step]} />
                   <ScrollableTable step={step} watch={dataInfo[step].watch} adj={device.adj} currentTimeDate={currentTime(dataInfo)[step]} handle={setScrollPosition} data={dataPressure[step]} />
                 </li>

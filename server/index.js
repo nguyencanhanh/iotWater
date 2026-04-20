@@ -6,7 +6,7 @@ import bodyParser from 'body-parser';
 import authRouter from './routes/auth.js'
 import sensorRouter from './routes/sensor.js'
 import groupSensor from './routes/group.js'
-import alarmRouter from './routes/alarm.js'
+// import alarmRouter from './routes/alarm.js'
 import uploadImg from './routes/upload.js'
 import prvRouter from './routes/prv.js'
 import connectToDatabase from './db/db.js'
@@ -17,7 +17,7 @@ connectToDatabase()
 connectMqtt()
 connectRedis()
 const app = express()
-app.use(cors({origin: ['https://iotwater2024.mooo.com']}))
+app.use(cors({origin: ['https://khca-s.static.good-dns.net']}))
 app.use(express.json())
 app.use(bodyParser.raw({ type: 'image/jpeg', limit: '5mb' }));
 app.set("trust proxy", true); // nếu có nginx/ngrok
@@ -41,7 +41,7 @@ app.use('/api/auth', authRouter)
 app.use('/api/upload', uploadImg)
 app.use('/api/sensor', sensorRouter)
 app.use('/api/group', groupSensor)
-app.use('/api/alarm', alarmRouter)
+// app.use('/api/alarm', alarmRouter)
 app.use('/api/prv', prvRouter)
 
 app.listen(process.env.PORT, ()=>{

@@ -682,7 +682,7 @@ export default function SettingsPanel({ defaultData }) {
                 fontFamily: "Arial, sans-serif",
             }}
         >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "left", marginBottom: "20px" }}>
                 <h3 style={{ fontSize: '24px', fontWeight: 'bold' }}>Cài đặt thiết bị</h3>
                 <button
                     style={{
@@ -709,6 +709,32 @@ export default function SettingsPanel({ defaultData }) {
                     }}
                 >
                     Reset
+                </button>
+                <button
+                    style={{
+                        padding: '10px 20px',
+                        fontSize: '16px',
+                        backgroundColor: '#f44336',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer'
+                    }}
+                    onClick={async () => {
+                        try {
+                            const res = await changePrv(localStorage.getItem("token"), { info: { id: info.id }, field: "init" });
+                            if (res.data.success) {
+                                alert("Van điều áp đã init thành công vui lòng đợi");
+                            }
+                        } catch (error) {
+                            console.error("An unexpected error occurred:", error);
+                            alert(
+                                error.response?.data?.error || "Something went wrong. Please try again."
+                            );
+                        }
+                    }}
+                >
+                    Khởi tạo
                 </button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
@@ -894,9 +920,9 @@ export default function SettingsPanel({ defaultData }) {
             </div>
             {renderAlarms()}
             <h3 className="text-lg font-bold">Điều chỉnh van thủ công</h3>
-            <div className="flex items-center justify-center gap-4 p-4">
+            <div className="flex items-center justify-center p-4">
 
-                <div className="flex flex-wrap justify-center gap-4">
+                <div className="flex flex-wrap justify-center gap-40">
                     {/* Nút MỞ và ĐÓNG */}
                     <button
                         onClick={() => sendCommand("status", `1 ${duration * 10}`)}

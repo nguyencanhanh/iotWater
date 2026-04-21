@@ -1,0 +1,63 @@
+{ ok: 1, dropped: 'iot_backup' }
+2026-04-21T02:00:02.276+0700	writing iot.sensors to /tmp/mongo_clone/iot/sensors.bson
+2026-04-21T02:00:02.276+0700	writing iot.prvdatas to /tmp/mongo_clone/iot/prvdatas.bson
+2026-04-21T02:00:02.276+0700	writing iot.alarms to /tmp/mongo_clone/iot/alarms.bson
+2026-04-21T02:00:02.276+0700	writing iot.prvcontrols to /tmp/mongo_clone/iot/prvcontrols.bson
+2026-04-21T02:00:02.284+0700	done dumping iot.prvcontrols (325 documents)
+2026-04-21T02:00:02.284+0700	writing iot.infos to /tmp/mongo_clone/iot/infos.bson
+2026-04-21T02:00:02.284+0700	done dumping iot.infos (22 documents)
+2026-04-21T02:00:02.284+0700	writing iot.groups to /tmp/mongo_clone/iot/groups.bson
+2026-04-21T02:00:02.284+0700	done dumping iot.groups (9 documents)
+2026-04-21T02:00:02.284+0700	writing iot.prvs to /tmp/mongo_clone/iot/prvs.bson
+2026-04-21T02:00:02.285+0700	done dumping iot.prvs (3 documents)
+2026-04-21T02:00:02.285+0700	writing iot.users to /tmp/mongo_clone/iot/users.bson
+2026-04-21T02:00:02.285+0700	done dumping iot.users (2 documents)
+2026-04-21T02:00:02.285+0700	writing iot.prvtimes to /tmp/mongo_clone/iot/prvtimes.bson
+2026-04-21T02:00:02.285+0700	done dumping iot.prvtimes (0 documents)
+2026-04-21T02:00:02.305+0700	done dumping iot.alarms (19640 documents)
+2026-04-21T02:00:02.345+0700	done dumping iot.prvdatas (38927 documents)
+2026-04-21T02:00:02.522+0700	done dumping iot.sensors (221923 documents)
+2026-04-21T02:00:02.535+0700	The --db and --collection flags are deprecated for this use-case; please use --nsInclude instead, i.e. with --nsInclude=${DATABASE}.${COLLECTION}
+2026-04-21T02:00:02.535+0700	building a list of collections to restore from /tmp/mongo_clone/iot dir
+2026-04-21T02:00:02.535+0700	don't know what to do with file "/tmp/mongo_clone/iot/prelude.json", skipping...
+2026-04-21T02:00:02.535+0700	reading metadata for iot_backup.users from /tmp/mongo_clone/iot/users.metadata.json
+2026-04-21T02:00:02.535+0700	reading metadata for iot_backup.alarms from /tmp/mongo_clone/iot/alarms.metadata.json
+2026-04-21T02:00:02.535+0700	reading metadata for iot_backup.groups from /tmp/mongo_clone/iot/groups.metadata.json
+2026-04-21T02:00:02.535+0700	reading metadata for iot_backup.infos from /tmp/mongo_clone/iot/infos.metadata.json
+2026-04-21T02:00:02.535+0700	reading metadata for iot_backup.prvdatas from /tmp/mongo_clone/iot/prvdatas.metadata.json
+2026-04-21T02:00:02.535+0700	reading metadata for iot_backup.prvs from /tmp/mongo_clone/iot/prvs.metadata.json
+2026-04-21T02:00:02.535+0700	reading metadata for iot_backup.sensors from /tmp/mongo_clone/iot/sensors.metadata.json
+2026-04-21T02:00:02.535+0700	reading metadata for iot_backup.prvcontrols from /tmp/mongo_clone/iot/prvcontrols.metadata.json
+2026-04-21T02:00:02.535+0700	reading metadata for iot_backup.prvtimes from /tmp/mongo_clone/iot/prvtimes.metadata.json
+2026-04-21T02:00:02.570+0700	restoring iot_backup.sensors from /tmp/mongo_clone/iot/sensors.bson
+2026-04-21T02:00:02.576+0700	restoring iot_backup.prvdatas from /tmp/mongo_clone/iot/prvdatas.bson
+2026-04-21T02:00:02.584+0700	restoring iot_backup.alarms from /tmp/mongo_clone/iot/alarms.bson
+2026-04-21T02:00:02.590+0700	restoring iot_backup.prvcontrols from /tmp/mongo_clone/iot/prvcontrols.bson
+2026-04-21T02:00:02.601+0700	finished restoring iot_backup.prvcontrols (325 documents, 0 failures)
+2026-04-21T02:00:02.625+0700	restoring iot_backup.infos from /tmp/mongo_clone/iot/infos.bson
+2026-04-21T02:00:02.635+0700	finished restoring iot_backup.infos (22 documents, 0 failures)
+2026-04-21T02:00:02.664+0700	restoring iot_backup.prvs from /tmp/mongo_clone/iot/prvs.bson
+2026-04-21T02:00:02.678+0700	finished restoring iot_backup.prvs (3 documents, 0 failures)
+2026-04-21T02:00:02.711+0700	restoring iot_backup.groups from /tmp/mongo_clone/iot/groups.bson
+2026-04-21T02:00:02.730+0700	finished restoring iot_backup.groups (9 documents, 0 failures)
+2026-04-21T02:00:02.749+0700	finished restoring iot_backup.alarms (19640 documents, 0 failures)
+2026-04-21T02:00:02.759+0700	restoring iot_backup.users from /tmp/mongo_clone/iot/users.bson
+2026-04-21T02:00:02.777+0700	finished restoring iot_backup.users (2 documents, 0 failures)
+2026-04-21T02:00:02.784+0700	restoring iot_backup.prvtimes from /tmp/mongo_clone/iot/prvtimes.bson
+2026-04-21T02:00:02.797+0700	finished restoring iot_backup.prvtimes (0 documents, 0 failures)
+2026-04-21T02:00:02.968+0700	finished restoring iot_backup.prvdatas (38927 documents, 0 failures)
+2026-04-21T02:00:04.425+0700	finished restoring iot_backup.sensors (221923 documents, 0 failures)
+2026-04-21T02:00:04.425+0700	no indexes to restore for collection iot_backup.users
+2026-04-21T02:00:04.425+0700	no indexes to restore for collection iot_backup.alarms
+2026-04-21T02:00:04.425+0700	no indexes to restore for collection iot_backup.infos
+2026-04-21T02:00:04.425+0700	restoring indexes for collection iot_backup.prvdatas from metadata
+2026-04-21T02:00:04.425+0700	index: &idx.IndexDocument{Options:primitive.M{"background":true, "expireAfterSeconds":2592000, "name":"createAt_1", "v":2}, Key:primitive.D{primitive.E{Key:"createAt", Value:1}}, PartialFilterExpression:primitive.D(nil)}
+2026-04-21T02:00:04.425+0700	restoring indexes for collection iot_backup.sensors from metadata
+2026-04-21T02:00:04.425+0700	index: &idx.IndexDocument{Options:primitive.M{"background":true, "name":"user_1_createAt_1_index_1", "v":2}, Key:primitive.D{primitive.E{Key:"user", Value:1}, primitive.E{Key:"createAt", Value:1}, primitive.E{Key:"index", Value:1}}, PartialFilterExpression:primitive.D(nil)}
+2026-04-21T02:00:04.425+0700	no indexes to restore for collection iot_backup.groups
+2026-04-21T02:00:04.425+0700	no indexes to restore for collection iot_backup.prvs
+2026-04-21T02:00:04.425+0700	restoring indexes for collection iot_backup.prvcontrols from metadata
+2026-04-21T02:00:04.425+0700	index: &idx.IndexDocument{Options:primitive.M{"background":true, "expireAfterSeconds":86400, "name":"createAt_-1", "v":2}, Key:primitive.D{primitive.E{Key:"createAt", Value:-1}}, PartialFilterExpression:primitive.D(nil)}
+2026-04-21T02:00:04.425+0700	no indexes to restore for collection iot_backup.prvtimes
+2026-04-21T02:00:04.865+0700	280851 document(s) restored successfully. 0 document(s) failed to restore.
+Backup clone done at Tue Apr 21 02:00:04 +07 2026

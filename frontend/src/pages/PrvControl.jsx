@@ -104,7 +104,7 @@ export default function PrvControl() {
   const [dataset, setDataset] = useState([])
   // const [pressureTop, setPressureTop] = useState([]);
   const [prvData, setPrvData] = useState({});
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(localStorage.getItem('name_prv') || 0);
   const label = generateLabelsAndData(60)
   const client = getMqttClient();
 

@@ -43,6 +43,7 @@ const AlertMarker = ({ lat, lng, level }) => {
 
 function AdminSummary() {
     const { user, info } = useAuth();
+    user.user = 0;
     const [weatherData, setWeatherData] = useState(info);
     const [data, setData] = useState(null);
     // const [sensorLoading, setSensorLoading] = useState(false);

@@ -77,43 +77,64 @@ cron.schedule('*/6 * * * *', () => {
         if (info?.isWarning) {
           await sendTelegramMessage(
             process.env.TOKEN,
-            process.env.AUTHORIZATION,
+            process.env.TELEGRAM_CHAT_ID,
             `Cảnh báo mất kết nối logger ${info.name} vào lúc ${currentDate}`
           );
         }
       }
       allSensors[User][key] = 2;
     }
+    console.log(Prvs)
+    for (const key in Prvs) {
+      const id = Number(key)
+      console.log(Prvs[key], key, id)
+      if (Prvs[key] !== 1 && key !== null && !isNaN(id)) {
+        const currentDate = new Date(Date.now()).toLocaleString('en-GB', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
 
-    // for (const key in Prvs) {
-    //   const id = Number(key)
-    //   if (Prvs[key] !== 1 && key !== null && !isNaN(id)) {
-    //     const currentDate = new Date(Date.now()).toLocaleString('en-GB', {
-    //       hour: '2-digit',
-    //       minute: '2-digit',
-    //       hour12: false
-    //     });
-
-    //     const info = await PrvInfo.findOne({ user: User, id: id });
-    //     if (info) {
-    //       await sendTelegramMessage(
-    //         process.env.TOKEN,
-    //         process.env.AUTHORIZATION,
-    //         `Cảnh báo mất kết nối van ${info.name} vào lúc ${currentDate}`
-    //       );
-    //     }
-    //   }
-    //   allPrv[User][key] = 2;
-    // }
+        const info = await PrvInfo.findOne({ user: User, id: id });
+        console.log(info)
+        if (info) {
+          await sendTelegramMessage(
+            process.env.TOKEN,
+            process.env.TELEGRAM_CHAT_ID,
+            `Cảnh báo mất kết nối van ${info.name} vào lúc ${currentDate}`
+          );
+        }
+      }
+      allPrv[User][key] = 2;
+    }
   });
 });
 
-async function sendTelegramMessage(token, authorization, message, retries = 3) {
+// async function sendTelegramMessage(token, authorization, message, retries = 3) {
+//   // const url = `https://api.telegram.org/bot${token}/sendMessage`;
+//   const curlCommand = `curl -X POST https://discord.com/api/v9/channels/${token}/messages \
+//   -H "Authorization: ${authorization}" \
+//   -H "Content-Type: application/json" \
+//   -d '{"content": "${message}"}'`;
+//   for (let attempt = 1; attempt <= retries; attempt++) {
+//     try {
+//       exec(curlCommand);
+//       return true;
+//     } catch (error) {
+//       console.error(`❌ Lỗi khi gửi tin nhắn (Lần ${attempt}):`, error.response ? error.response.data : error.message);
+//       if (attempt === retries) {
+//         return null;
+//       }
+//       await sleep(3000); // Chờ 3 giây trước khi thử lại
+//     }
+//   }
+// }
+
+async function sendTelegramMessage(token, chatId, message, retries = 3) {
   // const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  const curlCommand = `curl -X POST https://discord.com/api/v9/channels/${token}/messages \
-  -H "Authorization: ${authorization}" \
-  -H "Content-Type: application/json" \
-  -d '{"content": "${message}"}'`;
+  const curlCommand = `curl -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+     -H "Content-Type: application/json" \
+     -d '{"chat_id": "${chatId}", "text": "${message}"}'`;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       exec(curlCommand);
@@ -240,7 +261,7 @@ const connectMqtt = async () => {
             hour12: false // Buộc không dùng định dạng 12 giờ 
           })
           if (messageData.res < info[0].wPressTime) {
-            await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo chưa đạt mức áp ${messageData.res}m tại cảm biến ${name} vào lúc ${currentDate}`)
+            await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo chưa đạt mức áp ${messageData.res}m tại cảm biến ${name} vào lúc ${currentDate}`)
           }
         }
         else if (msg_id === 3) {
@@ -252,7 +273,7 @@ const connectMqtt = async () => {
             hour12: false // Buộc không dùng định dạng 12 giờ 
           })
           if (messageData.t && info[0].temperature > 0) {
-            await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo nhiệt độ cao ${messageData.t}°C tại cảm biến ${name} vào lúc ${currentDate}`)
+            await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, `Cảnh báo nhiệt độ cao ${messageData.t}°C tại cảm biến ${name} vào lúc ${currentDate}`)
           }
           if (messageData.p != null) {
             // client.publish("khca/warning", `{"n":${sen_name},"d":"warning"}`, { qos: 2 })
@@ -260,11 +281,11 @@ const connectMqtt = async () => {
             await clientRedis.set(`warning:${sen_name}`, "warning", { EX: 60 });
             if (messageData.l === 0) {
               warningStr = `Cảnh báo áp suất cao trên ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`
-              await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, warningStr)
+              await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, warningStr)
             }
             else {
               warningStr = `Cảnh báo áp suất thấp dưới ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`
-              await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, warningStr)
+              await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, warningStr)
             }
             const newAlarm  = new Alarm({
               name: warningStr

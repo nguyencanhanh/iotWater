@@ -16,11 +16,3 @@ mongorestore --db $DEST_DB /tmp/mongo_clone/$SRC_DB
 rm -rf /tmp/mongo_clone
 
 echo "Backup clone done at $(date)"
-/bin/sh: 1: /home/backup.sh: not found
-/bin/sh: 1: /home/backup.sh: not found
-/bin/sh: 1: /home/backup.sh: not found
-/bin/sh: 1: /home/backup.sh: not found
-/bin/sh: 1: /home/backup.sh: not found
-/bin/sh: 1: /home/backup.sh: not found
-/bin/sh: 1: /home/backup.sh: not found
-/bin/sh: 1: /home/backup.sh: not found

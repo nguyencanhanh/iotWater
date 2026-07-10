@@ -28,7 +28,7 @@ export default function SettingsPanel({ defaultData }) {
     const { user } = useAuth()
     const [info, setInfo] = useState(defaultData);
     useEffect(() => {
-        console.log(info, defaultData)
+        // console.log(info, defaultData)
     }, [])
     // groups: array of { days: [0..6] } representing which weekdays belong to which group
     const [groups, setGroups] = useState(() => {
@@ -917,6 +917,10 @@ export default function SettingsPanel({ defaultData }) {
             <div style={{ display: "flex", marginTop: "20px", gap: "20px" }}>
                 <div style={{ flex: 1 }}>{renderInputRow("Bắt đầu giới hạn ngày", "time_bot", info.time_bot, "time")}</div>
                 <div style={{ flex: 1 }}>{renderInputRow("Kết thúc giới hạn ngày", "time_top", info.time_top, "time")}</div>
+            </div>
+            <div style={{ display: "flex", marginTop: "20px", gap: "20px" }}>
+                <div style={{ flex: 1 }}>{renderInputRow("Hệ số lưu lượng", "flow_control", info.flow_control, "number")}</div>
+                <div style={{ flex: 1 }}>{renderInputRow("Hệ số điều khiển", "control", info.control, "number")}</div>
             </div>
             {renderAlarms()}
             <h3 className="text-lg font-bold">Điều chỉnh van thủ công</h3>

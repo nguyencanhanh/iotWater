@@ -5,6 +5,7 @@ import { client } from "../mqtt/mqtt.js";
 import PrvControl from "../models/PrvControl.js"
 
 const dataType = {
+    control: 0,
     timeNextControl: 1,
     minSet: 2,
     maxSet: 3,
@@ -16,6 +17,7 @@ const dataType = {
     idMatch: 11,
     timeAlarm: 13,
     pConfig: 14,
+    flow_control: 15,
     percent: 17,
     timeout1: 18,
     timeout2: 19,
@@ -103,6 +105,11 @@ export const getPrv = async (req, res) => {
             return acc;
           }, {});
         prvD.forEach((prv) => {
+            if(prv.index === 838426678){
+                if(prv?.flow > 380) return;
+            }
+            if((prv?.Pressure3 === 10 && (prv?.Pressure1 === 0 && prv?.Pressure2 === 0))) return;
+            // console.log(prv.flow)
             const index = Math.floor(convertTime(prv.createAt, 60))
             addDateElement(prvDataP1, prv, index, "Pressure1");
             addDateElement(prvDataP2, prv, index, "Pressure2");
@@ -151,6 +158,9 @@ export const changePrv = async (req, res) => {
         let result = Number(info[field]);
         if (field === "range") {
             result = info[field].map((v) => `${Number(v) * 10}`).join(" ");
+        }
+        else if (field === "control") {
+            result = `${Number(info[field]) * 10000} 0 0`;
         }
         else if(field === "pConfig" || field === "pBot"){
             result = "";

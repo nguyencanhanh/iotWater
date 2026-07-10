@@ -24,6 +24,7 @@ const connectUrl = `mqtt://${host}:${port}`
 const topic = 'iotwatter@2024'
 const topicPrv = 'logger/pressure'
 const topicPrvSend = 'prv/send'
+const topic_config = "logger/get_config"
 export let client = null
 
 function sleep(ms) {
@@ -84,10 +85,9 @@ cron.schedule('*/6 * * * *', () => {
       }
       allSensors[User][key] = 2;
     }
-    console.log(Prvs)
     for (const key in Prvs) {
       const id = Number(key)
-      console.log(Prvs[key], key, id)
+      // console.log(Prvs[key], key, id)
       if (Prvs[key] !== 1 && key !== null && !isNaN(id)) {
         const currentDate = new Date(Date.now()).toLocaleString('en-GB', {
           hour: '2-digit',
@@ -96,7 +96,7 @@ cron.schedule('*/6 * * * *', () => {
         });
 
         const info = await PrvInfo.findOne({ user: User, id: id });
-        console.log(info)
+        // console.log(info)
         if (info) {
           await sendTelegramMessage(
             process.env.TOKEN,
@@ -221,6 +221,7 @@ const connectMqtt = async () => {
     client.subscribe(topic)
     client.subscribe(topicPrv)
     client.subscribe(topicPrvSend)
+    client.subscribe(topic_config)
   });
 
   client.on("message", async (topicRec, messageData) => {
@@ -240,7 +241,7 @@ const connectMqtt = async () => {
           data.forEach(async (message, index) => {
             message.t = message.t * 1000
             const newSensor = new Sensor({
-              index: sen_name ,
+              index: sen_name,
               user: user,
               battery: message.b || messageData.b,
               Pressure: message.p,
@@ -277,7 +278,7 @@ const connectMqtt = async () => {
           }
           if (messageData.p != null) {
             // client.publish("khca/warning", `{"n":${sen_name},"d":"warning"}`, { qos: 2 })
-            let  warningStr = ""
+            let warningStr = ""
             await clientRedis.set(`warning:${sen_name}`, "warning", { EX: 60 });
             if (messageData.l === 0) {
               warningStr = `Cảnh báo áp suất cao trên ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`
@@ -287,7 +288,7 @@ const connectMqtt = async () => {
               warningStr = `Cảnh báo áp suất thấp dưới ${messageData.p}m tại cảm biến ${name} vào lúc ${currentDate}`
               await sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, warningStr)
             }
-            const newAlarm  = new Alarm({
+            const newAlarm = new Alarm({
               name: warningStr
             })
             await newAlarm.save()
@@ -296,6 +297,21 @@ const connectMqtt = async () => {
             // await sendTelegramMessage(process.env.TOKEN, process.env.AUTHORIZATION, `Cảnh báo lưu lượng cao ${messageData.f}m3/h tại cảm biến ${name} vào lúc ${currentDate}`)
           }
         }
+      }
+      else if (topicRec === topic_config) {
+        const now = Math.floor((new Date()) / 1000);
+        console.log(`logger/${sen_name}`)
+        client.publish(
+          `logger/${sen_name}`,
+          JSON.stringify({ n: sen_name, m: 5, d:  now}),
+          (error) => {
+            if (error) {
+              return false
+            } else {
+              return true
+            }
+          }
+        )
       }
       else {
         const now = new Date();

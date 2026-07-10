@@ -45,6 +45,7 @@ const currentTime = (info) => {
 
 function SensorList() {
   const { user } = useAuth()
+  user.user = 0
   const groupPram = useParams().group
   const groupID = useLocation().state.sensorIDs;
   const idMap = useLocation().state.sensorMap

@@ -25,6 +25,8 @@ const Prv = new mongoose.Schema({
   tFlowClose: {type: String},
   tFlowOpen: {type: String},
   low: {type: Number},
+  control: {type: Number},
+  flow_control: {type: Number},
   range: [Number],
   onOff: [Number],
   open1: [String],

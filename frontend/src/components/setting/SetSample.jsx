@@ -1,13 +1,31 @@
-import React from 'react';
-import { intervalUpdatePut } from '../../api/index';
+import React, { useState } from 'react';
+import { intervalUpdatePut, loggerConfigStatusGet } from '../../api/index';
 import { produce } from "immer";
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const waitForLoggerConfigAck = async (requestId) => {
+  while (requestId) {
+    await sleep(3000);
+    const res = await loggerConfigStatusGet(localStorage.getItem("token"), requestId);
+    if (res.data.acknowledged) return res;
+  }
+  return null;
+};
 
 function SetSample(info) {
   const interval = info.info[info.step].interval
+  const [loading, setLoading] = useState(false);
+  const isPending = loading || info.pending;
+
   const updateInterval = async (value) => {
+    setLoading(true);
     try {
-      const res = await intervalUpdatePut(localStorage.getItem("token"), { sample: value, sen_id: info.info[info.step].id, user: info.user })
+      const res = await intervalUpdatePut(localStorage.getItem("token"), { sample: value, sen_id: info.info[info.step].id, user: info.user, configAction: "sample" })
       if (res.data.success) {
+        if (res.data.pending && res.data.requestId) {
+          await waitForLoggerConfigAck(res.data.requestId);
+        }
         info.setdataInfo(prevData =>
           produce(prevData, draft => {
             draft[info.step].sample = value;
@@ -15,9 +33,9 @@ function SetSample(info) {
         );
       }
     } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
+      alert(error?.response?.data?.error || "Logger chưa phản hồi cấu hình");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -32,15 +50,16 @@ function SetSample(info) {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
-    updateInterval(valueX)
+    await updateInterval(valueX)
   };
 
   return (
-    <div className="ml-1 flex justify-between justify-center">
+    <div className="ml-1 flex items-center justify-between gap-2">
       <div className='text-white rounded'>Thời gian lấy mẫu:</div>
       <select className="bg-teal-600 rounded text-white"
         value={info.info[info.step].sample}
         onChange={handleSelect}
+        disabled={isPending}
       >
         <option value={60}>1 phut</option>
         <option value={300}>5 phut</option>
@@ -49,6 +68,7 @@ function SetSample(info) {
         <option value={1800}>30 phut</option>
         <option value={3600}>1 gio</option>
       </select>
+      {isPending && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
     </div>
   );
 }

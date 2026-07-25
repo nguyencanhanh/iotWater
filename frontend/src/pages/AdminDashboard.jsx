@@ -76,14 +76,15 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div className="flex">
+    <div className="flex min-h-screen bg-gray-100">
       <Admin_Sidebar isOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
       <div
-        className={`flex-1 transition-all ${isSidebarOpen ? "ml-64" : "ml-0"
-          } bg-gray-100 h-screen`}
+        className={`flex-1 transition-all duration-300 ${isSidebarOpen ? "md:ml-64" : "ml-0"}`}
       >
         <Nav />
-        <Outlet />
+        <main className="h-[calc(100vh-3rem)] overflow-auto">
+          <Outlet />
+        </main>
       </div>
       {/* <Marquee /> */}
     </div>

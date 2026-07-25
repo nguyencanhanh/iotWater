@@ -23,7 +23,16 @@ const infoSchema = new mongoose.Schema({
     isWarning:{type: Boolean},
     onP:{type: Boolean},
     onF:{type: Boolean},
-    createAt: { type: Date, default: Date.now }
+    displaySettings: {
+        overviewMetrics: [String],
+        detailColumns: [String],
+    },
+    notificationChannels: {
+        telegram: { type: Boolean, default: true },
+        fcm: { type: Boolean, default: false },
+    },
+    createAt: { type: Date, default: Date.now },
+    image: { type: String, default: "" }
 })
 
 const Info = mongoose.model("Info", infoSchema)

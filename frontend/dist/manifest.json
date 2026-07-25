@@ -1,0 +1,16 @@
+{
+  "name": "IoT Water",
+  "short_name": "IoT Water",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f766e",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "/img/logo.jpeg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    }
+  ],
+  "gcm_sender_id": "103953800507"
+}

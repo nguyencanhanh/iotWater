@@ -6,6 +6,9 @@ const URL_SENSOR = import.meta.env.VITE_URL_SENSOR
 const URL_GROUP = import.meta.env.VITE_URL_GROUP
 // const URL_ALARM = import.meta.env.VITE_URL_ALARM
 const URL_PRV_TIME = import.meta.env.VITE_URL_PRV_TIME
+const URL_DMA = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/dma')
+const URL_DNP_CONFIG = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/dnp-config')
+const URL_GENERAL_SETTINGS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/general-settings')
 
 const axiosConfig = (token) => ({
     headers: {
@@ -27,6 +30,32 @@ export const loginPost = (user) => {
 export const infoGet = (token) => {
     return axios.get(
         `${URL_AUTH}/info`,
+        axiosConfig(token)
+    )
+}
+
+export const registerFcmTokenPost = (token, fcmToken) => {
+    return axios.post(
+        `${URL_AUTH}/fcm-token`,
+        { token: fcmToken, platform: "web" },
+        axiosConfig(token)
+    )
+}
+
+export const unregisterFcmTokenDelete = (token, fcmToken) => {
+    return axios.delete(
+        `${URL_AUTH}/fcm-token`,
+        {
+            ...axiosConfig(token),
+            data: { token: fcmToken },
+        }
+    )
+}
+
+export const sendFcmTestPost = (token, fcmToken) => {
+    return axios.post(
+        `${URL_AUTH}/fcm-test`,
+        { token: fcmToken },
         axiosConfig(token)
     )
 }
@@ -158,6 +187,24 @@ export const intervalUpdatePut = (token, interval) => {
     );
 }
 
+export const loggerConfigStatusGet = (token, requestIdOrParams) => {
+    const params = typeof requestIdOrParams === "object"
+        ? requestIdOrParams
+        : { requestId: requestIdOrParams };
+    const query = new URLSearchParams();
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+            query.set(key, value);
+        }
+    });
+
+    return axios.get(
+        `${URL_SENSOR}/data/config-status?${query.toString()}`,
+        axiosConfig(token)
+    );
+}
+
 export const sensorListGet = (token, total) => {
     return axios.post(URL_SENSOR, total,
         axiosConfig(token)
@@ -190,6 +237,78 @@ export const sensorUpdatePut = (token, sensor) => {
     );
 }
 
+export const sensorProductionPost = (token, options) => {
+    return axios.post(
+        `${URL_SENSOR}/production`,
+        options,
+        axiosConfig(token)
+    );
+}
+
+export const warningHistoryTodayGet = (token, user, group = "", options = {}) => {
+    const params = new URLSearchParams({
+        user: String(user),
+        limit: String(options.limit ?? 20),
+        skip: String(options.skip ?? 0),
+    });
+    if (group) params.set("group", group);
+    if (options.date) params.set("date", options.date);
+    return axios.get(
+        `${URL_SENSOR}/warning-history/today?${params.toString()}`,
+        axiosConfig(token)
+    );
+}
+
+export const homeMessagesGet = (token, user) => {
+    const params = new URLSearchParams({ user: String(user) });
+    return axios.get(
+        `${URL_SENSOR}/home-messages?${params.toString()}`,
+        axiosConfig(token)
+    );
+}
+
+export const homeMessagePost = (token, message) => {
+    return axios.post(
+        `${URL_SENSOR}/home-messages`,
+        message,
+        axiosConfig(token)
+    );
+}
+
+export const homeMessageDelete = (token, id) => {
+    return axios.delete(
+        `${URL_SENSOR}/home-messages/${id}`,
+        axiosConfig(token)
+    );
+}
+
+export const sensorReportPost = (token, options) => {
+    return axios.post(
+        `${URL_SENSOR}/report`,
+        options,
+        axiosConfig(token)
+    );
+}
+
+export const sensorReportAiAnalysisPost = (token, options) => {
+    return axios.post(
+        `${URL_SENSOR}/report/ai-analysis`,
+        options,
+        axiosConfig(token)
+    );
+}
+
+export const exportDailyReportPost = (token, options) => {
+    return axios.post(
+        `${URL_SENSOR}/report/daily-export`,
+        options,
+        {
+            ...axiosConfig(token),
+            responseType: "blob",
+        }
+    );
+}
+
 export const exportDataPost = (token, options) => {
     return axios.post(
         `${URL_SENSOR}/export`,
@@ -204,3 +323,72 @@ export const exportDataPost = (token, options) => {
     );
 };
 
+const URL_UPLOAD = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/upload');
+
+export const uploadLoggerImage = (token, sensorId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('sensorId', sensorId);
+    return axios.post(URL_UPLOAD, formData, {
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+};
+
+export const getLoggerImageUrl = (sensorId) => {
+    return `${URL_UPLOAD}/image/${sensorId}`;
+};
+
+export const dmaListGet = (token, user) => {
+    return axios.get(
+        `${URL_DMA}?user=${encodeURIComponent(user)}`,
+        axiosConfig(token)
+    );
+};
+
+export const dmaCreatePost = (token, dma) => {
+    return axios.post(URL_DMA, dma, axiosConfig(token));
+};
+
+export const dmaUpdatePut = (token, id, dma) => {
+    return axios.put(`${URL_DMA}/${id}`, dma, axiosConfig(token));
+};
+
+export const dmaDelete = (token, id, user) => {
+    return axios.delete(
+        `${URL_DMA}/${id}?user=${encodeURIComponent(user)}`,
+        axiosConfig(token)
+    );
+};
+
+export const dmaCalculatePost = (token, options) => {
+    return axios.post(`${URL_DMA}/calculate`, options, axiosConfig(token));
+};
+
+export const dmaAnalyzePost = (token, options) => {
+    return axios.post(`${URL_DMA}/analyze`, options, axiosConfig(token));
+};
+
+export const dnpConfigGet = (token, user) => {
+    return axios.get(
+        `${URL_DNP_CONFIG}?user=${encodeURIComponent(user)}`,
+        axiosConfig(token)
+    );
+};
+
+export const dnpConfigPut = (token, config) => {
+    return axios.put(URL_DNP_CONFIG, config, axiosConfig(token));
+};
+
+export const generalSettingsGet = (token, user) => {
+    return axios.get(
+        `${URL_GENERAL_SETTINGS}?user=${encodeURIComponent(user)}`,
+        axiosConfig(token)
+    );
+};
+
+export const generalSettingsPut = (token, setting) => {
+    return axios.put(URL_GENERAL_SETTINGS, setting, axiosConfig(token));
+};

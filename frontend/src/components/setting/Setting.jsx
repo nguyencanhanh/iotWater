@@ -2,12 +2,96 @@ import React, { useState, useEffect } from "react";
 import SetInterval from "./SetInterval";
 import SetSample from "./SetSample";
 import { produce } from "immer";
-import { intervalUpdatePut } from '../../api/index';
+import { intervalUpdatePut, loggerConfigStatusGet } from '../../api/index';
 import { useAuth } from '../../context/authContext'
 // import ScheduleViewer from './settingFlowAlarm'
 
-export const initData = async (profs) => {
-  if (user.role === 'trial') {
+const overviewMetricOptions = [
+  { key: "pressureMax", label: "Áp suất cao nhất" },
+  { key: "pressureMin", label: "Áp suất thấp nhất" },
+  { key: "pressureAvg", label: "Áp suất trung bình" },
+  { key: "flowMax", label: "Lưu lượng cao nhất" },
+  { key: "flowMin", label: "Lưu lượng thấp nhất" },
+  { key: "flowAvg", label: "Lưu lượng trung bình" },
+  { key: "flowTotal", label: "Sản lượng ngày" },
+  { key: "flowTotal24", label: "Sản lượng 24h" },
+  { key: "flowMeter", label: "Chỉ số đồng hồ" },
+  { key: "reverseTotal", label: "M³ chảy nghịch" },
+];
+
+const detailTableColumnOptions = [
+  { key: "time", label: "Thời gian" },
+  { key: "pressure", label: "Áp suất" },
+  { key: "pressureCompare", label: "Áp suất cùng kì" },
+  { key: "flow", label: "Lưu lượng" },
+  { key: "flowCompare", label: "Lưu lượng cùng kì" },
+  { key: "battery", label: "Pin" },
+];
+
+const notificationChannelOptions = [
+  { key: "telegram", label: "Telegram" },
+  { key: "fcm", label: "FCM" },
+];
+
+const DisplayOptionList = ({ title, options, selected, onToggle }) => (
+  <div className="rounded-lg border border-teal-400/40 bg-teal-700/30 p-3">
+    <div className="mb-2 text-sm font-bold text-white">{title}</div>
+    <div className="grid grid-cols-1 gap-2">
+      {options.map((option) => (
+        <label key={option.key} className="flex items-center gap-2 rounded bg-white/10 px-2 py-1.5 text-sm text-white">
+          <input
+            type="checkbox"
+            checked={selected.includes(option.key)}
+            onChange={() => onToggle(option.key)}
+            className="h-4 w-4 accent-teal-300"
+          />
+          {option.label}
+        </label>
+      ))}
+    </div>
+  </div>
+);
+
+const LoadingSpinner = ({ className = "h-4 w-4" }) => (
+  <span className={`${className} inline-block animate-spin rounded-full border-2 border-white/40 border-t-white`} />
+);
+
+const SettingActionButton = ({ isLoading, className = "", children, disabled, ...props }) => (
+  <button
+    {...props}
+    disabled={disabled || isLoading}
+    className={`${className} disabled:cursor-not-allowed disabled:opacity-70`}
+  >
+    {isLoading ? (
+      <span className="flex items-center justify-center gap-2">
+        <LoadingSpinner />
+        Đang gửi
+      </span>
+    ) : children}
+  </button>
+);
+
+const SettingInlinePending = ({ show }) => (
+  show ? <LoadingSpinner className="h-3.5 w-3.5" /> : null
+);
+
+const getConfigErrorMessage = (error) => (
+  error?.response?.data?.error || error?.message || "Logger chưa phản hồi cấu hình"
+);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const waitForLoggerConfigAck = async (requestId) => {
+  while (requestId) {
+    await sleep(3000);
+    const res = await loggerConfigStatusGet(localStorage.getItem("token"), requestId);
+    if (res.data.acknowledged) return res;
+  }
+  return null;
+};
+
+export const initData = async (profs, user) => {
+  if (!user || user.role === 'trial') {
     alert('Chức năng này không khả dụng cho tài khoản dùng thử')
     return;
   }
@@ -38,47 +122,137 @@ const SettingsButton = (profs) => {
   const [FlowUnit, setFlowUnit] = useState();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [pendingActions, setPendingActions] = useState({});
+  const [remotePendingActions, setRemotePendingActions] = useState({});
+  const [coordinate, setCoordinate] = useState({
+    lat: profs.info?.[profs.step]?.lat ?? "",
+    lng: profs.info?.[profs.step]?.lng ?? "",
+  });
+  const currentSensor = profs.info?.[profs.step] || {};
 
-  const handleSend = async () => {
+  const isActionPending = (actionKey) => Boolean(pendingActions[actionKey] || remotePendingActions[actionKey]);
+
+  const setActionPending = (actionKey, isPending) => {
+    setPendingActions((prev) => {
+      const next = { ...prev };
+      if (isPending) {
+        next[actionKey] = true;
+      } else {
+        delete next[actionKey];
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    setCoordinate({
+      lat: profs.info?.[profs.step]?.lat ?? "",
+      lng: profs.info?.[profs.step]?.lng ?? "",
+    });
+  }, [profs.info, profs.step]);
+
+  useEffect(() => {
+    const sensorId = currentSensor.id;
+    if (!isOpen || !sensorId) {
+      setRemotePendingActions({});
+      return undefined;
+    }
+
+    let isMounted = true;
+    loggerConfigStatusGet(
+      localStorage.getItem("token"),
+      { sensorId, user: user.user }
+    )
+      .then((res) => {
+        const nextPendingActions = {};
+        (res.data.pendingActions || []).forEach((actionKey) => {
+          nextPendingActions[actionKey] = true;
+        });
+        if (isMounted) setRemotePendingActions(nextPendingActions);
+      })
+      .catch(() => {
+        if (isMounted) setRemotePendingActions({});
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, currentSensor.id, user.user]);
+
+  const sendSensorConfig = async (actionKey, payload, onSuccess, successMessage) => {
     if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
+      return null;
     }
+    if (isActionPending(actionKey)) return null;
+
+    setActionPending(actionKey, true);
     try {
       const res = await intervalUpdatePut(
         localStorage.getItem("token"),
-        { sum: FlowSum, sen_id: profs.info[profs.step].id, user: user.user }
-      )
+        { ...payload, sen_id: currentSensor.id, user: user.user, configAction: actionKey }
+      );
       if (res.data.success) {
-        alert("Cập nhật thành công");
+        const finalRes = res.data.pending && res.data.requestId
+          ? await waitForLoggerConfigAck(res.data.requestId)
+          : res;
+        onSuccess?.(finalRes || res);
+        if (successMessage) alert(successMessage);
       }
+      return res;
     } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
+      console.error(error);
+      alert(getConfigErrorMessage(error));
+      return null;
+    } finally {
+      setActionPending(actionKey, false);
     }
+  };
+
+  const handleInitData = async () => {
+    await sendSensorConfig("upTime", { upTime: 1 }, null, "Cập nhật thành công");
+  };
+
+  const handleSend = async () => {
+    await sendSensorConfig("sum", { sum: FlowSum }, null, "Cập nhật thành công");
   }
 
   const handleSendUnit = async () => {
+    await sendSensorConfig("unit", { unit: FlowUnit }, null, "Cập nhật thành công");
+  }
+
+  const handleCoordinateChange = (event) => {
+    const { name, value } = event.target;
+    setCoordinate((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmitCoordinate = async () => {
     if (user.role === 'trial') {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return;
     }
-    
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { unit: FlowUnit, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
-        alert("Cập nhật thành công");
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
+
+    const lat = Number(coordinate.lat);
+    const lng = Number(coordinate.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      alert("Vui lòng nhập tọa độ hợp lệ");
+      return;
     }
-  }
+
+    await sendSensorConfig(
+      "coordinate",
+      { Coor: currentSensor.id, lat, lng },
+      () => {
+        profs.setdataInfo(prevData =>
+          produce(prevData, draft => {
+            draft[profs.step].lat = lat;
+            draft[profs.step].lng = lng;
+          })
+        );
+      },
+      "Cập nhật tọa độ thành công"
+    );
+  };
 
   const handleInputChange = (event) => {
     profs.setdataInfo(prevData =>
@@ -113,63 +287,15 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmit = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { tracking: profs.info[profs.step].tracking, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
-        setIsEditing(false);
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
-    }
+    await sendSensorConfig("tracking", { tracking: currentSensor.tracking }, () => setIsEditing(false));
   };
 
   const handleSubmitAdj = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { adj: profs.info[profs.step].adj, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
-        setIsEditingAdj(false);
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
-    }
+    await sendSensorConfig("adj", { adj: currentSensor.adj }, () => setIsEditingAdj(false));
   };
 
   const handleSubmitT = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { temp: profs.info[profs.step].temperature, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
-        setIsEditingT(false);
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
-    }
+    await sendSensorConfig("temp", { temp: currentSensor.temperature }, () => setIsEditingT(false));
   };
 
   // const handleSubmitWP = async () => {
@@ -193,28 +319,47 @@ const SettingsButton = (profs) => {
   // };
 
   const handleOnOffWaringLost = async (dataInput) => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { [dataInput]: !profs.info[profs.step][dataInput], sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
+    await sendSensorConfig(
+      dataInput,
+      { [dataInput]: !currentSensor[dataInput] },
+      () => {
         profs.setdataInfo(prevData =>
           produce(prevData, draft => {
             draft[profs.step][dataInput] = !draft[profs.step][dataInput];
           })
         );
-        alert("Cập nhật thành công");
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
+      },
+      "Cập nhật thành công"
+    );
+  }
+
+  const handleNotificationChannelToggle = async (channel) => {
+    if (user.role === 'trial') {
+      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
+      return;
     }
+
+    const currentChannels = {
+      telegram: profs.info[profs.step]?.notificationChannels?.telegram !== false,
+      fcm: profs.info[profs.step]?.notificationChannels?.fcm === true,
+    };
+    const nextChannels = {
+      ...currentChannels,
+      [channel]: !currentChannels[channel],
+    };
+
+    await sendSensorConfig(
+      `notification-${channel}`,
+      { notificationChannels: nextChannels },
+      () => {
+        profs.setdataInfo(prevData =>
+          produce(prevData, draft => {
+            draft[profs.step].notificationChannels = nextChannels;
+          })
+        );
+      },
+      "Cập nhật kênh thông báo thành công"
+    );
   }
 
   const handleSubmitHistory = async () => {
@@ -225,78 +370,48 @@ const SettingsButton = (profs) => {
   };
 
   const handleSelect = async (e) => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const value = Number(e.target.value)
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { watch: value, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
+    const value = Number(e.target.value)
+    await sendSensorConfig(
+      "watch",
+      { watch: value },
+      () => {
         profs.setdataInfo(prevData =>
           produce(prevData, draft => {
             draft[profs.step].watch = value;
           })
         );
-        alert("Cập nhật thành công");
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
-    }
+      },
+      "Cập nhật thành công"
+    );
   }
 
   const handleOnOffWT = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { temp: -profs.info[profs.step].temperature, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
+    await sendSensorConfig(
+      "temp-toggle",
+      { temp: -currentSensor.temperature },
+      () => {
         profs.setdataInfo(prevData =>
           produce(prevData, draft => {
             draft[profs.step].temperature = -draft[profs.step].temperature;
           })
         );
-        alert("Cập nhật thành công");
-      }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
-    }
+      },
+      "Cập nhật thành công"
+    );
   }
 
   const handleOnOffWP = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { wPress: -profs.info[profs.step].wPress, sen_id: profs.info[profs.step].id, user: user.user }
-      )
-      if (res.data.success) {
+    await sendSensorConfig(
+      "wPress",
+      { wPress: -currentSensor.wPress },
+      () => {
         profs.setdataInfo(prevData =>
           produce(prevData, draft => {
             draft[profs.step].wPress = -draft[profs.step].wPress;
           })
         );
       }
-    } catch (error) {
-      if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
-      }
-    }
+    );
   }
 
   // --- Pressure alerts (7 entries) handlers ---
@@ -318,46 +433,15 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitAlerts = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const cur = profs.info[profs.step] || {};
-      // ensure arrays exist
-      const highAlerts = Array.isArray(cur.highAlerts) ? cur.highAlerts : Array.from({ length: 7 }, () => "");
-      // const lowAlerts = Array.isArray(cur.lowAlerts) ? cur.lowAlerts : Array.from({ length: 7 }, () => "");
-
-      const res = await intervalUpdatePut(
-        localStorage.getItem("token"),
-        { highAlerts, sen_id: cur.id, user: user.user }
-      );
-      if (res.data.success) {
-        alert('Lưu cảnh báo thành công');
-      }
-    } catch (error) {
-      console.error(error);
-      alert(error?.response?.data?.error || 'Lỗi khi lưu cảnh báo');
-    }
+    const cur = profs.info[profs.step] || {};
+    const highAlerts = Array.isArray(cur.highAlerts) ? cur.highAlerts : Array.from({ length: 7 }, () => "");
+    await sendSensorConfig("highAlerts", { highAlerts }, null, "Lưu cảnh báo thành công");
   };
 
   const handleSubmitLowAlerts = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const cur = profs.info[profs.step] || {};
-      const lowAlerts = Array.isArray(cur.lowAlerts) ? cur.lowAlerts : Array.from({ length: 7 }, () => "");
-      const res = await intervalUpdatePut(
-        localStorage.getItem('token'),
-        { lowAlerts, sen_id: cur.id, user: user.user }
-      );
-      if (res.data.success) alert('Lưu áp thấp thành công');
-    } catch (error) {
-      console.error(error);
-      alert(error?.response?.data?.error || 'Lỗi khi lưu áp thấp');
-    }
+    const cur = profs.info[profs.step] || {};
+    const lowAlerts = Array.isArray(cur.lowAlerts) ? cur.lowAlerts : Array.from({ length: 7 }, () => "");
+    await sendSensorConfig("lowAlerts", { lowAlerts }, null, "Lưu áp thấp thành công");
   };
 
   // Flow alerts (7 entries for high/low)
@@ -374,74 +458,30 @@ const SettingsButton = (profs) => {
   };
 
   const handleSubmitFlow = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const cur = profs.info[profs.step] || {};
-      const flowHighs = Array.isArray(cur.flowHighs) ? cur.flowHighs : Array.from({ length: 7 }, () => "");
-      const flowLows = Array.isArray(cur.flowLows) ? cur.flowLows : Array.from({ length: 7 }, () => "");
-      const res = await intervalUpdatePut(
-        localStorage.getItem('token'),
-        { flowHighs, flowLows, sen_id: cur.id, user: user.user }
-      );
-      if (res.data.success) alert('Lưu cảnh báo lưu lượng thành công');
-    } catch (error) {
-      console.error(error);
-      alert(error?.response?.data?.error || 'Lỗi khi lưu cảnh báo lưu lượng');
-    }
+    const cur = profs.info[profs.step] || {};
+    const flowHighs = Array.isArray(cur.flowHighs) ? cur.flowHighs : Array.from({ length: 7 }, () => "");
+    await sendSensorConfig("flowHighs", { flowHighs }, null, "Lưu cảnh báo lưu lượng thành công");
   };
 
   const handleSubmitFlowLow = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const cur = profs.info[profs.step] || {};
-      const flowLows = Array.isArray(cur.flowLows) ? cur.flowLows : Array.from({ length: 7 }, () => "");
-      const res = await intervalUpdatePut(
-        localStorage.getItem('token'),
-        { flowLows, sen_id: cur.id, user: user.user }
-      );
-      if (res.data.success) alert('Lưu lưu lượng thấp thành công');
-    } catch (error) {
-      console.error(error);
-      alert(error?.response?.data?.error || 'Lỗi khi lưu lưu lượng thấp');
-    }
+    const cur = profs.info[profs.step] || {};
+    const flowLows = Array.isArray(cur.flowLows) ? cur.flowLows : Array.from({ length: 7 }, () => "");
+    await sendSensorConfig("flowLows", { flowLows }, null, "Lưu lưu lượng thấp thành công");
   };
 
   // Save only alert times
   const handleSubmitTimes = async () => {
-    if (user.role === 'trial') {
-      alert('Chức năng này không khả dụng cho tài khoản dùng thử')
-      return;
-    }
-    try {
-      const cur = profs.info[profs.step] || {};
-      let alertTimes = Array.isArray(cur.alertTimes) ? cur.alertTimes : Array.from({ length: 7 }, () => '');
-      // normalize to minutes (number) or empty string
-      alertTimes = alertTimes.map((t) => {
-        if (typeof t === 'number') return t;
-        if (typeof t === 'string' && t.includes(':')) {
-          const [hh, mm] = t.split(':').map(Number);
-          if (!Number.isNaN(hh) && !Number.isNaN(mm)) return hh * 60 + mm;
-        }
-        return t || '';
-      });
-      const res = await intervalUpdatePut(
-        localStorage.getItem('token'),
-        { alertTimes, sen_id: cur.id, user: user.user }
-      );
-      if (res.data.success){
-        console.log(res.data.alertTimes)
-        alert('Lưu thời gian cảnh báo thành công');
-      } 
-    } catch (error) {
-      console.error(error);
-      alert(error?.response?.data?.error || 'Lỗi khi lưu thời gian cảnh báo');
-    }
+    const cur = profs.info[profs.step] || {};
+    let alertTimes = Array.isArray(cur.alertTimes) ? cur.alertTimes : Array.from({ length: 7 }, () => '');
+    alertTimes = alertTimes.map((t) => {
+      if (typeof t === 'number') return t;
+      if (typeof t === 'string' && t.includes(':')) {
+        const [hh, mm] = t.split(':').map(Number);
+        if (!Number.isNaN(hh) && !Number.isNaN(mm)) return hh * 60 + mm;
+      }
+      return t || '';
+    });
+    await sendSensorConfig("alertTimes", { alertTimes }, null, "Lưu thời gian cảnh báo thành công");
   };
 
   return (
@@ -469,14 +509,15 @@ const SettingsButton = (profs) => {
         >
           <ul className="py-3 px-4 space-y-3 max-h-96 overflow-y-auto">
             {/* Cài đặt thời gian hiển thị */}
-            <li><SetSample info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role} /></li>
-            <li><SetInterval info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role} /></li>
+            <li><SetSample info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role} pending={isActionPending("sample")} /></li>
+            <li><SetInterval info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role} pending={isActionPending("interval")} /></li>
             <li>
               <div className="ml-1 flex justify-between justify-center">
                 <div className='text-white rounded'>Thời gian hiển thị:</div>
                 <select className="bg-teal-600 rounded text-white"
                   value={profs.info[profs.step].watch}
                   onChange={handleSelect}
+                  disabled={isActionPending("watch")}
                 >
                   <option value={60}>1 phut</option>
                   <option value={300}>5 phut</option>
@@ -485,6 +526,7 @@ const SettingsButton = (profs) => {
                   <option value={1800}>30 phut</option>
                   <option value={3600}>1 gio</option>
                 </select>
+                <SettingInlinePending show={isActionPending("watch")} />
               </div>
             </li>
             <li>
@@ -493,9 +535,11 @@ const SettingsButton = (profs) => {
                   type="checkbox"
                   checked={profs.info[profs.step].isWarning}
                   onChange={() => handleOnOffWaringLost("isWarning")}
+                  disabled={isActionPending("isWarning")}
                   className="w-5"
                 />
                 Tắt/bật cảnh báo mất logger
+                <SettingInlinePending show={isActionPending("isWarning")} />
               </label>
             </li>
             <li></li>
@@ -505,9 +549,11 @@ const SettingsButton = (profs) => {
                   type="checkbox"
                   checked={profs.info[profs.step].onP}
                   onChange={() => handleOnOffWaringLost("onP")}
+                  disabled={isActionPending("onP")}
                   className="w-5"
                 />
                 Tắt/bật cảnh báo áp suất ngoài ngưỡng
+                <SettingInlinePending show={isActionPending("onP")} />
               </label>
             </li>
             <li>
@@ -516,10 +562,37 @@ const SettingsButton = (profs) => {
                   type="checkbox"
                   checked={profs.info[profs.step].onF}
                   onChange={() => handleOnOffWaringLost("onF")}
+                  disabled={isActionPending("onF")}
                   className="w-5"
                 />
                 Tắt/bật cảnh báo lưu lượng ngoài ngưỡng
+                <SettingInlinePending show={isActionPending("onF")} />
               </label>
+            </li>
+            <li>
+              <div className="flex items-center gap-4 text-white">
+                <span className="text-sm">Gửi cảnh báo:</span>
+                {notificationChannelOptions.map((option) => {
+                  const channels = profs.info[profs.step]?.notificationChannels || {};
+                  const checked = option.key === "telegram"
+                    ? channels.telegram !== false
+                    : channels.fcm === true;
+
+                  return (
+                    <label key={option.key} className="flex items-center gap-1 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => handleNotificationChannelToggle(option.key)}
+                        disabled={isActionPending(`notification-${option.key}`)}
+                        className="h-4 w-4 accent-teal-300"
+                      />
+                      {option.label}
+                      <SettingInlinePending show={isActionPending(`notification-${option.key}`)} />
+                    </label>
+                  );
+                })}
+              </div>
             </li>
             <li>
               <div className="flex justify-between items-center">
@@ -535,12 +608,13 @@ const SettingsButton = (profs) => {
                         placeholder="Nhập giá trị"
                         className="px-2 py-1 rounded-lg text-black w-20"
                       />
-                      <button
+                      <SettingActionButton
                         onClick={handleSubmit}
+                        isLoading={isActionPending("tracking")}
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg"
                       >
                         OK
-                      </button>
+                      </SettingActionButton>
                     </>
                   ) : (
                     <>
@@ -571,12 +645,13 @@ const SettingsButton = (profs) => {
                         placeholder="Nhập giá trị"
                         className="px-2 py-1 rounded-lg text-black w-20"
                       />
-                      <button
+                      <SettingActionButton
                         onClick={handleSubmitAdj}
+                        isLoading={isActionPending("adj")}
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg"
                       >
                         OK
-                      </button>
+                      </SettingActionButton>
                     </>
                   ) : (
                     <>
@@ -594,99 +669,17 @@ const SettingsButton = (profs) => {
               </div>
             </li>
             <li>
-              {/* <DateM handleData={profs.handleData}/> */}
-              <div className="flex space-x-4 mb-4">
-                <input
-                  type="datetime-local"
-                  value={fromDate}
-                  onChange={(e) => {
-                    const [d, t] = e.target.value.split("T");
-                    const [h, m] = t.split(":").map(Number);
-                    const rm = Math.round(m / 5) * 5;
-                    setFromDate(`${d}T${String(h).padStart(2, "0")}:${String(rm % 60).padStart(2, "0")}`);
-                  }}
-                  className="border px-2 py-1"
-                  style={{ width: "160px" }}
-                />
-
-                <span className="text-white">đến</span>
-                <input
-                  type="datetime-local"
-                  value={toDate}
-                  onChange={(e) => {
-                    const [d, t] = e.target.value.split("T");
-                    const [h, m] = t.split(":").map(Number);
-                    const rm = Math.round(m / 5) * 5;
-                    setToDate(`${d}T${String(h).padStart(2, "0")}:${String(rm % 60).padStart(2, "0")}`);
-                  }}
-                  className="border px-2 py-1"
-                  style={{ width: "160px" }}
-                />
-
-                <button
-                  onClick={handleSubmitHistory}
-                  className="bg-teal-500 text-white px-3 py-1 rounded hover:bg-teal-600"
-                >
-                  Ok
-                </button>
-              </div>
-            </li>
-            <li>
-              <div className="flex justify-center space-x-2 mb-2">
-                <button
-                  onClick={() => {
-                    const today = new Date();
-                    const yesterday = new Date(today);
-                    yesterday.setDate(today.getDate() - 1);
-                    const from = `${yesterday.toISOString().split("T")[0]}T06:00`;
-                    const to = `${today.toISOString().split("T")[0]}T06:00`;
-                    setFromDate(from);
-                    setToDate(to);
-                  }}
-                  className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm"
-                >
-                  6h hôm qua đến 6h hôm nay
-                </button>
-                <button
-                  onClick={() => {
-                    const today = new Date();
-                    const yesterday = new Date(today);
-                    yesterday.setDate(today.getDate() - 1);
-                    const from = `${yesterday.toISOString().split("T")[0]}T09:00`;
-                    const to = `${today.toISOString().split("T")[0]}T09:00`;
-                    setFromDate(from);
-                    setToDate(to);
-                  }}
-                  className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm"
-                >
-                  9h hôm qua đến 9h hôm nay
-                </button>
-                <button
-                  onClick={() => {
-                    const today = new Date();
-                    const yesterday = new Date(today);
-                    yesterday.setDate(today.getDate() - 1);
-                    const from = `${yesterday.toISOString().split("T")[0]}T00:00`;
-                    const to = `${today.toISOString().split("T")[0]}T00:00`;
-                    setFromDate(from);
-                    setToDate(to);
-                  }}
-                  className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm"
-                >
-                  0h hôm qua đến 0h hôm nay
-                </button>
-              </div>
-            </li>
-            <li>
               <div className="flex justify-between items-center">
                 <label htmlFor="input-value" className="text-white">
                   <input
                     type="checkbox"
                     checked={profs.info[profs.step].temperature && profs.info[profs.step].temperature >= 0}
                     onChange={handleOnOffWT}
+                    disabled={isActionPending("temp-toggle")}
                     className="w-5"
                   />
                   Cảnh báo nhiệt độ:
+                  <SettingInlinePending show={isActionPending("temp-toggle")} />
                 </label>
                 <div className="flex items-center space-x-2">
                   {/* Nếu đang trong chế độ chỉnh sửa, hiển thị ô nhập */}
@@ -700,12 +693,13 @@ const SettingsButton = (profs) => {
                         placeholder="Nhập giá trị"
                         className="px-2 py-1 rounded-lg text-black w-20"
                       />
-                      <button
+                      <SettingActionButton
                         onClick={handleSubmitT}
+                        isLoading={isActionPending("temp")}
                         className="px-4 py-2 bg-teal-500 text-white rounded-lg"
                       >
                         OK
-                      </button>
+                      </SettingActionButton>
                     </>
                   ) : (
                     <>
@@ -722,10 +716,16 @@ const SettingsButton = (profs) => {
                 </div>
               </div>
             </li>
-            {/* 7-entry alert times (separate save) */}
+            {/* 7-entry alert times and pressure alerts */}
             <li>
-              <div className="text-white font-bold mb-2">Thời gian cảnh báo</div>
-              <div className="mt-2 space-y-2">
+              <div className="text-white font-bold mb-2">Cảnh báo áp suất</div>
+              <div className="grid grid-cols-3 gap-2 bg-teal-600 p-2 rounded">
+                <div className="text-white font-semibold">Thời gian</div>
+                <div className="text-white font-semibold">Áp thấp (m)</div>
+                <div className="text-white font-semibold">Áp cao (m)</div>
+              </div>
+
+              <div className="mt-2">
                 {(() => {
                   const cur = profs.info[profs.step] || {};
                   const rawArr = Array.isArray(cur.alertTimes) ? cur.alertTimes.slice() : Array.from({ length: 7 }, () => '');
@@ -743,94 +743,67 @@ const SettingsButton = (profs) => {
                     const mm = (m % 60).toString().padStart(2, '0');
                     return `${hh}:${mm}`;
                   };
-
-                  // convert to minutes or null for empty
-                  const minutesArr = rawArr.map(toMinutes);
-                  // sort numeric times ascending, keep nulls at the end
-                  const numeric = minutesArr.filter((x) => typeof x === 'number').sort((a, b) => a - b);
+                  const numeric = rawArr.map(toMinutes).filter((x) => typeof x === 'number').sort((a, b) => a - b);
                   const sorted = [...numeric];
                   while (sorted.length < 7) sorted.push(null);
 
-                  return sorted.map((val, idx) => (
-                    <div key={idx} className="grid grid-cols-1 gap-2 items-center">
-                      <input
-                        type="time"
-                        value={val === null ? '' : toHHMM(val)}
-                        onChange={(e) => {
-                          const v = e.target.value; // 'HH:MM' or ''
-                          profs.setdataInfo(prev =>
-                            produce(prev, draft => {
-                              const c = draft[profs.step];
-                              if (!Array.isArray(c.alertTimes)) c.alertTimes = Array.from({ length: 7 }, () => '');
-                              // build current minutes array from c.alertTimes, convert to minutes or null
-                              const curRaw = Array.isArray(c.alertTimes) ? c.alertTimes.slice() : Array.from({ length: 7 }, () => '');
-                              const curMins = curRaw.map(toMinutes);
-                              const nums = curMins.filter(x => typeof x === 'number').sort((a,b)=>a-b);
-                              // set value at position idx in the sorted list
-                              if (!v) {
-                                // remove an entry at this sorted position (set to null)
-                                nums.splice(idx, 1);
-                              } else {
-                                const [hh, mm] = v.split(':').map(Number);
-                                const newMin = hh * 60 + mm;
-                                // if position exists, replace, else insert
-                                if (idx < nums.length) nums.splice(idx, 1, newMin);
-                                else nums.splice(idx, 0, newMin);
-                              }
-                              // rebuild c.alertTimes: numeric sorted then nulls
-                              const newArr = [...nums];
-                              while (newArr.length < 7) newArr.push('');
-                              c.alertTimes = newArr.map(x => (typeof x === 'number' ? x : ''));
-                            })
-                          )
-                        }}
-                        className="px-2 py-1 rounded w-full"
-                      />
-                    </div>
-                  ));
+                  return Array.from({ length: 7 }).map((_, idx) => {
+                    const high = Array.isArray(cur.highAlerts) ? cur.highAlerts[idx] ?? '' : '';
+                    const low = Array.isArray(cur.lowAlerts) ? cur.lowAlerts[idx] ?? '' : '';
+                    const timeValue = sorted[idx];
+                    return (
+                      <div key={idx} className="grid grid-cols-3 gap-2 items-center mb-2">
+                        <input
+                          type="time"
+                          value={timeValue === null ? '' : toHHMM(timeValue)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            profs.setdataInfo(prev =>
+                              produce(prev, draft => {
+                                const c = draft[profs.step];
+                                if (!Array.isArray(c.alertTimes)) c.alertTimes = Array.from({ length: 7 }, () => '');
+                                const curRaw = Array.isArray(c.alertTimes) ? c.alertTimes.slice() : Array.from({ length: 7 }, () => '');
+                                const curMins = curRaw.map(toMinutes);
+                                const nums = curMins.filter(x => typeof x === 'number').sort((a, b) => a - b);
+                                if (!v) {
+                                  nums.splice(idx, 1);
+                                } else {
+                                  const [hh, mm] = v.split(':').map(Number);
+                                  const newMin = hh * 60 + mm;
+                                  if (idx < nums.length) nums.splice(idx, 1, newMin);
+                                  else nums.splice(idx, 0, newMin);
+                                }
+                                const newArr = [...nums];
+                                while (newArr.length < 7) newArr.push('');
+                                c.alertTimes = newArr.map(x => (typeof x === 'number' ? x : ''));
+                              })
+                            )
+                          }}
+                          className="px-2 py-1 rounded w-full"
+                        />
+                        <input
+                          type="number"
+                          value={low}
+                          onChange={(e) => handleAlertChange(idx, 'low', e.target.value)}
+                          className="px-2 py-1 rounded w-full"
+                          placeholder={`Áp thấp ${idx + 1}`}
+                        />
+                        <input
+                          type="number"
+                          value={high}
+                          onChange={(e) => handleAlertChange(idx, 'high', e.target.value)}
+                          className="px-2 py-1 rounded w-full"
+                          placeholder={`Áp cao ${idx + 1}`}
+                        />
+                      </div>
+                    );
+                  });
                 })()}
               </div>
-              <div className="mt-3">
-                <button onClick={handleSubmitTimes} className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Lưu thời gian</button>
-              </div>
-            </li>
-
-            {/* 7-entry high/low pressure alerts shown side-by-side */}
-            <li>
-              <div className="text-white font-bold mb-2">Cảnh báo áp suất</div>
-              <div className="grid grid-cols-2 gap-2 bg-teal-600 p-2 rounded">
-                <div className="text-white font-semibold">Áp thấp (m)</div>
-                <div className="text-white font-semibold">Áp cao (m)</div>
-              </div>
-
-              <div className="mt-2">
-                {Array.from({ length: 7 }).map((_, idx) => {
-                  const cur = profs.info[profs.step] || {};
-                  const high = Array.isArray(cur.highAlerts) ? cur.highAlerts[idx] ?? '' : '';
-                  const low = Array.isArray(cur.lowAlerts) ? cur.lowAlerts[idx] ?? '' : '';
-                  return (
-                    <div key={idx} className="grid grid-cols-2 gap-2 items-center mb-2">
-                      <input
-                        type="number"
-                        value={low}
-                        onChange={(e) => handleAlertChange(idx, 'low', e.target.value)}
-                        className="px-2 py-1 rounded w-full"
-                        placeholder={`Áp thấp ${idx + 1}`}
-                      />
-                      <input
-                        type="number"
-                        value={high}
-                        onChange={(e) => handleAlertChange(idx, 'high', e.target.value)}
-                        className="px-2 py-1 rounded w-full"
-                        placeholder={`Áp cao ${idx + 1}`}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
               <div className="mt-3 flex space-x-3">
-                <button onClick={handleSubmitLowAlerts} className="flex-1 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Lưu áp thấp</button>
-                <button onClick={handleSubmitAlerts} className="flex-1 bg-slate-500 text-white px-4 py-2 rounded hover:bg-slate-600">Lưu áp cao</button>
+                <SettingActionButton onClick={handleSubmitTimes} isLoading={isActionPending("alertTimes")} className="flex-1 bg-teal-500 text-white px-4 py-2 rounded hover:bg-teal-600">Lưu thời gian</SettingActionButton>
+                <SettingActionButton onClick={handleSubmitLowAlerts} isLoading={isActionPending("lowAlerts")} className="flex-1 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Lưu áp thấp</SettingActionButton>
+                <SettingActionButton onClick={handleSubmitAlerts} isLoading={isActionPending("highAlerts")} className="flex-1 bg-slate-500 text-white px-4 py-2 rounded hover:bg-slate-600">Lưu áp cao</SettingActionButton>
               </div>
             </li>
             
@@ -869,8 +842,8 @@ const SettingsButton = (profs) => {
               </div>
 
               <div className="mt-3 flex space-x-3">
-                <button onClick={handleSubmitFlow} className="flex-1 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Lưu lưu lượng thấp</button>
-                <button onClick={handleSubmitFlowLow} className="flex-1 bg-slate-500 text-white px-4 py-2 rounded hover:bg-slate-600">Lưu lưu lượng cao</button>
+                <SettingActionButton onClick={handleSubmitFlowLow} isLoading={isActionPending("flowLows")} className="flex-1 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Lưu lưu lượng thấp</SettingActionButton>
+                <SettingActionButton onClick={handleSubmitFlow} isLoading={isActionPending("flowHighs")} className="flex-1 bg-slate-500 text-white px-4 py-2 rounded hover:bg-slate-600">Lưu lưu lượng cao</SettingActionButton>
               </div>
             </li>
             {/* <li>
@@ -899,12 +872,13 @@ const SettingsButton = (profs) => {
                     className="border text-black border-gray-300 p-2 rounded w-full mb-4"
                   />
                 </label>
-                <button
+                <SettingActionButton
                   onClick={handleSend}
+                  isLoading={isActionPending("sum")}
                   className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                 >
                   Gửi đi
-                </button>
+                </SettingActionButton>
               </div>
             </li>
             <li>
@@ -919,12 +893,107 @@ const SettingsButton = (profs) => {
                     className="border text-black border-gray-300 p-2 rounded w-full mb-4"
                   />
                 </label>
-                <button
+                <SettingActionButton
                   onClick={handleSendUnit}
+                  isLoading={isActionPending("unit")}
                   className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                 >
                   Gửi đi
-                </button>
+                </SettingActionButton>
+              </div>
+            </li>
+            <li>
+              <div className="pt-2 border-t border-teal-500/30 mb-2">
+                <label className="text-white text-xs font-semibold block mb-1">
+                  Chế độ hiển thị đồ thị:
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => profs.setViewMode('today')}
+                    className={`flex-1 py-1 rounded text-[10px] font-bold transition ${
+                      profs.viewMode === 'today'
+                        ? 'bg-teal-600 text-white shadow'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    Trong ngày (0h-24h)
+                  </button>
+                  <button
+                    onClick={() => profs.setViewMode('past24h')}
+                    className={`flex-1 py-1 rounded text-[10px] font-bold transition ${
+                      profs.viewMode === 'past24h'
+                        ? 'bg-teal-600 text-white shadow'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    24H qua (từ hiện tại)
+                  </button>
+                </div>
+              </div>
+            </li>
+            <li>
+              <DisplayOptionList
+                title="Hiển thị trong số liệu tổng quan"
+                options={overviewMetricOptions}
+                selected={profs.displaySettings?.overviewMetrics || overviewMetricOptions.map((item) => item.key)}
+                onToggle={(key) => profs.updateDisplaySettings?.("overviewMetrics", key)}
+              />
+            </li>
+            <li>
+              <DisplayOptionList
+                title="Hiển thị trong bảng chi tiết"
+                options={detailTableColumnOptions}
+                selected={profs.displaySettings?.detailColumns || detailTableColumnOptions.map((item) => item.key)}
+                onToggle={(key) => profs.updateDisplaySettings?.("detailColumns", key)}
+              />
+            </li>
+            <li>
+              <div className="rounded-lg border border-teal-400/40 bg-teal-700/30 p-3">
+                <div className="mb-3 text-sm font-bold text-white">Tọa độ logger</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs font-semibold text-white">
+                    Vĩ độ
+                    <input
+                      type="number"
+                      step="any"
+                      name="lat"
+                      value={coordinate.lat}
+                      onChange={handleCoordinateChange}
+                      placeholder="Ví dụ: 21.0285"
+                      className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm text-black"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-white">
+                    Kinh độ
+                    <input
+                      type="number"
+                      step="any"
+                      name="lng"
+                      value={coordinate.lng}
+                      onChange={handleCoordinateChange}
+                      placeholder="Ví dụ: 105.8542"
+                      className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm text-black"
+                    />
+                  </label>
+                </div>
+                <SettingActionButton
+                  onClick={handleSubmitCoordinate}
+                  isLoading={isActionPending("coordinate")}
+                  className="mt-3 w-full rounded bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600"
+                >
+                  Lưu tọa độ
+                </SettingActionButton>
+              </div>
+            </li>
+            <li>
+              <div className="pt-2 border-t border-teal-500/30">
+                <SettingActionButton
+                  onClick={handleInitData}
+                  isLoading={isActionPending("upTime")}
+                  className="w-full py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold text-xs transition flex items-center justify-center gap-1"
+                >
+                  🔄 Khởi tạo lại dữ liệu ban đầu
+                </SettingActionButton>
               </div>
             </li>
           </ul>

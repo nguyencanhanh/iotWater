@@ -265,12 +265,13 @@ export const ChartMadal = (profs) => {
     scales: {
       x: {
         min: 0,
-        max: profs.length,
+        max: profs.dataLabel?.labels?.length || profs.length,
         grid: { display: false },
         ticks: {
           autoSkip: false,
           callback: function (value, index, ticks) {
-            const label = profs.dataLabel.labels[index];
+            const label = profs.dataLabel?.labels?.[index];
+            if (!label) return '';
             const lengthLabels = profs.dataLabel.labels.length
             if (label.includes('-')) return label
             const hour = parseInt(label.split(':')[0]);
@@ -458,11 +459,24 @@ const RealTimeLineChart = (profs) => {
   useEffect(() => {
     setData((prevData) => {
       const updated = { ...prevData };
-      updated.datasets[0].data = listDataSensor[profs.name];
-      updated.datasets[2].data = flowDataSensor[profs.name];
+      updated.labels = profs.label;
+      updated.datasets[0].data = profs.data.dataPressure;
+      updated.datasets[1].data = profs.data.sensorYRest;
+      updated.datasets[2].data = profs.data.dataFlow;
+      updated.datasets[3].data = profs.data.flowYRest;
       return updated;
     });
-  }, [changeData]);
+  }, [profs.label, profs.data]);
+
+  useEffect(() => {
+    setOptions((prevOptions) => {
+      const updated = { ...prevOptions };
+      if (updated.scales && updated.scales.x) {
+        updated.scales.x.max = profs.label?.length;
+      }
+      return updated;
+    });
+  }, [profs.label?.length]);
 
   useEffect(() => {
     if (chartRef.current) {
@@ -517,9 +531,6 @@ export const Battery = ({ step, data, temp, dataInfo }) => {
 
   return (
     <div className="flex items-center space-x-2">
-      <div className="w-12 h-8 flex items-center justify-center bg-blue-200 text-blue-800 font-bold rounded-md">
-        {tem}°C
-      </div>
       <div className="flex items-end h-4">
         {renderSignalBars()}
       </div>

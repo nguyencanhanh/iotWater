@@ -160,6 +160,39 @@ const ScrollableTable = (device) => {
   const [tableData, setTableData] = useState(listDataTable[device.step]);
   const tableContainerRef = useRef(null);
   const headerRef = useRef(null);
+  const visibleColumns = device.visibleColumns || ["time", "pressure", "pressureCompare", "flow", "flowCompare", "battery"];
+  const columns = [
+    {
+      key: "time",
+      label: "Thời gian",
+      render: (_row, index) => device.labels ? device.labels[index] : `${String(Math.floor(index * device.watch / 3600)).padStart(2, "0")}:${String((index * device.watch / 60) % 60).padStart(2, "0")}`,
+    },
+    {
+      key: "pressure",
+      label: "Áp suất (m)",
+      render: (row) => row ? (row?.Pressure + device.adj).toFixed(1) : "",
+    },
+    {
+      key: "pressureCompare",
+      label: "Cùng kì (m)",
+      render: (_row, index) => typeof device.data.sensorYRest[index] === 'number' ? (device.data.sensorYRest[index] + device.adj).toFixed(1) : "",
+    },
+    {
+      key: "flow",
+      label: "Lưu lượng (m3/h)",
+      render: (row) => row?.flow ?? "",
+    },
+    {
+      key: "flowCompare",
+      label: "Cùng kì (m3/h)",
+      render: (_row, index) => device.data.flowYRest[index] !== null ? device.data.flowYRest[index] : "",
+    },
+    {
+      key: "battery",
+      label: "Pin(%)",
+      render: (row) => row?.battery != null ? `${row.battery}%` : "",
+    },
+  ].filter((column) => visibleColumns.includes(column.key));
 
   useEffect(() => {
     setTableData(listDataTable[device.step]);
@@ -206,12 +239,11 @@ const ScrollableTable = (device) => {
         <table className="border-collapse w-full table-fixed">
           <thead>
             <tr className="text-sm text-center">
-              <th className="border border-gray-300 px-3 py-2 w-1/5">Thời gian</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5">Áp suất (m)</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5">Cùng kì (m)</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5">Lưu lượng (m3/h)</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/5">Cùng kì (m3/h)</th>
-              <th className="border border-gray-300 px-3 py-2 w-1/6">Pin(%)</th>
+              {columns.map((column) => (
+                <th key={column.key} className="border border-gray-300 px-3 py-2">
+                  {column.label}
+                </th>
+              ))}
             </tr>
           </thead>
         </table>
@@ -232,24 +264,11 @@ const ScrollableTable = (device) => {
             <tbody>
               {tableData.map((row, index) => (
                 <tr key={index} className="h-8 text-lg">
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
-                    {`${String(Math.floor(index * device.watch / 3600)).padStart(2, "0")}:${String((index * device.watch / 60) % 60).padStart(2, "0")}`}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
-                    {row ? (row?.Pressure + device.adj).toFixed(1) : ""}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
-                    {typeof device.data.sensorYRest[index] === 'number' ? (device.data.sensorYRest[index] + device.adj).toFixed(1) : ""}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
-                    {row?.flow ?? ""}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/5">
-                    {device.data.flowYRest[index] !== null ? device.data.flowYRest[index] : ""}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-0 text-center w-1/6">
-                    {row?.battery != null ? `${row.battery}%` : ""}
-                  </td>
+                  {columns.map((column) => (
+                    <td key={column.key} className="border border-gray-300 px-2 py-0 text-center">
+                      {column.render(row, index)}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>

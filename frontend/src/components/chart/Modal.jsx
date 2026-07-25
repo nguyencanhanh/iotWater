@@ -3,7 +3,7 @@ import { Modal } from 'antd';
 import { sensorListGet } from "../../api/index"
 import { ChartMadal } from './Chart';
 import { TableModal, SensorDataDisplay } from './Table';
-import { exportDataPost } from '../../api/index';
+import { exportDataPost, getLoggerImageUrl } from '../../api/index';
 import { useAuth } from '../../context/authContext'
 import {differenceInCalendarDays} from 'date-fns'
 
@@ -69,7 +69,10 @@ const ModalData = (props) => {
   const dateData = props.dateData;
   const name = props.idMap ? props.info[props.idMap[dateData[2]]].name : props.dateData[3];
   const adj = props.idMap ? props.info[props.idMap[dateData[2]]].adj : props.dateData[4];
+  const sensorId = dateData[2];
   const [dataModal, setDataModal] = useState(null);
+  const [showImage, setShowImage] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const [fromDate, setFromDate] = useState(dateData[0]);
   const [toDate, setToDate] = useState(dateData[1]);
   const [offset, setOffset] = useState(Math.floor(convertTime(new Date(dateData[0]), 300)));
@@ -152,38 +155,49 @@ const ModalData = (props) => {
       {!props.idMap ? (
         <></>
       ) : (
-        <div className="flex flex-wrap justify-between items-center mb-4">
-          <div className="flex space-x-4 mb-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <input
               type="datetime-local"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
-              className="border px-2 py-1"
+              className="min-h-11 min-w-[240px] rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
             />
-            <span className="text-black">đến</span>
+            <span className="text-sm font-semibold text-black">đến</span>
             <input
               type="datetime-local"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
-              className="border px-2 py-1"
+              className="min-h-11 min-w-[240px] rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
             />
             <button
               onClick={handleSubmitHistory}
-              className="bg-teal-500 text-white px-3 py-1 rounded hover:bg-teal-600"
+              className="min-h-11 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600"
             >
-              Ok
+              Xem dữ liệu
             </button>
           </div>
           <button
             onClick={handleExportExcel}
-            className="px-4 py-2 bg-teal-500 text-white rounded-lg"
+            className="min-h-11 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-white"
           >
             Xuất excel
           </button>
         </div>
       )}
       <div className="mt-5 flex flex-wrap justify-center gap-4">
-        <h2 className="text-lg font-semibold">{name}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold">{name}</h2>
+          {!imageError && (
+            <button
+              onClick={() => setShowImage(true)}
+              className="text-teal-600 hover:text-teal-800 text-xl"
+              title="Xem ảnh logger"
+            >
+              📷
+            </button>
+          )}
+        </div>
         {!dataModal ? (
           <h1>Loading...</h1>
         ) : (
@@ -198,6 +212,25 @@ const ModalData = (props) => {
           </div>
         )}
       </div>
+
+      {/* Popup xem ảnh logger */}
+      <Modal
+        open={showImage}
+        onCancel={() => setShowImage(false)}
+        footer={null}
+        title={`📷 Ảnh Logger: ${name}`}
+        centered
+        width={600}
+      >
+        <div className="flex justify-center items-center p-4">
+          <img
+            src={getLoggerImageUrl(sensorId)}
+            alt={`Logger ${name}`}
+            className="max-w-full max-h-[60vh] object-contain rounded-lg"
+            onError={() => { setImageError(true); setShowImage(false); alert('Logger này chưa có ảnh'); }}
+          />
+        </div>
+      </Modal>
     </Modal >
   )
 };

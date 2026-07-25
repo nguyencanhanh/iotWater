@@ -145,7 +145,7 @@ function GroupSensor() {
             <th className="border border-gray-300 p-2">Tên cảm biến</th>
             <th className="border border-gray-300 p-2">Áp suất</th>
             <th className="border border-gray-300 p-2">Lưu lượng</th>
-            <th className="border border-gray-300 p-2">Nhiệt Độ</th>
+            {/* <th className="border border-gray-300 p-2">Nhiệt Độ</th> */}
             <th className="border border-gray-300 p-2">
               <div>
                 <button
@@ -213,9 +213,9 @@ function GroupSensor() {
                   <td className="border border-gray-300 text-center p-2">
                     {currentData[sensor.id]?.flow}
                   </td>
-                  <td className="border border-gray-300 text-center p-2">
-                    {currentData[sensor.id]?.temperature || 25}
-                  </td>
+                  {/* <td className="border border-gray-300 text-center p-2">
+                    {currentData[sensor.id]?.temperature || ""}
+                  </td> */}
                   <td className="border border-gray-300 text-center p-2">
                     {currentData[sensor.id]?.battery}%
                   </td>

@@ -9,6 +9,9 @@ import groupSensor from './routes/group.js'
 // import alarmRouter from './routes/alarm.js'
 import uploadImg from './routes/upload.js'
 import prvRouter from './routes/prv.js'
+import dmaRouter from './routes/dma.js'
+import dnpConfigRouter from './routes/dnpConfig.js'
+import generalSettingRouter from './routes/generalSetting.js'
 import connectToDatabase from './db/db.js'
 import connectMqtt from './mqtt/mqtt.js'
 import connectRedis from './mqtt/redis.js';
@@ -17,7 +20,27 @@ connectToDatabase()
 connectMqtt()
 connectRedis()
 const app = express()
-app.use(cors({origin: ['https://khca-s.static.good-dns.net']}))
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    const whitelist = [
+      'https://khca-s.static.good-dns.net',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174'
+    ];
+    if (whitelist.indexOf(origin) !== -1 || 
+        origin.includes(':8088') || 
+        origin.includes(':8080') || 
+        origin.includes(':8443') || 
+        origin.includes('localhost') || 
+        origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  }
+}))
 app.use(express.json())
 app.use(bodyParser.raw({ type: 'image/jpeg', limit: '5mb' }));
 app.set("trust proxy", true); // nếu có nginx/ngrok
@@ -43,6 +66,9 @@ app.use('/api/sensor', sensorRouter)
 app.use('/api/group', groupSensor)
 // app.use('/api/alarm', alarmRouter)
 app.use('/api/prv', prvRouter)
+app.use('/api/dma', dmaRouter)
+app.use('/api/dnp-config', dnpConfigRouter)
+app.use('/api/general-settings', generalSettingRouter)
 
 app.listen(process.env.PORT, ()=>{
   console.log(`Server is Running on port ${process.env.PORT}`)

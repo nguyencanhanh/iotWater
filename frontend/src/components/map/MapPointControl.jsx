@@ -9,7 +9,9 @@ import {
   FaSyncAlt,
   FaTimes,
 } from "react-icons/fa";
-import { POINT_STATUSES, POINT_TYPES, getTypeMeta } from "./mapPointMeta";
+import { FaFileAlt } from "react-icons/fa";
+import { POINT_STATUSES } from "./mapPointMeta";
+import { LEAK_RATE_BUCKETS, getLeakColor } from "./leakRate";
 
 const Toggle = ({ checked, onChange, children }) => (
   <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
@@ -39,6 +41,8 @@ const MapPointControl = ({
   statusFilter,
   onStatusFilter,
   onReload,
+  types = [],
+  onOpenReport,
 }) => {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -89,17 +93,17 @@ const MapPointControl = ({
 
         <div className={open ? "block" : "hidden"}>
           <div className="grid grid-cols-3 gap-1.5 text-center">
+            <div className="rounded-lg bg-slate-100 px-1 py-1.5">
+              <div className="text-base font-black leading-none text-slate-800">{stats.total}</div>
+              <div className="mt-0.5 text-[10px] font-bold uppercase text-slate-600">Tổng</div>
+            </div>
             <div className="rounded-lg bg-rose-50 px-1 py-1.5">
               <div className="text-base font-black leading-none text-rose-700">{stats.open}</div>
               <div className="mt-0.5 text-[10px] font-bold uppercase text-rose-600">Chưa xử lý</div>
             </div>
-            <div className="rounded-lg bg-amber-50 px-1 py-1.5">
-              <div className="text-base font-black leading-none text-amber-700">{stats.inProgress}</div>
-              <div className="mt-0.5 text-[10px] font-bold uppercase text-amber-600">Đang xử lý</div>
-            </div>
             <div className="rounded-lg bg-emerald-50 px-1 py-1.5">
               <div className="text-base font-black leading-none text-emerald-700">{stats.resolved}</div>
-              <div className="mt-0.5 text-[10px] font-bold uppercase text-emerald-600">Đã xong</div>
+              <div className="mt-0.5 text-[10px] font-bold uppercase text-emerald-600">Đã xử lý</div>
             </div>
           </div>
 
@@ -134,6 +138,14 @@ const MapPointControl = ({
             </div>
           )}
 
+          <button
+            type="button"
+            onClick={onOpenReport}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50"
+          >
+            <FaFileAlt /> Tra cứu &amp; báo cáo
+          </button>
+
           {expanded && (
             <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
               <label className="block">
@@ -144,8 +156,8 @@ const MapPointControl = ({
                   className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold outline-none focus:border-teal-500"
                 >
                   <option value="all">Tất cả</option>
-                  {POINT_TYPES.map((item) => (
-                    <option key={item.value} value={item.value}>{item.label}</option>
+                  {types.map((item) => (
+                    <option key={item._id} value={item._id}>{item.name}</option>
                   ))}
                 </select>
               </label>
@@ -164,16 +176,21 @@ const MapPointControl = ({
                 </select>
               </label>
 
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {POINT_TYPES.map((item) => (
-                  <span
-                    key={item.value}
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-600"
-                  >
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getTypeMeta(item.value).color }} />
-                    {item.label}
-                  </span>
-                ))}
+              <div className="pt-1">
+                <div className="mb-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                  Màu chấm theo mức độ rò rỉ
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[0, 2, 4, 10, 20].map((index) => LEAK_RATE_BUCKETS[index]).map((item) => (
+                    <span
+                      key={item.key}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-600"
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getLeakColor(item.key) }} />
+                      {item.label}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           )}

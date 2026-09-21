@@ -3,9 +3,9 @@ import {
   createHotspotIcon,
   createPointIcon,
   formatPointDateTime,
-  getSeverityMeta,
+  getLeakColor,
+  getLeakLabel,
   getStatusMeta,
-  getTypeMeta,
 } from "./mapPointMeta";
 
 const AddPointCatcher = ({ active, onPick }) => {
@@ -18,44 +18,68 @@ const AddPointCatcher = ({ active, onPick }) => {
   return null;
 };
 
-const PointPopup = ({ point, canEdit, onEdit }) => {
-  const type = getTypeMeta(point.type);
-  const severity = getSeverityMeta(point.severity);
+const PointPopup = ({ point, canEdit, onEdit, imageUrl }) => {
   const status = getStatusMeta(point.status);
 
   return (
     <Popup>
-      <div className="min-w-[230px]">
+      <div className="min-w-[240px]">
         <div className="mb-1 flex flex-wrap items-center gap-1.5">
           <span
             className="rounded-md px-2 py-0.5 text-[11px] font-black text-white"
-            style={{ backgroundColor: type.color }}
+            style={{ backgroundColor: getLeakColor(point.leakRate) }}
           >
-            {type.label}
+            {getLeakLabel(point.leakRate)}
           </span>
           <span className={`rounded-md border px-2 py-0.5 text-[11px] font-black ${status.badge}`}>
             {status.label}
           </span>
-          <span className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-600">
-            {severity.label}
-          </span>
+          {point.typeName && (
+            <span className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+              {point.typeName}
+            </span>
+          )}
         </div>
 
         <h4 className="!m-0 text-sm font-black text-slate-900">{point.title}</h4>
 
-        {point.address && <div className="mt-1 text-xs font-semibold text-slate-600">{point.address}</div>}
-        {point.group && <div className="mt-0.5 text-xs font-semibold text-slate-500">Khu vực: {point.group}</div>}
+        {point.group && <div className="mt-1 text-xs font-semibold text-slate-500">Khu vực: {point.group}</div>}
 
         <div className="mt-1 text-xs text-slate-500">Phát hiện: {formatPointDateTime(point.occurredAt)}</div>
-        {point.status === "resolved" && point.resolvedAt && (
-          <div className="text-xs text-slate-500">Xử lý xong: {formatPointDateTime(point.resolvedAt)}</div>
-        )}
+        {point.status === "resolved" ? (
+          point.resolvedAt && (
+            <div className="text-xs font-semibold text-emerald-700">
+              Xử lý xong: {formatPointDateTime(point.resolvedAt)}
+            </div>
+          )
+        ) : point.unresolvedReason ? (
+          <div className="text-xs font-semibold text-rose-700">Lý do chưa xử lý: {point.unresolvedReason}</div>
+        ) : null}
         {point.createdByName && (
           <div className="text-xs text-slate-500">Người thêm: {point.createdByName}</div>
         )}
 
         {point.note && (
           <p className="!mb-0 mt-2 whitespace-pre-line text-xs leading-5 text-slate-700">{point.note}</p>
+        )}
+
+        {Boolean(point.images?.length) && imageUrl && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {point.images.slice(0, 4).map((name) => (
+              <a key={name} href={imageUrl(point._id, name)} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={imageUrl(point._id, name)}
+                  alt="Ảnh sự cố"
+                  className="h-14 w-14 rounded border border-slate-200 object-cover"
+                />
+              </a>
+            ))}
+            {point.images.length > 4 && (
+              <span className="self-center text-[11px] font-bold text-slate-500">
+                +{point.images.length - 4}
+              </span>
+            )}
+          </div>
         )}
 
         <div className="mt-2 text-[11px] font-mono text-slate-400">
@@ -85,6 +109,7 @@ const MapPointLayer = ({
   canEdit = false,
   onPickLocation,
   onEdit,
+  imageUrl,
 }) => (
   <>
     <AddPointCatcher active={addMode} onPick={onPickLocation} />
@@ -122,7 +147,7 @@ const MapPointLayer = ({
         interactive={!addMode}
         zIndexOffset={500}
       >
-        <PointPopup point={point} canEdit={canEdit} onEdit={onEdit} />
+        <PointPopup point={point} canEdit={canEdit} onEdit={onEdit} imageUrl={imageUrl} />
       </Marker>
     ))}
   </>

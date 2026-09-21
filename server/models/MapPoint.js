@@ -1,27 +1,41 @@
 import mongoose from "mongoose";
+import { LEAK_RATE_BUCKETS } from "../services/leakRate.js";
 
-export const MAP_POINT_TYPES = ["leak", "burst", "repair", "valve", "meter", "other"];
-export const MAP_POINT_SEVERITIES = ["low", "medium", "high"];
-export const MAP_POINT_STATUSES = ["open", "in_progress", "resolved"];
+// Chi con 2 trang thai theo yeu cau van hanh: da xu ly (kem thoi gian) va chua xu ly (kem ly do).
+export const MAP_POINT_STATUSES = ["open", "resolved"];
+export const LEAK_RATE_KEYS = LEAK_RATE_BUCKETS.map((item) => item.key);
 
 const mapPointSchema = new mongoose.Schema({
   user: { type: Number, required: true, index: true },
   title: { type: String, required: true, trim: true, maxlength: 200 },
-  type: { type: String, enum: MAP_POINT_TYPES, default: "leak" },
-  severity: { type: String, enum: MAP_POINT_SEVERITIES, default: "medium" },
+
+  // Loai su co lay tu IncidentType (nguoi dung tu them). Giu them typeName de
+  // xuat Excel/bao cao khong phai join, va khong mat du lieu neu loai bi xoa.
+  typeId: { type: mongoose.Schema.Types.ObjectId, ref: "IncidentType" },
+  typeName: { type: String, trim: true, maxlength: 120, default: "" },
+
+  // Muc do = dai luu luong ro ri uoc tinh, vi du "50-100" hoac ">1000".
+  leakRate: { type: String, enum: LEAK_RATE_KEYS, default: LEAK_RATE_KEYS[0] },
+
   status: { type: String, enum: MAP_POINT_STATUSES, default: "open" },
+  resolvedAt: { type: Date, default: null },
+  unresolvedReason: { type: String, trim: true, maxlength: 500, default: "" },
+
   lat: { type: Number, required: true, min: -90, max: 90 },
   lng: { type: Number, required: true, min: -180, max: 180 },
-  // GeoJSON [lng, lat] de sau nay chay $geoNear / $geoWithin khi phan vung su co.
+  // GeoJSON [lng, lat] de chay $geoNear / $geoWithin khi phan vung su co.
   location: {
     type: { type: String, enum: ["Point"], default: "Point" },
     coordinates: { type: [Number], default: undefined },
   },
-  address: { type: String, trim: true, maxlength: 300, default: "" },
-  note: { type: String, trim: true, maxlength: 2000, default: "" },
+
   group: { type: String, trim: true, maxlength: 120, default: "" },
+  // Ghi chu da gop ca dia chi theo yeu cau.
+  note: { type: String, trim: true, maxlength: 2000, default: "" },
+  // Anh hien truong, bo sung dan sau khi dao len.
+  images: { type: [String], default: [] },
+
   occurredAt: { type: Date, default: Date.now },
-  resolvedAt: { type: Date, default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   createdByName: { type: String, trim: true, maxlength: 120, default: "" },
   createAt: { type: Date, default: Date.now },
@@ -29,7 +43,9 @@ const mapPointSchema = new mongoose.Schema({
 });
 
 mapPointSchema.index({ user: 1, status: 1, occurredAt: -1 });
-mapPointSchema.index({ user: 1, type: 1 });
+mapPointSchema.index({ user: 1, occurredAt: -1 });
+mapPointSchema.index({ user: 1, group: 1, occurredAt: -1 });
+mapPointSchema.index({ user: 1, typeId: 1 });
 mapPointSchema.index({ location: "2dsphere" });
 
 const syncLocation = function syncLocation(next) {

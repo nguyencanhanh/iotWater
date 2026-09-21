@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Tooltip, GeoJSON, CircleMarker, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "../map/leafletIconFix";
@@ -6,13 +6,15 @@ import { FaBullhorn, FaCheckCircle, FaChevronLeft, FaChevronRight, FaExclamation
 
 // import mqtt from "mqtt";
 import { useAuth } from "../../context/authContext";
-import { sensorListGet, getGroup, warningHistoryTodayGet, homeMessagesGet, homeMessagePost, homeMessageDelete, generalSettingsGet } from "../../api/index";
+import { mapPointImageUrl, sensorListGet, getGroup, warningHistoryTodayGet, homeMessagesGet, homeMessagePost, homeMessageDelete, generalSettingsGet } from "../../api/index";
 import ModalData from "../chart/Modal";
 import MapPointLayer from "../map/MapPointLayer";
 import MapPointControl from "../map/MapPointControl";
 import MapPointForm from "../map/MapPointForm";
 import useMapPoints from "../map/useMapPoints";
 import { getMqttClient } from "../../pages/AdminDashboard";
+
+const IncidentReportPanel = lazy(() => import("../map/IncidentReportPanel"));
 // import { produce } from "immer";
 // import L from "leaflet";
 
@@ -180,6 +182,7 @@ function AdminSummary() {
     const [pointFormOpen, setPointFormOpen] = useState(false);
     const [editingPoint, setEditingPoint] = useState(null);
     const [draftLocation, setDraftLocation] = useState(null);
+    const [reportPanelOpen, setReportPanelOpen] = useState(false);
     const [metersLayer, setMetersLayer] = useState(null);
     const [warning, setWarning] = useState({})
     const warningHistoryRequestRef = useRef(false);
@@ -190,6 +193,12 @@ function AdminSummary() {
 
     const canEditMapPoints = user?.role !== "trial";
     const mapPoints = useMapPoints({ user: user.user, canEdit: canEditMapPoints });
+
+    // Khu vuc cho su co: gop nhom logger co san voi nhom da dung o cac diem truoc do.
+    const incidentGroups = useMemo(() => [...new Set([
+        ...groups.map((item) => item?.name).filter(Boolean),
+        ...mapPoints.groups,
+    ])].sort((a, b) => a.localeCompare(b, "vi")), [groups, mapPoints.groups]);
 
     useEffect(() => {
         if (showHotspots) mapPoints.loadHotspots();
@@ -211,10 +220,31 @@ function AdminSummary() {
     const handleSubmitPoint = async (payload) => {
         const saved = await mapPoints.savePoint(payload, editingPoint);
         if (!saved) return;
-        setPointFormOpen(false);
-        setEditingPoint(null);
-        setDraftLocation(null);
+        // Vua tao xong thi giu form mo o che do sua, de nguoi dung dinh anh luon.
+        if (editingPoint) {
+            setPointFormOpen(false);
+            setEditingPoint(null);
+            setDraftLocation(null);
+        } else {
+            setEditingPoint(saved);
+        }
         if (showHotspots) mapPoints.loadHotspots();
+    };
+
+    // Doi toa do tu trong form (dan link Google Maps / lay vi tri hien tai).
+    const handleCoordinateChange = (coordinate) => {
+        setDraftLocation(coordinate);
+        setEditingPoint((prev) => (prev ? { ...prev, ...coordinate } : prev));
+    };
+
+    const handleUploadImages = async (point, files) => {
+        const updated = await mapPoints.uploadImages(point, files);
+        if (updated) setEditingPoint(updated);
+    };
+
+    const handleDeleteImage = async (point, name) => {
+        const updated = await mapPoints.removeImage(point, name);
+        if (updated) setEditingPoint(updated);
     };
 
     const handleDeletePoint = async (point) => {
@@ -691,6 +721,7 @@ function AdminSummary() {
                         canEdit={canEditMapPoints}
                         onPickLocation={handlePickLocation}
                         onEdit={handleEditPoint}
+                        imageUrl={mapPointImageUrl}
                     />
                 </MapContainer>
             </div>
@@ -705,8 +736,10 @@ function AdminSummary() {
                 point={editingPoint}
                 lat={draftLocation?.lat}
                 lng={draftLocation?.lng}
-                groups={mapPoints.groups}
+                groups={incidentGroups}
+                types={mapPoints.types}
                 saving={mapPoints.saving}
+                creatingType={mapPoints.creatingType}
                 onClose={() => {
                     setPointFormOpen(false);
                     setEditingPoint(null);
@@ -714,11 +747,22 @@ function AdminSummary() {
                 }}
                 onSubmit={handleSubmitPoint}
                 onDelete={handleDeletePoint}
-                onPickAgain={() => {
-                    setPointFormOpen(false);
-                    setAddPointMode(true);
-                }}
+                onCreateType={mapPoints.createType}
+                onCoordinateChange={handleCoordinateChange}
+                onUploadImages={handleUploadImages}
+                onDeleteImage={handleDeleteImage}
+                imageUrl={mapPointImageUrl}
             />
+
+            <Suspense fallback={null}>
+                <IncidentReportPanel
+                    open={reportPanelOpen}
+                    user={user.user}
+                    groups={incidentGroups}
+                    types={mapPoints.types}
+                    onClose={() => setReportPanelOpen(false)}
+                />
+            </Suspense>
 
             <div className="absolute right-4 top-4 z-10 flex max-h-[calc(100vh-5rem)] flex-col items-end gap-3 overflow-y-auto overflow-x-hidden pb-4">
                 <div
@@ -964,6 +1008,8 @@ function AdminSummary() {
                     statusFilter={mapPoints.statusFilter}
                     onStatusFilter={mapPoints.setStatusFilter}
                     onReload={mapPoints.reload}
+                    types={mapPoints.types}
+                    onOpenReport={() => setReportPanelOpen(true)}
                 />
             </div>
             {showModal ? <ModalData info={weatherData} dateData={dateData} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}

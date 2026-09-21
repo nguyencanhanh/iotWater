@@ -646,6 +646,61 @@ nhap bang form, `info` van la `null`:
 Trong `Login.jsx`, `localStorage.setItem("token", ...)` phai chay **truoc** `await login(...)`
 vi login() dung token do de goi `infoGet`.
 
+## Diem su co ro ri
+
+### Truong du lieu (`server/models/MapPoint.js`)
+
+| Truong | Y nghia |
+| --- | --- |
+| `title` | Ten su co |
+| `typeId` + `typeName` | Loai su co, tham chieu `IncidentType`. Giu ca ten de xuat Excel/bao cao khong phai join |
+| `leakRate` | Bac luu luong ro ri, vi du `"150-200"` hoac `">1000"` |
+| `status` | `open` (kem `unresolvedReason`) hoac `resolved` (kem `resolvedAt`) |
+| `lat`/`lng` + `location` | Toa do, kem GeoJSON Point co index 2dsphere |
+| `group` | Khu vuc, dung chung danh sach voi nhom logger |
+| `note` | Ghi chu da gop ca dia chi |
+| `images` | Mang ten file trong `server/upload/incidents/` |
+| `occurredAt` | Thoi diem phat hien |
+
+### Bac muc do
+
+`server/services/leakRate.js` va `frontend/src/components/map/leakRate.js` phai khop nhau:
+buoc 50 l/h tu 0 den 1000 (20 bac) cong bac `>1000`, tong 21 bac.
+
+Uoc tinh luu luong = trung binh bac. Rieng `>1000` lay dung 1000 cho an toan, khong
+thoi phong con so. Bao cao ghi ro day la so uoc tinh, khong phai so do thuc te.
+
+### Loai su co tu them
+
+`IncidentType` co unique index `(user, name)`. Lan dau goi API se tu tao bo mac dinh:
+Vo ong, Ro ri moi noi, Ro ri van, Ro ri dong ho, Nut gay cut ren, Khac.
+
+Nguoi dung them loai moi ngay trong form (nut `+` ben canh o chon). Doi ten loai se
+dong bo luon `typeName` cua moi diem dang dung loai do. Khong xoa duoc loai dang co diem su dung.
+
+### API
+
+| Endpoint | Cong dung |
+| --- | --- |
+| `GET /api/map-points` | Danh sach, loc theo `status`, `typeId`, `group` (nhieu nhom cach nhau dau phay), `fromDate`, `toDate` |
+| `GET /api/map-points/report` | Bao cao: tong so diem, luu luong uoc tinh, luu luong da triet tieu, chia theo tung loai |
+| `POST /api/map-points/export` | Xuat Excel 7 cot: ten, thoi gian phat hien, trang thai, loai, muc do, khu vuc, toa do |
+| `POST /api/map-points/:id/images` | Upload anh (multer, toi da 10 anh 8MB moi anh) |
+| `GET /api/map-points/image/:name` | Doc anh |
+| `GET /api/incident-types` | Danh sach loai, tu tao bo mac dinh neu chua co |
+
+Bao cao **liet ke ca loai khong co su co nao** trong ky va ghi "Khong co su co" - day la
+yeu cau van hanh, dung loc bo cho gon.
+
+### Giao dien
+
+- `MapPointForm.jsx`: form them/sua, co nut mo `MapPicker` (dan link Google Maps hoac lay
+  vi tri hien tai cua dien thoai). Sau khi tao moi, form **khong dong ma chuyen sang che do
+  sua** de nguoi dung dinh anh ngay.
+- `IncidentReportPanel.jsx`: 2 tab Tra cuu (kem xuat Excel) va Bao cao, loc theo khoang ngay
+  + nhieu khu vuc cung luc.
+- Mau cham tren ban do theo **muc do ro ri**, diem da xu ly lam mo di va doi thanh dau tich.
+
 ## Quy uoc lam tiep
 
 - Khong sua API route neu chua kiem tra frontend va mobile co phu thuoc hay khong.

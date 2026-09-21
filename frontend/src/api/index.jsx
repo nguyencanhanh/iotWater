@@ -13,6 +13,7 @@ const URL_EXTERNAL_LOGGERS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', 
 const URL_TRAFFIC = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/traffic')
 const URL_CHATBOT = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/chatbot')
 const URL_MAP_POINTS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/map-points')
+const URL_INCIDENT_TYPES = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-types')
 
 const axiosConfig = (token) => ({
     headers: {
@@ -440,6 +441,55 @@ const postSseStream = async (url, token, body, { onDelta, onDone, signal } = {})
     onDone?.(full, doneData);
     return { text: full, ...doneData };
 };
+
+export const incidentTypesGet = (token, user) => axios.get(
+    `${URL_INCIDENT_TYPES}?user=${encodeURIComponent(user)}`,
+    axiosConfig(token)
+);
+
+export const incidentTypeCreatePost = (token, body) => axios.post(
+    URL_INCIDENT_TYPES,
+    body,
+    axiosConfig(token)
+);
+
+export const incidentTypeUpdatePut = (token, id, body) => axios.put(
+    `${URL_INCIDENT_TYPES}/${id}`,
+    body,
+    axiosConfig(token)
+);
+
+export const incidentTypeDelete = (token, id, user) => axios.delete(
+    `${URL_INCIDENT_TYPES}/${id}?user=${encodeURIComponent(user)}`,
+    axiosConfig(token)
+);
+
+export const mapPointReportGet = (token, params = {}) => {
+    const query = new URLSearchParams(
+        Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== "")
+    ).toString();
+    return axios.get(`${URL_MAP_POINTS}/report${query ? `?${query}` : ""}`, axiosConfig(token));
+};
+
+export const mapPointExportPost = (token, body) => axios.post(
+    `${URL_MAP_POINTS}/export`,
+    body,
+    { ...axiosConfig(token), responseType: "blob" }
+);
+
+export const mapPointImagesPost = (token, id, files, user) => {
+    const form = new FormData();
+    files.forEach((file) => form.append("files", file));
+    form.append("user", user);
+    return axios.post(`${URL_MAP_POINTS}/${id}/images`, form, axiosConfig(token));
+};
+
+export const mapPointImageDelete = (token, id, name, user) => axios.delete(
+    `${URL_MAP_POINTS}/${id}/images/${encodeURIComponent(name)}?user=${encodeURIComponent(user)}`,
+    axiosConfig(token)
+);
+
+export const mapPointImageUrl = (id, name) => `${URL_MAP_POINTS}/image/${encodeURIComponent(name)}`;
 
 export const mapPointsGet = (token, params = {}) => {
     const query = new URLSearchParams(

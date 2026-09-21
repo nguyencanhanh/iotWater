@@ -17,6 +17,7 @@ import trafficRouter from './routes/traffic.js'
 import chatbotRouter from './routes/chatbot.js'
 import aiRouter from './routes/ai.js'
 import mapPointRouter from './routes/mapPoint.js'
+import incidentTypeRouter from './routes/incidentType.js'
 import connectToDatabase from './db/db.js'
 import connectMqtt from './mqtt/mqtt.js'
 import connectRedis from './mqtt/redis.js';
@@ -89,6 +90,7 @@ app.use('/api/traffic', trafficRouter)
 app.use('/api/chatbot', chatbotRouter)
 app.use('/api/ai', aiRouter)
 app.use('/api/map-points', mapPointRouter)
+app.use('/api/incident-types', incidentTypeRouter)
 
 // Chi nghe tren localhost. nginx da proxy /api/ nen web khong anh huong,
 // nhung port 3000 khong con phoi thang ra internet (bo qua HTTPS + rate limit).

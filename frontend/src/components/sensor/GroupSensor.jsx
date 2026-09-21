@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from 'react-router-dom';
-import { getGroupInfo } from "../../api";
+import { getGroupInfo, updateGroupOrderPost, updateSensorOrderPost } from "../../api/index";
 import { useAuth } from '../../context/authContext';
+
+const buildGroupOrder = (serverOrder = [], groupedData = {}) => {
+  const visibleGroups = Object.keys(groupedData).filter((group) => (groupedData[group] || []).length > 0);
+  return [...new Set([...(Array.isArray(serverOrder) ? serverOrder : []), ...visibleGroups])]
+    .filter((group) => visibleGroups.includes(group));
+};
 
 function GroupSensor() {
   const { user } = useAuth();
@@ -27,25 +33,12 @@ function GroupSensor() {
         const dg = res.data.data || {};
         setDataGroup(dg);
 
-        const savedGroupOrder = localStorage.getItem(`groupOrder_${user.user}`);
-        const keys = Object.keys(dg);
-
-        const initialGroupOrder = savedGroupOrder
-          ? JSON.parse(savedGroupOrder).filter(k => keys.includes(k))
-            .concat(keys.filter(k => !JSON.parse(savedGroupOrder).includes(k)))
-          : keys;
-
+        const initialGroupOrder = buildGroupOrder(res.data.groupOrder, dg);
         setGroupOrder(initialGroupOrder);
 
         const initSensorOrders = {};
-        keys.forEach(g => {
-          const saved = localStorage.getItem(`sensorOrder_${user.user}_${g}`);
-          if (saved) {
-            try { initSensorOrders[g] = JSON.parse(saved); }
-            catch { initSensorOrders[g] = dg[g].map(s => s.id); }
-          } else {
-            initSensorOrders[g] = dg[g].map(s => s.id);
-          }
+        initialGroupOrder.forEach(g => {
+          initSensorOrders[g] = (dg[g] || []).map(s => s.id);
         });
 
         setSensorOrders(initSensorOrders);
@@ -57,22 +50,47 @@ function GroupSensor() {
 
   const saveGroupOrder = (order) => {
     setGroupOrder(order);
-    localStorage.setItem(`groupOrder_${user.user}`, JSON.stringify(order));
+    updateGroupOrderPost(localStorage.getItem("token"), {
+      user: user.user,
+      order,
+    }).catch((e) => {
+      console.error("Failed to save group order to database:", e);
+      fetchSensors();
+    });
   };
 
-  const saveSensorOrder = (group, order) => {
+  const saveSensorOrder = async (group, order) => {
     setSensorOrders(prev => {
-      const next = { ...prev, [group]: order };
-      localStorage.setItem(`sensorOrder_${user.user}_${group}`, JSON.stringify(order));
-      return next;
+      return { ...prev, [group]: order };
     });
+    try {
+      await updateSensorOrderPost(localStorage.getItem("token"), {
+        user: user.user,
+        order: order
+      });
+    } catch (e) {
+      console.error("Failed to save sensor order to database:", e);
+    }
   };
 
   const getOrderedSensors = (group) => {
     const arr = dataGroup[group] || [];
     const order = sensorOrders[group] || [];
-    const mapById = Object.fromEntries(arr.map(s => [s.id, s]));
-    return order.map(id => mapById[id]).filter(Boolean);
+    if (!order.length) return arr;
+    const mapById = new Map(arr.map(s => [String(s.id), s]));
+    const usedIds = new Set();
+    const ordered = order.map(id => {
+      usedIds.add(String(id));
+      return mapById.get(String(id));
+    }).filter(Boolean);
+    const remaining = arr.filter(sensor => !usedIds.has(String(sensor.id)));
+    return [...ordered, ...remaining];
+  };
+
+  const formatMeterSum = (value) => {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number === 0) return "";
+    return number.toFixed(1);
   };
 
   // -----------------------------------------------------
@@ -96,6 +114,7 @@ function GroupSensor() {
         const newOrder = [...groupOrder];
         const ia = newOrder.indexOf(a);
         const ib = newOrder.indexOf(b);
+        if (ia < 0 || ib < 0) return;
         [newOrder[ia], newOrder[ib]] = [newOrder[ib], newOrder[ia]];
         saveGroupOrder(newOrder);
       }
@@ -110,6 +129,7 @@ function GroupSensor() {
         const ia = order.indexOf(swapSelect.id);
         const ib = order.indexOf(item.id);
 
+        if (ia < 0 || ib < 0) return;
         [order[ia], order[ib]] = [order[ib], order[ia]];
         saveSensorOrder(group, order);
       }
@@ -145,6 +165,7 @@ function GroupSensor() {
             <th className="border border-gray-300 p-2">Tên cảm biến</th>
             <th className="border border-gray-300 p-2">Áp suất</th>
             <th className="border border-gray-300 p-2">Lưu lượng</th>
+            <th className="border border-gray-300 p-2 w-44">Số tổng đồng hồ</th>
             {/* <th className="border border-gray-300 p-2">Nhiệt Độ</th> */}
             <th className="border border-gray-300 p-2">
               <div>
@@ -184,7 +205,7 @@ function GroupSensor() {
                   </td>
                 )}
 
-                <td className="border border-gray-300 p-2 font-bold" colSpan={swapMode ? 6 : 7}>
+                <td className="border border-gray-300 p-2 font-bold" colSpan={6}>
                   {group}
                 </td>
               </tr>
@@ -212,6 +233,9 @@ function GroupSensor() {
                   </td>
                   <td className="border border-gray-300 text-center p-2">
                     {currentData[sensor.id]?.flow}
+                  </td>
+                  <td className="border border-gray-300 text-center p-2 w-44">
+                    {formatMeterSum(currentData[sensor.id]?.sum)}
                   </td>
                   {/* <td className="border border-gray-300 text-center p-2">
                     {currentData[sensor.id]?.temperature || ""}

@@ -15,10 +15,12 @@ function Login() {
     try {
       const res = await loginPost({ email, password })
       if (res.data.success) {
-        login(res.data.user)
+        // Token phai duoc luu TRUOC khi goi login(), vi login() se dung token nay
+        // de tai danh sach logger.
         localStorage.setItem("token", res.data.token)
         localStorage.setItem("Login", email)
         localStorage.setItem("password", password)
+        await login(res.data.user)
         if (res.data.user.role === "admin" || res.data.user.role === "trial") {
           navigate("/admin-dashboard")
         } else {

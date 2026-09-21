@@ -9,6 +9,8 @@ const homeMessageSchema = new mongoose.Schema({
   createAt: { type: Date, default: Date.now, index: true },
 });
 
+homeMessageSchema.index({ user: 1, createAt: -1 });
+
 const HomeMessage = mongoose.model("HomeMessage", homeMessageSchema);
 
 export default HomeMessage;

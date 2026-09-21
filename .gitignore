@@ -1,7 +1,40 @@
-# add gitignore for me
+node_modules/
 frontend/node_modules/
 server/node_modules/
+mobile/node_modules/
 mqtt/node_modules/
-git rm --cached server/.env
-git rm --cached frontend/.env
+mobile/.expo/
+mobile/dist-check/
 .vscode/
+
+# ===== BI MAT - TUYET DOI KHONG COMMIT =====
+# Truoc day .gitignore ghi nham dong lenh "git rm --cached ..." nen khong co tac dung,
+# khien server/.env, frontend/.env va mongodb.pem bi day len GitHub cong khai.
+.env
+*.env
+!*.env.example
+server/.env
+server/.env.*
+frontend/.env
+frontend/.env.*
+mobile/.env
+mobile/.env.*
+mongodb.pem
+*.pem
+*.key
+gemini-web2api/config.json
+
+# File tam / log / backup
+*.log
+backup.gz
+backups/
+server/upload/
+server/access.log
+server/backup.log
+
+# Ban build sinh ra tu npm run build, va no nhung ca tai khoan MQTT chi-doc
+frontend/dist/
+# Thu muc dung de kiem thu truoc khi deploy, khong thuoc ma nguon
+frontendTest/
+serverTest/
+data_miss/

@@ -44,3 +44,44 @@
 .leaflet-danger {
   animation: leaflet-blink 0.5s infinite;
 }
+
+/* Dau dong cho danh sach trong bao cao AI (xem components/ai/AiMarkdown.jsx).
+   Phai lam bang CSS vi react-markdown v9 khong bao cho li biet no nam trong ul hay ol. */
+.ai-md-ol {
+  counter-reset: ai-md-counter;
+}
+
+.ai-md-ol > .ai-md-li {
+  counter-increment: ai-md-counter;
+}
+
+.ai-md-marker {
+  flex: none;
+}
+
+.ai-md-ul > .ai-md-li > .ai-md-marker {
+  margin-top: 0.625rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: #14b8a6;
+}
+
+.ai-md-ol > .ai-md-li > .ai-md-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.25rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background-color: #0f172a;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.ai-md-ol > .ai-md-li > .ai-md-marker::before {
+  content: counter(ai-md-counter);
+}

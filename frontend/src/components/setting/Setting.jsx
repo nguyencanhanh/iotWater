@@ -1,9 +1,13 @@
-import React, { useState, useEffect } from "react";
+import React, { lazy, Suspense, useState, useEffect } from "react";
+import { FaMapMarkedAlt } from "react-icons/fa";
 import SetInterval from "./SetInterval";
 import SetSample from "./SetSample";
 import { produce } from "immer";
 import { intervalUpdatePut, loggerConfigStatusGet } from '../../api/index';
 import { useAuth } from '../../context/authContext'
+
+// Tai leaflet theo yeu cau, tranh keo ca thu vien ban do vao chunk cai dat.
+const MapPicker = lazy(() => import('../map/MapPicker'));
 // import ScheduleViewer from './settingFlowAlarm'
 
 const overviewMetricOptions = [
@@ -59,15 +63,13 @@ const LoadingSpinner = ({ className = "h-4 w-4" }) => (
 const SettingActionButton = ({ isLoading, className = "", children, disabled, ...props }) => (
   <button
     {...props}
-    disabled={disabled || isLoading}
+    disabled={disabled}
     className={`${className} disabled:cursor-not-allowed disabled:opacity-70`}
   >
-    {isLoading ? (
-      <span className="flex items-center justify-center gap-2">
-        <LoadingSpinner />
-        Đang gửi
-      </span>
-    ) : children}
+    <span className="flex items-center justify-center gap-2">
+      {isLoading && <LoadingSpinner />}
+      {children}
+    </span>
   </button>
 );
 
@@ -79,15 +81,31 @@ const getConfigErrorMessage = (error) => (
   error?.response?.data?.error || error?.message || "Logger chưa phản hồi cấu hình"
 );
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const formatCoordinateInput = (sensor = {}) => {
+  const lat = sensor.lat ?? "";
+  const lng = sensor.lng ?? "";
+  return lat !== "" && lng !== "" ? `${lat}, ${lng}` : "";
+};
 
-const waitForLoggerConfigAck = async (requestId) => {
-  while (requestId) {
-    await sleep(3000);
-    const res = await loggerConfigStatusGet(localStorage.getItem("token"), requestId);
-    if (res.data.acknowledged) return res;
+const parseCoordinateInput = (value) => {
+  const cleaned = String(value || "").replace(/[()]/g, "").trim();
+  const parts = cleaned.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length !== 2) return null;
+
+  const first = Number(parts[0]);
+  const second = Number(parts[1]);
+  if (!Number.isFinite(first) || !Number.isFinite(second)) return null;
+
+  // Ưu tiên định dạng lat,lng như: 21.012721, 105.762814.
+  let lat = first;
+  let lng = second;
+  if (Math.abs(first) > 90 && Math.abs(first) <= 180 && Math.abs(second) <= 90) {
+    lat = second;
+    lng = first;
   }
-  return null;
+
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
 };
 
 export const initData = async (profs, user) => {
@@ -124,10 +142,8 @@ const SettingsButton = (profs) => {
   const [toDate, setToDate] = useState("");
   const [pendingActions, setPendingActions] = useState({});
   const [remotePendingActions, setRemotePendingActions] = useState({});
-  const [coordinate, setCoordinate] = useState({
-    lat: profs.info?.[profs.step]?.lat ?? "",
-    lng: profs.info?.[profs.step]?.lng ?? "",
-  });
+  const [coordinateInput, setCoordinateInput] = useState(formatCoordinateInput(profs.info?.[profs.step]));
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
   const currentSensor = profs.info?.[profs.step] || {};
 
   const isActionPending = (actionKey) => Boolean(pendingActions[actionKey] || remotePendingActions[actionKey]);
@@ -144,11 +160,21 @@ const SettingsButton = (profs) => {
     });
   };
 
-  useEffect(() => {
-    setCoordinate({
-      lat: profs.info?.[profs.step]?.lat ?? "",
-      lng: profs.info?.[profs.step]?.lng ?? "",
+  const setRemoteActionPending = (actionKey, isPending) => {
+    if (!actionKey) return;
+    setRemotePendingActions((prev) => {
+      const next = { ...prev };
+      if (isPending) {
+        next[actionKey] = true;
+      } else {
+        delete next[actionKey];
+      }
+      return next;
     });
+  };
+
+  useEffect(() => {
+    setCoordinateInput(formatCoordinateInput(profs.info?.[profs.step]));
   }, [profs.info, profs.step]);
 
   useEffect(() => {
@@ -159,23 +185,30 @@ const SettingsButton = (profs) => {
     }
 
     let isMounted = true;
-    loggerConfigStatusGet(
-      localStorage.getItem("token"),
-      { sensorId, user: user.user }
-    )
-      .then((res) => {
-        const nextPendingActions = {};
-        (res.data.pendingActions || []).forEach((actionKey) => {
-          nextPendingActions[actionKey] = true;
+    const fetchPendingActions = () => {
+      loggerConfigStatusGet(
+        localStorage.getItem("token"),
+        { sensorId, user: user.user }
+      )
+        .then((res) => {
+          if (!isMounted) return;
+          const nextPendingActions = {};
+          (res.data.pendingActions || []).forEach((actionKey) => {
+            nextPendingActions[actionKey] = true;
+          });
+          setRemotePendingActions(nextPendingActions);
+        })
+        .catch(() => {
+          if (isMounted) setRemotePendingActions({});
         });
-        if (isMounted) setRemotePendingActions(nextPendingActions);
-      })
-      .catch(() => {
-        if (isMounted) setRemotePendingActions({});
-      });
+    };
+
+    fetchPendingActions();
+    const intervalId = window.setInterval(fetchPendingActions, 5000);
 
     return () => {
       isMounted = false;
+      window.clearInterval(intervalId);
     };
   }, [isOpen, currentSensor.id, user.user]);
 
@@ -184,7 +217,6 @@ const SettingsButton = (profs) => {
       alert('Chức năng này không khả dụng cho tài khoản dùng thử')
       return null;
     }
-    if (isActionPending(actionKey)) return null;
 
     setActionPending(actionKey, true);
     try {
@@ -193,11 +225,12 @@ const SettingsButton = (profs) => {
         { ...payload, sen_id: currentSensor.id, user: user.user, configAction: actionKey }
       );
       if (res.data.success) {
-        const finalRes = res.data.pending && res.data.requestId
-          ? await waitForLoggerConfigAck(res.data.requestId)
-          : res;
-        onSuccess?.(finalRes || res);
-        if (successMessage) alert(successMessage);
+        const pendingActionKey = res.data.actionKey || actionKey;
+        if (res.data.pending) {
+          setRemoteActionPending(pendingActionKey, true);
+        }
+        onSuccess?.(res);
+        if (successMessage && !res.data.pending) alert(successMessage);
       }
       return res;
     } catch (error) {
@@ -222,8 +255,7 @@ const SettingsButton = (profs) => {
   }
 
   const handleCoordinateChange = (event) => {
-    const { name, value } = event.target;
-    setCoordinate((prev) => ({ ...prev, [name]: value }));
+    setCoordinateInput(event.target.value);
   };
 
   const handleSubmitCoordinate = async () => {
@@ -232,12 +264,12 @@ const SettingsButton = (profs) => {
       return;
     }
 
-    const lat = Number(coordinate.lat);
-    const lng = Number(coordinate.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      alert("Vui lòng nhập tọa độ hợp lệ");
+    const parsedCoordinate = parseCoordinateInput(coordinateInput);
+    if (!parsedCoordinate) {
+      alert('Vui lòng nhập tọa độ hợp lệ, ví dụ: 21.012721, 105.762814');
       return;
     }
+    const { lat, lng } = parsedCoordinate;
 
     await sendSensorConfig(
       "coordinate",
@@ -369,22 +401,6 @@ const SettingsButton = (profs) => {
     profs.handleData([fromDate, toDate, profs.info[profs.step].id]);
   };
 
-  const handleSelect = async (e) => {
-    const value = Number(e.target.value)
-    await sendSensorConfig(
-      "watch",
-      { watch: value },
-      () => {
-        profs.setdataInfo(prevData =>
-          produce(prevData, draft => {
-            draft[profs.step].watch = value;
-          })
-        );
-      },
-      "Cập nhật thành công"
-    );
-  }
-
   const handleOnOffWT = async () => {
     await sendSensorConfig(
       "temp-toggle",
@@ -485,7 +501,7 @@ const SettingsButton = (profs) => {
   };
 
   return (
-    <div className="relative inline-block text-left z-[1]">
+    <div className="relative z-[60] inline-block text-left">
       {/* Nút cài đặt */}
       {/* <button
         onClick={() => initData()}
@@ -504,29 +520,58 @@ const SettingsButton = (profs) => {
       {/* Thanh cài đặt hiển thị khi nút nhấn */}
       {isOpen && (
         <div
-          className="absolute right-0 mt-2 w-85 bg-teal-600 rounded-lg shadow-lg"
+          className="absolute right-0 z-[70] mt-2 w-85 bg-teal-600 rounded-lg shadow-lg"
           style={{ maxHeight: "400px", overflowY: "auto", width: "min(500px, 90vw)", overflowX: "auto" }}
         >
           <ul className="py-3 px-4 space-y-3 max-h-96 overflow-y-auto">
-            {/* Cài đặt thời gian hiển thị */}
-            <li><SetSample info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role} pending={isActionPending("sample")} /></li>
-            <li><SetInterval info={profs.info} setdataInfo={profs.setdataInfo} step={profs.step} user={user.user} role={user.role} pending={isActionPending("interval")} /></li>
+            <li>
+              <SetSample
+                info={profs.info}
+                setdataInfo={profs.setdataInfo}
+                step={profs.step}
+                user={user.user}
+                role={user.role}
+                pending={isActionPending("sample")}
+                onPendingAction={setRemoteActionPending}
+              />
+            </li>
+            <li>
+              <SetInterval
+                info={profs.info}
+                setdataInfo={profs.setdataInfo}
+                step={profs.step}
+                user={user.user}
+                role={user.role}
+                pending={isActionPending("interval")}
+                onPendingAction={setRemoteActionPending}
+              />
+            </li>
             <li>
               <div className="ml-1 flex justify-between justify-center">
-                <div className='text-white rounded'>Thời gian hiển thị:</div>
-                <select className="bg-teal-600 rounded text-white"
-                  value={profs.info[profs.step].watch}
-                  onChange={handleSelect}
-                  disabled={isActionPending("watch")}
+                <div className='text-white rounded'>Khoảng xem biểu đồ:</div>
+                <select
+                  className="bg-teal-600 rounded text-white"
+                  value={profs.detailChartDisplayInterval ?? 1}
+                  onChange={(e) => profs.setDetailChartDisplayInterval?.(e.target.value)}
                 >
-                  <option value={60}>1 phut</option>
-                  <option value={300}>5 phut</option>
-                  <option value={600}>10 phut</option>
-                  <option value={900}>15 phut</option>
-                  <option value={1800}>30 phut</option>
-                  <option value={3600}>1 gio</option>
+                  {(profs.detailDisplayOptions || []).map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </select>
-                <SettingInlinePending show={isActionPending("watch")} />
+              </div>
+            </li>
+            <li>
+              <div className="ml-1 flex justify-between justify-center">
+                <div className='text-white rounded'>Khoảng xem bảng:</div>
+                <select
+                  className="bg-teal-600 rounded text-white"
+                  value={profs.detailTableDisplayInterval ?? 1}
+                  onChange={(e) => profs.setDetailTableDisplayInterval?.(e.target.value)}
+                >
+                  {(profs.detailDisplayOptions || []).map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </div>
             </li>
             <li>
@@ -535,7 +580,6 @@ const SettingsButton = (profs) => {
                   type="checkbox"
                   checked={profs.info[profs.step].isWarning}
                   onChange={() => handleOnOffWaringLost("isWarning")}
-                  disabled={isActionPending("isWarning")}
                   className="w-5"
                 />
                 Tắt/bật cảnh báo mất logger
@@ -549,7 +593,6 @@ const SettingsButton = (profs) => {
                   type="checkbox"
                   checked={profs.info[profs.step].onP}
                   onChange={() => handleOnOffWaringLost("onP")}
-                  disabled={isActionPending("onP")}
                   className="w-5"
                 />
                 Tắt/bật cảnh báo áp suất ngoài ngưỡng
@@ -562,7 +605,6 @@ const SettingsButton = (profs) => {
                   type="checkbox"
                   checked={profs.info[profs.step].onF}
                   onChange={() => handleOnOffWaringLost("onF")}
-                  disabled={isActionPending("onF")}
                   className="w-5"
                 />
                 Tắt/bật cảnh báo lưu lượng ngoài ngưỡng
@@ -584,7 +626,6 @@ const SettingsButton = (profs) => {
                         type="checkbox"
                         checked={checked}
                         onChange={() => handleNotificationChannelToggle(option.key)}
-                        disabled={isActionPending(`notification-${option.key}`)}
                         className="h-4 w-4 accent-teal-300"
                       />
                       {option.label}
@@ -675,7 +716,6 @@ const SettingsButton = (profs) => {
                     type="checkbox"
                     checked={profs.info[profs.step].temperature && profs.info[profs.step].temperature >= 0}
                     onChange={handleOnOffWT}
-                    disabled={isActionPending("temp-toggle")}
                     className="w-5"
                   />
                   Cảnh báo nhiệt độ:
@@ -950,32 +990,26 @@ const SettingsButton = (profs) => {
             <li>
               <div className="rounded-lg border border-teal-400/40 bg-teal-700/30 p-3">
                 <div className="mb-3 text-sm font-bold text-white">Tọa độ logger</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="text-xs font-semibold text-white">
-                    Vĩ độ
-                    <input
-                      type="number"
-                      step="any"
-                      name="lat"
-                      value={coordinate.lat}
-                      onChange={handleCoordinateChange}
-                      placeholder="Ví dụ: 21.0285"
-                      className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm text-black"
-                    />
-                  </label>
-                  <label className="text-xs font-semibold text-white">
-                    Kinh độ
-                    <input
-                      type="number"
-                      step="any"
-                      name="lng"
-                      value={coordinate.lng}
-                      onChange={handleCoordinateChange}
-                      placeholder="Ví dụ: 105.8542"
-                      className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm text-black"
-                    />
-                  </label>
+                <label className="text-xs font-semibold text-white">
+                  Nhập vĩ độ, kinh độ
+                  <input
+                    type="text"
+                    value={coordinateInput}
+                    onChange={handleCoordinateChange}
+                    placeholder="Ví dụ: 21.012721, 105.762814"
+                    className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm text-black"
+                  />
+                </label>
+                <div className="mt-1 text-[11px] font-semibold text-teal-50/80">
+                  Có thể nhập dạng: (21.012721, 105.762814)
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMapPickerOpen(true)}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20"
+                >
+                  <FaMapMarkedAlt /> Chọn trên bản đồ
+                </button>
                 <SettingActionButton
                   onClick={handleSubmitCoordinate}
                   isLoading={isActionPending("coordinate")}
@@ -984,6 +1018,20 @@ const SettingsButton = (profs) => {
                   Lưu tọa độ
                 </SettingActionButton>
               </div>
+
+              <Suspense fallback={null}>
+                <MapPicker
+                  open={isMapPickerOpen}
+                  initialLat={parseCoordinateInput(coordinateInput)?.lat ?? currentSensor?.lat}
+                  initialLng={parseCoordinateInput(coordinateInput)?.lng ?? currentSensor?.lng}
+                  title={`Chọn toạ độ cho ${currentSensor?.name || "logger"}`}
+                  onCancel={() => setIsMapPickerOpen(false)}
+                  onConfirm={({ lat, lng }) => {
+                    setCoordinateInput(`${lat}, ${lng}`);
+                    setIsMapPickerOpen(false);
+                  }}
+                />
+              </Suspense>
             </li>
             <li>
               <div className="pt-2 border-t border-teal-500/30">

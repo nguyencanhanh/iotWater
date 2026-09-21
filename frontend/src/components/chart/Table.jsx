@@ -1,21 +1,37 @@
 import React, { useEffect, useState, useRef } from "react";
 import { listDataTable } from "./Chart";
 
-let startHour = 0;
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
-function dateString(index, offset, startDate) {
-  const minute = (startDate[0].getMinutes() + index * 5) % 60;
-  if(index !== 0 && minute === 0) startHour++;
-  if(startHour === 24) startHour = 0
-  if (offset != null && startDate[Math.floor((index + offset) / 288)]) {
-    return `${startDate[Math.floor((index + offset) / 288)].toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" })} - ${String(startHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
-  }
-  return `${String(startHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+function formatTableTime(index, fromDate) {
+  const start = new Date(fromDate);
+  if (Number.isNaN(start.getTime())) return "";
+
+  const currentDate = new Date(start.getTime() + index * FIVE_MINUTES_MS);
+  const dateLabel = currentDate.toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
+  const timeLabel = currentDate.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Ho_Chi_Minh",
+  });
+
+  return `${dateLabel} - ${timeLabel}`;
 }
+
+const toFiniteNumber = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
 
 export const SensorDataDisplay = (profs) => {
   const [openDetail, setOpenDetail] = useState(false);
-  const total = profs.param.lastSum && profs.param.firstSum ? (profs.param.lastSum - profs.param.firstSum).toFixed(1) : "Chưa có dữ liệu"
+  const param = profs.param || {};
+  const dailyRows = Array.isArray(profs.sum) ? profs.sum : [];
+  const total = Number.isFinite(Number(param.lastSum)) && Number.isFinite(Number(param.firstSum))
+    ? (param.lastSum - param.firstSum).toFixed(1)
+    : "Chưa có dữ liệu"
   const toggleDetail = () => {
     setOpenDetail(!openDetail); // Toggle chi tiết
   };
@@ -53,21 +69,23 @@ export const SensorDataDisplay = (profs) => {
                 </button>
               </td>
               <td className="border border-gray-300 px-4 py-2">{total}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.avgPressure?.toFixed(1)}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.minPressure?.pressure?.toFixed(1)}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.minPressure?.createAt}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxPressure?.pressure?.toFixed(1)}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxPressure?.createAt}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.avgFlow?.toFixed(1)}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.minFlow?.flow?.toFixed(1)}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.minFlow?.createAt}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxFlow?.flow?.toFixed(1)}</td>
-              <td className="border border-gray-300 px-4 py-2">{profs.param?.maxFlow?.createAt}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.avgPressure?.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.minPressure?.pressure?.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.minPressure?.createAt}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.maxPressure?.pressure?.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.maxPressure?.createAt}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.avgFlow?.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.minFlow?.flow?.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.minFlow?.createAt}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.maxFlow?.flow?.toFixed(1)}</td>
+              <td className="border border-gray-300 px-4 py-2">{param.maxFlow?.createAt}</td>
             </tr>
 
             {/* Hiển thị chi tiết dữ liệu của từng ngày nếu mở */}
-            {openDetail && profs.sum.map((item, index) => {
-              const total = item.lastSum && item.firstSum ? (item.lastSum - item.firstSum).toFixed(1) : "Chưa có dữ liệu"
+            {openDetail && dailyRows.map((item, index) => {
+              const total = Number.isFinite(Number(item.lastSum)) && Number.isFinite(Number(item.firstSum))
+                ? (item.lastSum - item.firstSum).toFixed(1)
+                : "Chưa có dữ liệu"
               return (
                 <tr key={index} className="hover:bg-gray-100">
                   <td className="border border-gray-300 px-4 py-2">{item._id.day}</td>
@@ -78,7 +96,7 @@ export const SensorDataDisplay = (profs) => {
                   <td className="border border-gray-300 px-4 py-2">{item.maxPressure?.pressure?.toFixed(1)}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.maxPressure?.createAt}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.avgFlow?.toFixed(1)}</td>
-                  <td className="border border-gray-300 px-4 py-2">{item.minFlow?.flow.toFixed(1)}</td>
+                  <td className="border border-gray-300 px-4 py-2">{item.minFlow?.flow?.toFixed(1)}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.minFlow?.createAt}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.maxFlow?.flow?.toFixed(1)}</td>
                   <td className="border border-gray-300 px-4 py-2">{item.maxFlow?.createAt}</td>
@@ -96,7 +114,6 @@ export const TableModal = (props) => {
   const tableData = props.dataModal.sensorT;
   const tableContainerRef = useRef(null);
   const headerRef = useRef(null);
-  startHour = props.startHour
   useEffect(() => {
     // Đồng bộ thanh cuộn
     const syncScrollBar = () => {
@@ -138,13 +155,13 @@ export const TableModal = (props) => {
               {tableData.map((row, index) => (
                 <tr key={index} className="h-8 text-lg">
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/4 leading-tight" style={{ width: "30%" }}>
-                    {dateString(index, props.offset, props.startDate)}
+                    {formatTableTime(index, props.fromDate)}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {props.dataModal.sensorH[index] !== null ? (props.dataModal.sensorH[index] + props.adj).toFixed(1) : ""}
+                    {toFiniteNumber(props.dataModal.sensorH[index]) !== null ? (toFiniteNumber(props.dataModal.sensorH[index]) + props.adj).toFixed(1) : ""}
                   </td>
                   <td className="border border-gray-300 px-2 py-0 text-center w-1/5 leading-tight" style={{ width: "20%" }}>
-                    {props.dataModal.flowH[index] !== null ? props.dataModal.flowH[index]?.toFixed(2) : ""}
+                    {toFiniteNumber(props.dataModal.flowH[index]) !== null ? toFiniteNumber(props.dataModal.flowH[index]).toFixed(2) : ""}
                   </td>
                 </tr>
               ))}
@@ -165,27 +182,41 @@ const ScrollableTable = (device) => {
     {
       key: "time",
       label: "Thời gian",
-      render: (_row, index) => device.labels ? device.labels[index] : `${String(Math.floor(index * device.watch / 3600)).padStart(2, "0")}:${String((index * device.watch / 60) % 60).padStart(2, "0")}`,
+      render: (_row, sourceIndex, label) => (
+        label || `${String(Math.floor(sourceIndex * device.watch / 3600)).padStart(2, "0")}:${String((sourceIndex * device.watch / 60) % 60).padStart(2, "0")}`
+      ),
     },
     {
       key: "pressure",
       label: "Áp suất (m)",
-      render: (row) => row ? (row?.Pressure + device.adj).toFixed(1) : "",
+      render: (row) => {
+        const pressure = toFiniteNumber(row?.Pressure);
+        return pressure !== null ? (pressure + device.adj).toFixed(1) : "";
+      },
     },
     {
       key: "pressureCompare",
       label: "Cùng kì (m)",
-      render: (_row, index) => typeof device.data.sensorYRest[index] === 'number' ? (device.data.sensorYRest[index] + device.adj).toFixed(1) : "",
+      render: (_row, sourceIndex) => {
+        const pressure = toFiniteNumber(device.data?.sensorYRest?.[sourceIndex]);
+        return pressure !== null ? (pressure + device.adj).toFixed(1) : "";
+      },
     },
     {
       key: "flow",
       label: "Lưu lượng (m3/h)",
-      render: (row) => row?.flow ?? "",
+      render: (row) => {
+        const flow = toFiniteNumber(row?.flow);
+        return flow !== null ? flow.toFixed(2) : "";
+      },
     },
     {
       key: "flowCompare",
       label: "Cùng kì (m3/h)",
-      render: (_row, index) => device.data.flowYRest[index] !== null ? device.data.flowYRest[index] : "",
+      render: (_row, sourceIndex) => {
+        const flow = toFiniteNumber(device.data?.flowYRest?.[sourceIndex]);
+        return flow !== null ? flow.toFixed(2) : "";
+      },
     },
     {
       key: "battery",
@@ -193,10 +224,25 @@ const ScrollableTable = (device) => {
       render: (row) => row?.battery != null ? `${row.battery}%` : "",
     },
   ].filter((column) => visibleColumns.includes(column.key));
+  const sourceRows = device.tableRows || tableData;
+  const rows = device.labels?.length
+    ? device.labels.map((label, displayIndex) => {
+      const sourceIndex = device.rowIndexes?.[displayIndex] ?? displayIndex;
+      return {
+        label,
+        sourceIndex,
+        row: sourceRows?.[sourceIndex],
+      };
+    })
+    : Array.from({ length: sourceRows?.length || 0 }, (_item, sourceIndex) => ({
+      label: null,
+      sourceIndex,
+      row: sourceRows?.[sourceIndex],
+    }));
 
   useEffect(() => {
-    setTableData(listDataTable[device.step]);
-  }, [device.step]);
+    if (!device.tableRows) setTableData(listDataTable[device.step]);
+  }, [device.step, device.labels?.length]);
 
   useEffect(() => {
     // Đồng bộ thanh cuộn
@@ -209,38 +255,27 @@ const ScrollableTable = (device) => {
       }
     };
     syncScrollBar();
-  }, []);
-
-  const handleScroll = () => {
-    let mode = device.dataModal ? "M" : "";
-    const scrollContainer = document.getElementById(mode + device.step);
-    const scrollTop = scrollContainer.scrollTop;
-    const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
-    if (!device.dataModal) {
-      device.handle((prevStates) => {
-        const updatedStates = [...prevStates];
-        updatedStates[device.step] = Math.floor(scrollTop / (maxScroll / (86400 / device.watch - 5)));
-        return updatedStates;
-      });
-    }
-  };
+  }, [device.currentTimeDate, rows.length]);
 
   return (
-    <div className="relative border border-gray-300 w-full">
+    <div className="relative mt-3 w-full overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.08)]">
       {/* Lớp phủ trong suốt bên trái để chặn cuộn */}
       <div
-        className="absolute top-0 left-0 h-full bg-transparent"
+        className="absolute left-0 top-0 hidden h-full bg-transparent sm:block"
         style={{ width: "50%", pointerEvents: "auto" }}
         onWheel={(e) => e.stopPropagation()} // Chặn cuộn khi chuột ở bên trái
       />
 
       {/* Header cố định */}
-      <div ref={headerRef} className="bg-gray-200">
-        <table className="border-collapse w-full table-fixed">
+      <div ref={headerRef} className="bg-slate-50">
+        <table className="w-full table-fixed border-separate border-spacing-0">
           <thead>
-            <tr className="text-sm text-center">
+            <tr className="text-center">
               {columns.map((column) => (
-                <th key={column.key} className="border border-gray-300 px-3 py-2">
+                <th
+                  key={column.key}
+                  className="border-b border-r border-slate-200 px-2 py-3 text-xs font-black uppercase tracking-wide text-slate-600 last:border-r-0 sm:px-3"
+                >
                   {column.label}
                 </th>
               ))}
@@ -253,20 +288,25 @@ const ScrollableTable = (device) => {
       <div
         ref={tableContainerRef}
         id={device.dataModal ? "M" + device.step : "" + device.step}
-        onScroll={handleScroll}
-        className="overflow-y-auto"
+        className="overflow-y-auto bg-white"
         style={{ maxHeight: "calc(8 * 40px)" }}
       >
-        {!tableData ? (
-          <h1>Loading...</h1>
+        {!tableData && !rows.length ? (
+          <h1 className="p-4 text-center text-sm font-bold text-slate-400">Loading...</h1>
         ) : (
-          <table className="border-collapse w-full table-fixed">
+          <table className="w-full table-fixed border-separate border-spacing-0">
             <tbody>
-              {tableData.map((row, index) => (
-                <tr key={index} className="h-8 text-lg">
+              {rows.map(({ row, sourceIndex, label }, displayIndex) => (
+                <tr
+                  key={`${sourceIndex}-${displayIndex}`}
+                  className="h-9 text-sm font-semibold text-slate-700 odd:bg-white even:bg-slate-50/70 hover:bg-teal-50/70 sm:text-base"
+                >
                   {columns.map((column) => (
-                    <td key={column.key} className="border border-gray-300 px-2 py-0 text-center">
-                      {column.render(row, index)}
+                    <td
+                      key={column.key}
+                      className="border-b border-r border-slate-100 px-2 py-2 text-center last:border-r-0"
+                    >
+                      {column.render(row, sourceIndex, label, displayIndex)}
                     </td>
                   ))}
                 </tr>

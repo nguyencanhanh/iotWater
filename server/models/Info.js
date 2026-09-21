@@ -26,14 +26,21 @@ const infoSchema = new mongoose.Schema({
     displaySettings: {
         overviewMetrics: [String],
         detailColumns: [String],
+        detailChartInterval: { type: Number, default: 1 },
+        detailTableInterval: { type: Number, default: 1 },
     },
     notificationChannels: {
         telegram: { type: Boolean, default: true },
         fcm: { type: Boolean, default: false },
     },
     createAt: { type: Date, default: Date.now },
-    image: { type: String, default: "" }
+    image: { type: String, default: "" },
+    sortOrder: { type: Number, default: 0 }
 })
+
+infoSchema.index({ user: 1, id: 1 });
+infoSchema.index({ user: 1, group: 1 });
+infoSchema.index({ user: 1, createAt: -1 });
 
 const Info = mongoose.model("Info", infoSchema)
 

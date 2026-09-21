@@ -9,6 +9,10 @@ const URL_PRV_TIME = import.meta.env.VITE_URL_PRV_TIME
 const URL_DMA = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/dma')
 const URL_DNP_CONFIG = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/dnp-config')
 const URL_GENERAL_SETTINGS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/general-settings')
+const URL_EXTERNAL_LOGGERS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/external-loggers')
+const URL_TRAFFIC = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/traffic')
+const URL_CHATBOT = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/chatbot')
+const URL_MAP_POINTS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/map-points')
 
 const axiosConfig = (token) => ({
     headers: {
@@ -60,6 +64,64 @@ export const sendFcmTestPost = (token, fcmToken) => {
     )
 }
 
+export const externalLoggerProvidersGet = (token) => {
+    return axios.get(
+        `${URL_EXTERNAL_LOGGERS}/providers`,
+        axiosConfig(token)
+    )
+}
+
+export const externalLoggerPointsGet = (token, provider, options = {}) => {
+    return axios.get(
+        `${URL_EXTERNAL_LOGGERS}/${encodeURIComponent(provider)}/points`,
+        {
+            ...axiosConfig(token),
+            params: options,
+        }
+    )
+}
+
+export const externalLoggerDataGet = (token, provider, number, options) => {
+    return axios.get(
+        `${URL_EXTERNAL_LOGGERS}/${encodeURIComponent(provider)}/${encodeURIComponent(number)}/data`,
+        {
+            ...axiosConfig(token),
+            params: options,
+        }
+    )
+}
+
+export const externalLoggerTokenRefreshPost = (token, provider) => {
+    return axios.post(
+        `${URL_EXTERNAL_LOGGERS}/${encodeURIComponent(provider)}/refresh-token`,
+        {},
+        axiosConfig(token)
+    )
+}
+
+export const trafficHeartbeatPost = (token, sessionId, deviceType) => {
+    return axios.post(
+        `${URL_TRAFFIC}/heartbeat`,
+        { sessionId, deviceType },
+        axiosConfig(token)
+    )
+}
+
+export const chatbotMessagePost = (token, options) => {
+    return axios.post(
+        `${URL_CHATBOT}/message`,
+        options,
+        axiosConfig(token)
+    )
+}
+
+export const trafficStatsGet = (token) => {
+    return axios.get(
+        `${URL_TRAFFIC}/stats`,
+        axiosConfig(token)
+    )
+}
+
 export const getGroup = (token, user) => {
     return axios.get(
         `${URL_GROUP}?user=${encodeURIComponent(user)}`,
@@ -101,6 +163,22 @@ export const deleteGroup = (token, sen) => {
     return axios.post(
         `${URL_GROUP}/delete`,
         sen,
+        axiosConfig(token)
+    )
+}
+
+export const updateSensorOrderPost = (token, data) => {
+    return axios.post(
+        `${URL_GROUP}/update-order`,
+        data,
+        axiosConfig(token)
+    )
+}
+
+export const updateGroupOrderPost = (token, data) => {
+    return axios.post(
+        `${URL_GROUP}/update-group-order`,
+        data,
         axiosConfig(token)
     )
 }
@@ -290,6 +368,129 @@ export const sensorReportPost = (token, options) => {
     );
 }
 
+// SSE qua fetch: axios khong doc duoc stream nen phai dung fetch truc tiep.
+const postSseStream = async (url, token, body, { onDelta, onDone, signal } = {}) => {
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+        signal,
+    });
+
+    if (!response.ok || !response.body) {
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch {
+            payload = null;
+        }
+        const error = new Error(payload?.error || `HTTP ${response.status}`);
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let full = "";
+    let doneData = null;
+
+    const handleEvent = (block) => {
+        const lines = block.split("\n");
+        const event = lines.find((line) => line.startsWith("event:"))?.slice(6).trim() || "message";
+        const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("");
+        if (!data) return;
+
+        let parsed;
+        try {
+            parsed = JSON.parse(data);
+        } catch {
+            return;
+        }
+
+        if (event === "delta" && parsed.text) {
+            full += parsed.text;
+            onDelta?.(parsed.text, full);
+        } else if (event === "done") {
+            doneData = parsed;
+        } else if (event === "error") {
+            const error = new Error(parsed.error || "AI khong phan hoi");
+            error.status = parsed.statusCode;
+            error.payload = parsed;
+            throw error;
+        }
+    };
+
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+            handleEvent(buffer.slice(0, boundary));
+            buffer = buffer.slice(boundary + 2);
+            boundary = buffer.indexOf("\n\n");
+        }
+    }
+
+    onDone?.(full, doneData);
+    return { text: full, ...doneData };
+};
+
+export const mapPointsGet = (token, params = {}) => {
+    const query = new URLSearchParams(
+        Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== "")
+    ).toString();
+    return axios.get(`${URL_MAP_POINTS}${query ? `?${query}` : ""}`, axiosConfig(token));
+};
+
+export const mapPointCreatePost = (token, point) => axios.post(
+    URL_MAP_POINTS,
+    point,
+    axiosConfig(token)
+);
+
+export const mapPointUpdatePut = (token, id, point) => axios.put(
+    `${URL_MAP_POINTS}/${id}`,
+    point,
+    axiosConfig(token)
+);
+
+export const mapPointDelete = (token, id, user) => axios.delete(
+    `${URL_MAP_POINTS}/${id}?user=${encodeURIComponent(user)}`,
+    axiosConfig(token)
+);
+
+export const mapPointHotspotsGet = (token, params = {}) => {
+    const query = new URLSearchParams(
+        Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== "")
+    ).toString();
+    return axios.get(`${URL_MAP_POINTS}/hotspots${query ? `?${query}` : ""}`, axiosConfig(token));
+};
+
+export const sensorReportAiAnalysisStream = (token, options, handlers) => postSseStream(
+    `${URL_SENSOR}/report/ai-analysis/stream`,
+    token,
+    options,
+    handlers
+);
+
+export const dmaAnalyzeStream = (token, options, handlers) => postSseStream(
+    `${URL_DMA}/analyze/stream`,
+    token,
+    options,
+    handlers
+);
+
+export const aiHealthGet = (token) => axios.get(
+    `${import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/ai')}/health`,
+    axiosConfig(token)
+);
+
 export const sensorReportAiAnalysisPost = (token, options) => {
     return axios.post(
         `${URL_SENSOR}/report/ai-analysis`,
@@ -325,10 +526,13 @@ export const exportDataPost = (token, options) => {
 
 const URL_UPLOAD = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/upload');
 
-export const uploadLoggerImage = (token, sensorId, file) => {
+export const uploadLoggerImage = (token, sensorId, file, user) => {
     const formData = new FormData();
-    formData.append('file', file);
     formData.append('sensorId', sensorId);
+    if (user !== undefined && user !== null) {
+        formData.append('user', user);
+    }
+    formData.append('file', file);
     return axios.post(URL_UPLOAD, formData, {
         headers: {
             'Authorization': `Bearer ${token}`,
@@ -337,8 +541,12 @@ export const uploadLoggerImage = (token, sensorId, file) => {
     });
 };
 
-export const getLoggerImageUrl = (sensorId) => {
-    return `${URL_UPLOAD}/image/${sensorId}`;
+export const getLoggerImageUrl = (sensorId, user, cacheKey) => {
+    const params = new URLSearchParams();
+    if (user !== undefined && user !== null) params.set('user', user);
+    if (cacheKey !== undefined && cacheKey !== null) params.set('v', cacheKey);
+    const query = params.toString();
+    return `${URL_UPLOAD}/image/${sensorId}${query ? `?${query}` : ""}`;
 };
 
 export const dmaListGet = (token, user) => {

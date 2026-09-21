@@ -19,6 +19,7 @@ const dmaSchema = new mongoose.Schema({
 });
 
 dmaSchema.index({ user: 1, name: 1 }, { unique: true });
+dmaSchema.index({ user: 1, updatedAt: -1 });
 
 const Dma = mongoose.model("Dma", dmaSchema);
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { changeData } from "../sensor/SensorList"
 // import mqtt from 'mqtt';
 import { Sema } from 'async-sema'
@@ -8,6 +8,7 @@ import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   CategoryScale,
+  Decimation,
   LinearScale,
   PointElement,
   LineElement,
@@ -20,6 +21,7 @@ import zoomPlugin from "chartjs-plugin-zoom";
 // Đăng ký các thành phần của Chart.js
 ChartJS.register(
   CategoryScale,
+  Decimation,
   LinearScale,
   PointElement,
   LineElement,
@@ -33,6 +35,80 @@ ChartJS.register(
 //define
 const pointLage = 0
 //end define
+
+const defaultDetailChartHiddenStates = [false, true, false, true];
+const detailChartHiddenStorageKey = "sensorDetailChartHiddenStatesV2";
+
+const readDetailChartHiddenStates = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(detailChartHiddenStorageKey) || "[]");
+    const normalized = defaultDetailChartHiddenStates.map((fallback, index) => saved[index] ?? fallback);
+    return normalized.some((hidden) => hidden === false) ? normalized : defaultDetailChartHiddenStates;
+  } catch {
+    return defaultDetailChartHiddenStates;
+  }
+};
+
+const formatChartNumber = (value) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return number.toLocaleString("vi-VN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const isWholeHourLabel = (label) => {
+  const match = String(label || "").match(/(?:^|\D)(\d{1,2}):(\d{2})(?:\D|$)/);
+  return Boolean(match) && Number(match[2]) === 0;
+};
+
+const onlyWholeHourTicks = (scale) => {
+  const wholeHourTicks = scale.ticks.filter((tick) => isWholeHourLabel(scale.getLabelForValue(tick.value)));
+  if (wholeHourTicks.length) scale.ticks = wholeHourTicks;
+};
+
+const getWholeHourIndexSet = (labels = []) => {
+  const indexes = new Set();
+  labels.forEach((label, index) => {
+    if (isWholeHourLabel(label)) indexes.add(index);
+  });
+  return indexes;
+};
+
+const filterTicksByIndexSet = (scale, indexSet) => {
+  const wholeHourTicks = scale.ticks.filter((tick) => indexSet.has(Number(tick.value)));
+  if (wholeHourTicks.length) scale.ticks = wholeHourTicks;
+};
+
+const getChartPointX = (chart, index) => {
+  if (!chart || index === null || index === undefined) return null;
+  const pointFromDataset = chart.data.datasets
+    .map((_dataset, datasetIndex) => chart.getDatasetMeta(datasetIndex))
+    .find((meta) => chart.isDatasetVisible(meta.index) && meta.data?.[index])
+    ?.data?.[index];
+  if (Number.isFinite(pointFromDataset?.x)) return pointFromDataset.x;
+
+  const xScale = chart.scales?.x;
+  if (!xScale) return null;
+  const xFromIndex = xScale.getPixelForValue(index);
+  if (Number.isFinite(xFromIndex)) return xFromIndex;
+  const xFromLabel = xScale.getPixelForValue(chart.data.labels?.[index]);
+  return Number.isFinite(xFromLabel) ? xFromLabel : null;
+};
+
+const getSelectedLineStyle = (chart, container, index) => {
+  if (!chart?.chartArea || !container || index === null) return null;
+  const x = getChartPointX(chart, index);
+  if (!Number.isFinite(x)) return null;
+  const canvasRect = chart.canvas.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  return {
+    left: `${canvasRect.left - containerRect.left + x}px`,
+    top: `${canvasRect.top - containerRect.top + chart.chartArea.top}px`,
+    height: `${Math.max(chart.chartArea.bottom - chart.chartArea.top, 0)}px`,
+  };
+};
 
 export let battery = [];
 export let flowsum = [];
@@ -150,7 +226,7 @@ export const ChartPrv = (profs) => {
     datasets: profs.dataset
   }
   // Tùy chọn biểu đồ
-  const options = {
+  const options = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
@@ -181,7 +257,7 @@ export const ChartPrv = (profs) => {
         max: 500,
       },
     },
-  };
+  }), [profs.length]);
 
 
   return (
@@ -193,8 +269,9 @@ export const ChartPrv = (profs) => {
 
 export const ChartMadal = (profs) => {
   const chartRef = useRef(null);
+  const labels = profs.dataLabel?.labels || [];
   const chartData = {
-    labels: profs.dataLabel.labels,
+    labels,
     datasets: [
       {
         label: "Áp suất(m)",
@@ -222,7 +299,7 @@ export const ChartMadal = (profs) => {
   }
 
   // Tùy chọn biểu đồ
-  const options = {
+  const options = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
@@ -265,14 +342,14 @@ export const ChartMadal = (profs) => {
     scales: {
       x: {
         min: 0,
-        max: profs.dataLabel?.labels?.length || profs.length,
+        max: Math.max((labels.length || profs.length || 1) - 1, 0),
         grid: { display: false },
         ticks: {
           autoSkip: false,
-          callback: function (value, index, ticks) {
-            const label = profs.dataLabel?.labels?.[index];
+          callback: function (value) {
+            const label = this.getLabelForValue(value);
             if (!label) return '';
-            const lengthLabels = profs.dataLabel.labels.length
+            const lengthLabels = labels.length
             if (label.includes('-')) return label
             const hour = parseInt(label.split(':')[0]);
             const minute = parseInt(label.split(':')[1]);
@@ -316,7 +393,7 @@ export const ChartMadal = (profs) => {
         grid: { drawOnChartArea: false }, // Ẩn lưới của trục này
       },
     },
-  };
+  }), [labels, profs.dataLabel?.verticalLines, profs.length]);
 
 
   return (
@@ -328,189 +405,489 @@ export const ChartMadal = (profs) => {
 
 const RealTimeLineChart = (profs) => {
   const chartRef = useRef(null);
+  const chartContainerRef = useRef(null);
+  const selectedLineRef = useRef(null);
+  const selectedIndexRef = useRef(null);
+  const lineFrameRef = useRef(null);
+  const selectedStateFrameRef = useRef(null);
+  const zoomRangeRef = useRef(null);
+  const chartRangeKeyRef = useRef("");
+  const [hiddenStates, setHiddenStates] = useState(readDetailChartHiddenStates);
+  const [selectedChartIndex, setSelectedChartIndex] = useState(null);
+  const [zoomLocked, setZoomLocked] = useState(true);
+  const chartRangeKey = `${profs.name}-${profs.rangeKey || ""}-${profs.label?.[0] || ""}-${profs.label?.[profs.label?.length - 1] || ""}-${profs.label?.length || 0}`;
+  const chartLabels = profs.label || [];
+  const wholeHourIndexSet = useMemo(() => getWholeHourIndexSet(chartLabels), [chartLabels]);
+  const filterWholeHourTicks = useCallback((scale) => {
+    filterTicksByIndexSet(scale, wholeHourIndexSet);
+  }, [wholeHourIndexSet]);
+  const formatWholeHourTick = useCallback(function (value) {
+    return wholeHourIndexSet.has(Number(value)) ? this.getLabelForValue(value) : "";
+  }, [wholeHourIndexSet]);
 
-  // Đọc trạng thái ẩn/hiện từ localStorage
-  const hiddenStates = JSON.parse(localStorage.getItem("chartHiddenStates") || "[]");
+  if (chartRangeKeyRef.current !== chartRangeKey) {
+    chartRangeKeyRef.current = chartRangeKey;
+    zoomRangeRef.current = null;
+  }
 
-  const [chartData, setData] = useState({
-    labels: profs.label,
+  const chartData = useMemo(() => ({
+    labels: chartLabels,
     datasets: [
       {
-        label: "Áp(m)",
-        data: profs.data.dataPressure,
-        borderColor: "#FF0000",
-        tension: 0.1,
+        label: "Áp suất",
+        data: profs.data?.dataPressure || [],
+        borderColor: "#ff5a5f",
+        backgroundColor: "rgba(255, 90, 95, 0.12)",
+        tension: 0.28,
         pointRadius: pointLage,
-        borderWidth: 1,
-        pointBackgroundColor: "#FF0000",
+        pointHoverRadius: 4,
+        borderWidth: 2,
+        pointBackgroundColor: "#ff5a5f",
         yAxisID: "y1",
-        hidden: hiddenStates[0] ?? true,  // <-- Gán từ localStorage
-        spanGaps: true
+        hidden: hiddenStates[0],
+        spanGaps: true,
+        unit: "m",
       },
       {
-        label: "Áp cùng kỳ(m)",
-        data: profs.data.sensorYRest,
-        borderColor: "#000000",
-        tension: 0.1,
+        label: "Áp suất cùng kỳ",
+        data: profs.data?.sensorYRest || [],
+        borderColor: "#64748b",
+        backgroundColor: "rgba(100, 116, 139, 0.12)",
+        tension: 0.28,
         pointRadius: pointLage,
-        borderWidth: 1,
-        pointBackgroundColor: "#000000",
+        pointHoverRadius: 4,
+        borderWidth: 1.6,
+        borderDash: [5, 5],
+        pointBackgroundColor: "#64748b",
         yAxisID: "y1",
-        hidden: hiddenStates[1] ?? true,
-        spanGaps: true
+        hidden: hiddenStates[1],
+        spanGaps: true,
+        unit: "m",
       },
       {
-        label: "Lưu lượng(m3/h)",
-        data: profs.data.dataFlow,
-        borderColor: "#000080",
-        tension: 0.1,
+        label: "Lưu lượng",
+        data: profs.data?.dataFlow || [],
+        borderColor: "#2563eb",
+        backgroundColor: "rgba(37, 99, 235, 0.12)",
+        tension: 0.28,
         pointRadius: pointLage,
-        borderWidth: 1,
-        pointBackgroundColor: "#000080",
+        pointHoverRadius: 4,
+        borderWidth: 2,
+        pointBackgroundColor: "#2563eb",
         yAxisID: "y2",
-        hidden: hiddenStates[2] ?? true,
-        spanGaps: true
+        hidden: hiddenStates[2],
+        spanGaps: true,
+        unit: "m³/h",
       },
       {
-        label: "Lưu lượng cùng kỳ(m3/h)",
-        data: profs.data.flowYRest,
-        borderColor: "#FFFF00",
-        tension: 0.1,
+        label: "Lưu lượng cùng kỳ",
+        data: profs.data?.flowYRest || [],
+        borderColor: "#f59e0b",
+        backgroundColor: "rgba(245, 158, 11, 0.12)",
+        tension: 0.28,
         pointRadius: pointLage,
-        borderWidth: 1,
-        pointBackgroundColor: "#FFFF00",
+        pointHoverRadius: 4,
+        borderWidth: 1.6,
+        borderDash: [5, 5],
+        pointBackgroundColor: "#f59e0b",
         yAxisID: "y2",
-        hidden: hiddenStates[3] ?? true,
-        spanGaps: true
+        hidden: hiddenStates[3],
+        spanGaps: true,
+        unit: "m³/h",
       },
     ],
-  });
+  }), [
+    chartLabels,
+    hiddenStates,
+    profs.data?.dataPressure,
+    profs.data?.dataFlow,
+    profs.data?.sensorYRest,
+    profs.data?.flowYRest,
+  ]);
 
-  const [options, setOptions] = useState({
+  const defaultXMax = Math.max((chartLabels.length || 1) - 1, 0);
+  const savedZoomRange = zoomRangeRef.current;
+  const zoomMin = Number.isFinite(savedZoomRange?.min)
+    ? Math.min(Math.max(savedZoomRange.min, 0), defaultXMax)
+    : 0;
+  const zoomMax = Number.isFinite(savedZoomRange?.max) && savedZoomRange.max > zoomMin
+    ? Math.min(Math.max(savedZoomRange.max, zoomMin), defaultXMax)
+    : defaultXMax;
+
+  const saveZoomRange = useCallback(() => {
+    const xScale = chartRef.current?.scales?.x;
+    if (!xScale || !Number.isFinite(xScale.min) || !Number.isFinite(xScale.max)) return;
+    zoomRangeRef.current = { min: xScale.min, max: xScale.max };
+  }, []);
+
+  const syncSelectedLinePosition = useCallback((nextIndex = selectedIndexRef.current) => {
+    const line = selectedLineRef.current;
+    if (!line) return;
+    const nextStyle = getSelectedLineStyle(chartRef.current, chartContainerRef.current, nextIndex);
+    if (!nextStyle) {
+      line.style.display = "none";
+      return;
+    }
+    line.style.display = "block";
+    line.style.left = nextStyle.left;
+    line.style.top = nextStyle.top;
+    line.style.height = nextStyle.height;
+  }, []);
+
+  const moveSelectedLine = useCallback((nextIndex) => {
+    if (nextIndex === null || nextIndex === undefined) return;
+    selectedIndexRef.current = nextIndex;
+    if (lineFrameRef.current) return;
+    lineFrameRef.current = requestAnimationFrame(() => {
+      lineFrameRef.current = null;
+      syncSelectedLinePosition(selectedIndexRef.current);
+    });
+  }, [syncSelectedLinePosition]);
+
+  const commitSelectedIndex = useCallback((nextIndex) => {
+    if (nextIndex === null || nextIndex === undefined) return;
+    const indexChanged = selectedIndexRef.current !== nextIndex;
+    moveSelectedLine(nextIndex);
+    if (indexChanged && !selectedStateFrameRef.current) {
+      selectedStateFrameRef.current = requestAnimationFrame(() => {
+        selectedStateFrameRef.current = null;
+        setSelectedChartIndex((current) => (
+          current === selectedIndexRef.current ? current : selectedIndexRef.current
+        ));
+      });
+    }
+  }, [moveSelectedLine]);
+
+  const selectChartIndexFromEvent = useCallback((event) => {
+    const chart = chartRef.current;
+    if (!chart?.chartArea || !chartData.labels.length) return;
+    const sourceEvent = event?.nativeEvent || event?.native || event;
+    const clientX = sourceEvent?.touches?.[0]?.clientX
+      ?? sourceEvent?.changedTouches?.[0]?.clientX
+      ?? sourceEvent?.clientX;
+    const canvasRect = chart.canvas.getBoundingClientRect();
+    const x = Number.isFinite(clientX) ? clientX - canvasRect.left : sourceEvent?.x;
+    if (!Number.isFinite(x)) return;
+
+    const boundedX = Math.min(Math.max(x, chart.chartArea.left), chart.chartArea.right);
+    const nextPoint = chartData.labels.reduce(
+      (closest, _label, index) => {
+        const pointX = getChartPointX(chart, index);
+        if (!Number.isFinite(pointX)) return closest;
+        const distance = Math.abs(pointX - boundedX);
+        return distance < closest.distance ? { index, distance } : closest;
+      },
+      { index: null, distance: Infinity }
+    );
+
+    if (nextPoint.index === null) return;
+    commitSelectedIndex(nextPoint.index);
+  }, [chartData.labels, commitSelectedIndex]);
+
+  const toggleDataset = useCallback((index) => {
+    setHiddenStates((prev) => {
+      const next = defaultDetailChartHiddenStates.map((fallback, stateIndex) => prev[stateIndex] ?? fallback);
+      next[index] = !next[index];
+      localStorage.setItem(detailChartHiddenStorageKey, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    zoomRangeRef.current = null;
+    chartRef.current?.resetZoom?.();
+    requestAnimationFrame(() => syncSelectedLinePosition());
+  }, [syncSelectedLinePosition]);
+
+  useEffect(() => {
+    zoomRangeRef.current = null;
+    chartRef.current?.resetZoom?.();
+    const frame = requestAnimationFrame(() => {
+      chartRef.current?.update?.("none");
+      syncSelectedLinePosition();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [chartRangeKey, syncSelectedLinePosition]);
+
+  const handleWheelZoom = useCallback((event) => {
+    if (zoomLocked) return;
+    const chart = chartRef.current;
+    if (!chart?.zoom || !chart.canvas || !event.deltaY) return;
+    event.preventDefault();
+    event.stopImmediatePropagation?.();
+    event.stopPropagation();
+
+    const canvasRect = chart.canvas.getBoundingClientRect();
+    const focalPoint = {
+      x: event.clientX - canvasRect.left,
+      y: event.clientY - canvasRect.top,
+    };
+    const zoomAmount = event.deltaY < 0 ? 1.18 : 0.86;
+    chart.zoom({ x: zoomAmount, y: 1, focalPoint }, "zoom");
+    saveZoomRange();
+    requestAnimationFrame(() => syncSelectedLinePosition());
+  }, [zoomLocked, saveZoomRange, syncSelectedLinePosition]);
+
+  const options = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
-      mode: 'nearest',
+      mode: 'index',
       axis: 'x',
       intersect: false,
     },
     plugins: {
-      legend: {
-        display: true,
-        labels: { boxWidth: 10 },
-        onClick: (e, legendItem, legend) => {
-          const index = legendItem.datasetIndex;
-          const chart = chartRef.current;
-
-          const meta = chart.getDatasetMeta(index);
-          meta.hidden = !meta.hidden;
-          chart.update();
-
-          // Ghi lại trạng thái hidden
-          const newHiddenStates = chart.data.datasets.map((_, i) => chart.getDatasetMeta(i).hidden ?? false);
-          localStorage.setItem("chartHiddenStates", JSON.stringify(newHiddenStates));
-        }
-      },
-      tooltip: { enabled: true },
-      zoom: {
-        pan: { enabled: true, mode: "x" },
-        zoom: {
-          wheel: { enabled: true },
-          pinch: { enabled: true },
-          mode: "x",
-          speed: 0.1,
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: "rgba(15, 23, 42, 0.92)",
+        borderColor: "rgba(226, 232, 240, 0.35)",
+        borderWidth: 1,
+        cornerRadius: 12,
+        padding: 12,
+        titleColor: "#f8fafc",
+        bodyColor: "#f8fafc",
+        callbacks: {
+          label: (ctx) => `${ctx.dataset.label}: ${formatChartNumber(ctx.parsed.y)} ${ctx.dataset.unit || ""}`,
         },
       },
-      annotation: {
-        annotations: {
-          highlightBox: {
-            type: "box",
-            xMin: 0,
-            xMax: 5,
-            backgroundColor: "rgba(255, 0, 0, 0.3)",
-            borderWidth: 1,
+      decimation: {
+        enabled: chartData.labels.length > 1200,
+        algorithm: "lttb",
+        samples: 700,
+      },
+      zoom: {
+        pan: {
+          enabled: !zoomLocked,
+          mode: "x",
+          onPanComplete: () => {
+            saveZoomRange();
+            requestAnimationFrame(() => syncSelectedLinePosition());
+          },
+        },
+        zoom: {
+          wheel: { enabled: false },
+          pinch: { enabled: !zoomLocked },
+          mode: "x",
+          speed: 0.1,
+          onZoomComplete: () => {
+            saveZoomRange();
+            requestAnimationFrame(() => syncSelectedLinePosition());
           },
         },
       },
     },
+    onHover: (_event, elements) => {
+      if (elements?.length) {
+        commitSelectedIndex(elements[0].index);
+      }
+    },
+    onClick: (event) => {
+      selectChartIndexFromEvent(event);
+    },
     scales: {
       x: {
-        min: 0,
-        max: profs.label?.length,
-        grid: { display: false },
+        min: zoomMax > zoomMin ? zoomMin : 0,
+        max: zoomMax > zoomMin ? zoomMax : defaultXMax,
+        afterBuildTicks: filterWholeHourTicks,
+        border: { display: false },
+        grid: { color: "#e9eef5", drawTicks: false },
+        ticks: {
+          color: "#94a3b8",
+          font: { weight: "700" },
+          callback: formatWholeHourTick,
+        },
       },
       y1: {
         position: "left",
-        title: { display: true, text: "Áp suất (m)" },
+        title: { display: false },
         min: 0,
-        max: 50,
-        grid: { color: "rgba(200, 200, 200, 0.2)" },
+        border: { display: false },
+        grid: { color: "#e9eef5", drawTicks: false },
+        ticks: { color: "#ff5a5f", font: { weight: "800" } },
       },
       y2: {
         position: "right",
-        title: { display: true, text: "Lưu lượng (m3/h)" },
+        title: { display: false },
         min: 0,
-        max: 500,
+        border: { display: false },
         grid: { drawOnChartArea: false },
+        ticks: { color: "#2563eb", font: { weight: "800" } },
       },
     },
-  });
+  }), [
+    chartData.labels.length,
+    defaultXMax,
+    filterWholeHourTicks,
+    formatWholeHourTick,
+    saveZoomRange,
+    selectChartIndexFromEvent,
+    syncSelectedLinePosition,
+    commitSelectedIndex,
+    zoomLocked,
+    zoomMax,
+    zoomMin,
+  ]);
+
+  const selectedValues = useMemo(() => selectedChartIndex === null
+    ? []
+    : chartData.datasets
+      .map((dataset, index) => ({ dataset, index }))
+      .filter(({ index }) => !hiddenStates[index])
+      .map(({ dataset }) => ({
+        label: dataset.label,
+        color: dataset.borderColor,
+        value: dataset.data?.[selectedChartIndex],
+        unit: dataset.unit,
+      }))
+      .filter((item) => item.value !== null && item.value !== undefined), [chartData.datasets, hiddenStates, selectedChartIndex]);
+  const chartPlugins = useMemo(() => [], []);
+
+  useEffect(() => () => {
+    if (lineFrameRef.current) cancelAnimationFrame(lineFrameRef.current);
+    if (selectedStateFrameRef.current) cancelAnimationFrame(selectedStateFrameRef.current);
+  }, []);
 
   useEffect(() => {
-    setData((prevData) => {
-      const updated = { ...prevData };
-      updated.labels = profs.label;
-      updated.datasets[0].data = profs.data.dataPressure;
-      updated.datasets[1].data = profs.data.sensorYRest;
-      updated.datasets[2].data = profs.data.dataFlow;
-      updated.datasets[3].data = profs.data.flowYRest;
-      return updated;
+    setSelectedChartIndex((prev) => {
+      const length = chartLabels.length || 0;
+      const nextIndex = prev !== null && prev >= 0 && prev < length ? prev : length - 1;
+      selectedIndexRef.current = length ? nextIndex : null;
+      requestAnimationFrame(() => syncSelectedLinePosition(selectedIndexRef.current));
+      return length ? nextIndex : null;
     });
-  }, [profs.label, profs.data]);
+  }, [chartLabels.length, profs.name, syncSelectedLinePosition]);
 
   useEffect(() => {
-    setOptions((prevOptions) => {
-      const updated = { ...prevOptions };
-      if (updated.scales && updated.scales.x) {
-        updated.scales.x.max = profs.label?.length;
-      }
-      return updated;
-    });
-  }, [profs.label?.length]);
+    const chartContainer = chartContainerRef.current;
+    if (!chartContainer) return;
+    if (zoomLocked) return;
+
+    chartContainer.addEventListener("wheel", handleWheelZoom, { passive: false });
+    return () => {
+      chartContainer.removeEventListener("wheel", handleWheelZoom);
+    };
+  }, [zoomLocked, chartData.labels.length, handleWheelZoom]);
 
   useEffect(() => {
-    if (chartRef.current) {
-      const chart = chartRef.current;
-      const annotation = chart.options.plugins.annotation;
+    const frame = requestAnimationFrame(() => syncSelectedLinePosition());
+    const handleResize = () => syncSelectedLinePosition();
+    window.addEventListener("resize", handleResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [selectedChartIndex, chartLabels.length, hiddenStates, syncSelectedLinePosition]);
 
-      annotation.annotations.highlightBox.xMin = profs.scrollPosition;
-      annotation.annotations.highlightBox.xMax = profs.scrollPosition + 5;
-
-      chart.update();
-    }
-  }, [profs.scrollPosition]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => syncSelectedLinePosition());
+    return () => cancelAnimationFrame(frame);
+  }, [chartData.labels.length, hiddenStates, syncSelectedLinePosition]);
 
   return (
-    <div className="w-full h-60">
-      <Line ref={chartRef} data={chartData} options={options} />
+    <div className="mb-4 rounded-[24px] border border-slate-200 bg-white p-3 shadow-[0_12px_34px_rgba(15,23,42,0.08)]">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs font-extrabold text-slate-500">
+            {chartData.datasets.map((dataset, index) => (
+              <button
+                key={dataset.label}
+                type="button"
+                onClick={() => toggleDataset(index)}
+                className={`inline-flex items-center gap-2 transition ${hiddenStates[index] ? "opacity-40" : "opacity-100"}`}
+                title={hiddenStates[index] ? "Bấm để hiện đường này" : "Bấm để ẩn đường này"}
+              >
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: dataset.borderColor }} />
+                <span>{dataset.label}{dataset.unit ? ` (${dataset.unit})` : ""}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setZoomLocked((prev) => !prev)}
+            className={`h-9 rounded-xl px-3 text-xs font-black shadow-sm transition ${
+              zoomLocked
+                ? "bg-slate-900 text-white hover:bg-slate-800"
+                : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {zoomLocked ? "Mở khóa zoom" : "Khóa zoom"}
+          </button>
+          {!zoomLocked && (
+            <button
+              type="button"
+              onClick={resetZoom}
+              className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-600 shadow-sm transition hover:bg-slate-50"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div
+        ref={chartContainerRef}
+        className={`relative h-[300px] overflow-hidden rounded-[18px] bg-white p-1 sm:h-[340px] ${
+          zoomLocked ? "cursor-crosshair" : "cursor-zoom-in"
+        }`}
+        onClick={selectChartIndexFromEvent}
+        style={{ touchAction: zoomLocked ? "pan-y" : "none" }}
+      >
+        <Line ref={chartRef} data={chartData} options={options} plugins={chartPlugins} />
+        <div
+          ref={selectedLineRef}
+          className="pointer-events-none absolute z-0 hidden w-0 -translate-x-1/2 border-l-2 border-dashed border-slate-900/90 will-change-[left,top,height]"
+        />
+      </div>
+
+      {selectedValues.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+          <div className="mb-2 text-sm font-black text-slate-700">
+            {profs.label?.[selectedChartIndex] || `Điểm ${selectedChartIndex + 1}`}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {selectedValues.map((item) => (
+              <div key={item.label} className="flex min-w-0 items-center justify-between gap-3 text-sm font-black">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className="truncate" style={{ color: item.color }}>{item.label}:</span>
+                </div>
+                <span className="shrink-0" style={{ color: item.color }}>
+                  {formatChartNumber(item.value)} {item.unit}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export const Battery = ({ step, data, temp, dataInfo }) => {
+export const Battery = ({ step, data, dataInfo }) => {
   const [batteryLevel, setBatteryLevel] = useState(data);
-  const [tem, setTempurature] = useState(temp);
   const [signalStrength, setSingnals] = useState(0)
+  const signalTimeoutRef = useRef(null);
+
   useEffect(() => {
-    setBatteryLevel(battery[step] || data);
-    setTempurature(temperature[step] || temp)
+    const nextBattery = battery[step] || data;
+    setBatteryLevel((current) => current === nextBattery ? current : nextBattery);
+
+    if (signalTimeoutRef.current) clearTimeout(signalTimeoutRef.current);
     if (battery[step]) {
-      setSingnals(3)
+      setSingnals((current) => current === 3 ? current : 3)
     }
-    setTimeout(() => {
-      setSingnals(0)
-    }, dataInfo?.interval * 1000 + 40000);
-  }, [changeData]);
+
+    const offlineDelay = (Number(dataInfo?.interval) || 0) * 1000 + 40000;
+    signalTimeoutRef.current = setTimeout(() => {
+      setSingnals((current) => current === 0 ? current : 0)
+    }, offlineDelay);
+
+    return () => {
+      if (signalTimeoutRef.current) clearTimeout(signalTimeoutRef.current);
+    };
+  }, [changeData, data, dataInfo?.interval, step]);
 
   const getBatteryColor = (percentage) => {
     if (percentage > 50) return "bg-green-500";

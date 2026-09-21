@@ -12,12 +12,18 @@ import axios from 'axios';
 import { createSign } from 'crypto';
 import { clientRedis } from "./redis.js";
 
+// Link gui kem thong bao Telegram/FCM. Doi domain web thi sua PUBLIC_WEB_URL trong .env.
+const PUBLIC_WEB_URL = process.env.PUBLIC_WEB_URL || "https://khca-s.static.good-dns.net/";
+
 const allUser = [0]
 const allSensors = []
 const allPrv = []
 const countLost = []
-const host = 'khca-s.static.good-dns.net';
-const port = 1883;
+// Broker mosquitto chay ngay tren may nay. Dat MQTT_HOST=127.0.0.1 trong .env de
+// backend khong phai di vong qua DNS ngoai. Logger ngoai hien truong van noi toi
+// host cu, doi bien nay khong lien quan gi toi chung.
+const host = process.env.MQTT_HOST || 'khca-s.static.good-dns.net';
+const port = Number(process.env.MQTT_PORT) || 1883;
 const clientId = `mqtt_${Math.random().toString(16).slice(3)}`
 
 const connectUrl = `mqtt://${host}:${port}`
@@ -210,34 +216,95 @@ async function getFcmAccessToken() {
   return fcmAccessToken;
 }
 
-async function sendFcmMessage(message) {
+async function sendFcmMessage(message, sensorInfo = null) {
   const projectId = process.env.FCM_PROJECT_ID;
-  const token = await getFcmAccessToken();
-  if (!projectId || !token) return false;
+  const token = projectId ? await getFcmAccessToken() : null;
 
-  const savedTokens = await FcmToken.find({ active: true }).distinct("token");
+  const tokenQuery = { active: true };
+  if (Number.isFinite(Number(sensorInfo?.user))) {
+    tokenQuery.userNumber = Number(sensorInfo.user);
+  }
+  const savedTokenDocs = await FcmToken.find(tokenQuery).select("token platform").lean();
+  const expoTokens = savedTokenDocs
+    .filter((item) => item.platform === "expo" || String(item.token).startsWith("ExpoPushToken") || String(item.token).startsWith("ExponentPushToken"))
+    .map((item) => item.token);
+  const fcmSavedTokens = savedTokenDocs
+    .filter((item) => item.platform !== "expo" && !String(item.token).startsWith("ExpoPushToken") && !String(item.token).startsWith("ExponentPushToken"))
+    .map((item) => item.token);
   const envTokens = (process.env.FCM_DEVICE_TOKENS || "")
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  const deviceTokens = [...new Set([...savedTokens, ...envTokens])];
+  const deviceTokens = [...new Set([...fcmSavedTokens, ...envTokens])];
   const topic = process.env.FCM_TOPIC?.trim();
-  const targets = topic ? [{ topic }] : deviceTokens.map((deviceToken) => ({ token: deviceToken }));
-  if (targets.length === 0) return false;
+  const fcmTargets = topic ? [{ topic }] : deviceTokens.map((deviceToken) => ({ token: deviceToken }));
+  const expoTargets = [...new Set(expoTokens)];
+  if (fcmTargets.length === 0 && expoTargets.length === 0) return false;
 
-  const results = await Promise.allSettled(targets.map(async (target) => {
+  const expoResults = await Promise.allSettled(expoTargets.map(async (expoToken) => {
+    try {
+      await axios.post(
+        "https://exp.host/--/api/v2/push/send",
+        {
+          to: expoToken,
+          title: "Cảnh báo IoT Water",
+          body: message,
+          data: {
+            type: "warning",
+            message,
+          },
+          sound: "default",
+          priority: "high",
+          channelId: "water-alerts",
+        },
+        {
+          headers: {
+            Accept: "application/json",
+            "Accept-Encoding": "gzip, deflate",
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      return true;
+    } catch (error) {
+      const status = error.response?.status;
+      const detail = error.response?.data || error.message;
+      console.error("Lỗi Expo Push:", JSON.stringify({ status, detail }));
+      if (status === 400 || status === 404) {
+        await FcmToken.findOneAndUpdate(
+          { token: expoToken },
+          { $set: { active: false, updatedAt: new Date() } }
+        );
+      }
+      return false;
+    }
+  }));
+
+  const fcmResults = token ? await Promise.allSettled(fcmTargets.map(async (target) => {
     try {
       await axios.post(
         `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
         {
           message: {
             ...target,
+            notification: {
+              title: "Cảnh báo IoT Water",
+              body: message,
+            },
+            android: {
+              priority: "HIGH",
+              notification: {
+                channel_id: "water-alerts",
+                sound: "default",
+                priority: "HIGH",
+              },
+            },
             webpush: {
               headers: {
                 Urgency: "high",
               },
               fcm_options: {
-                link: "https://khca-s.static.good-dns.net/",
+                link: PUBLIC_WEB_URL,
               },
             },
             data: {
@@ -248,7 +315,7 @@ async function sendFcmMessage(message) {
               icon: "/img/logo.jpeg",
               badge: "/img/logo.jpeg",
               tag: `iot-water-${Date.now()}`,
-              link: "https://khca-s.static.good-dns.net/",
+              link: PUBLIC_WEB_URL,
             },
           },
         },
@@ -272,10 +339,12 @@ async function sendFcmMessage(message) {
       }
       return false;
     }
-  }));
+  })) : [];
 
+  const results = [...expoResults, ...fcmResults];
+  const targetCount = expoTargets.length + (token ? fcmTargets.length : 0);
   const successCount = results.filter((result) => result.status === "fulfilled" && result.value === true).length;
-  console.log(`FCM gửi cảnh báo: ${successCount}/${targets.length} thiết bị nhận lệnh gửi`);
+  console.log(`Push gửi cảnh báo: ${successCount}/${targetCount} thiết bị nhận lệnh gửi`);
   return successCount > 0;
 }
 
@@ -289,7 +358,7 @@ async function sendWarningNotification(sensorInfo, message, meta = {}) {
     jobs.push(sendTelegramMessage(process.env.TOKEN, process.env.TELEGRAM_CHAT_ID, message));
   }
   if (channels.fcm) {
-    jobs.push(sendFcmMessage(message));
+    jobs.push(sendFcmMessage(message, sensorInfo));
   }
 
   const results = await Promise.allSettled(jobs);
@@ -484,6 +553,12 @@ const connectMqtt = async () => {
     clean: true,
     connectTimeout: 4000,
     reconnectPeriod: 5000,
+    // Broker da bat ACL: an danh chi duoc GUI du lieu len, khong doc duoc.
+    // Backend phai dang nhap moi subscribe va gui lenh dieu khien duoc.
+    ...(process.env.MQTT_USERNAME ? {
+      username: process.env.MQTT_USERNAME,
+      password: process.env.MQTT_PASSWORD,
+    } : {}),
   });
   client.on("connect", () => {
     console.log("Connected to MQTT broker");
@@ -520,7 +595,7 @@ const connectMqtt = async () => {
               battery: message.b || messageData.b,
               Pressure: message.p,
               temperature: messageData.t,
-              sum: isNaN(messageData.s) ? 0 : messageData.s / 10,
+              sum: isNaN(messageData.s) ? 0 : Number(messageData.s) / 1000,
               flow: message.f,
               createAt: message.t
             });
@@ -604,9 +679,6 @@ const connectMqtt = async () => {
             user: user,
             battery: messageData.b,
             Pressure: messageData.res,
-            temperature: messageData.t || 0,
-            sum: messageData.s,
-            flow: messageData.f,
             createAt: now
           });
           await newSensor.save();
@@ -642,7 +714,9 @@ const connectMqtt = async () => {
       }
     } catch (error) {
       if (error.res && !error.res.data.success) {
-        alert(error.res.data.error);
+        console.error(error.res.data.error);
+      } else {
+        console.error("MQTT message handler error:", error.message || error);
       }
     }
   });

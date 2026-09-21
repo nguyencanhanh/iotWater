@@ -10,10 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.0",
-    "@mui/material": "^6.3.0",
-    "@mui/x-charts": "^7.23.2",
     "antd": "^5.23.0",
     "async-sema": "^3.1.1",
     "autoprefixer": "^10.4.20",
@@ -25,21 +21,20 @@
     "chartjs-plugin-crosshair": "^2.0.0",
     "chartjs-plugin-zoom": "^2.2.0",
     "date-fns": "^4.1.0",
-    "dayjs": "^1.11.13",
     "immer": "^10.1.1",
     "leaflet": "^1.9.4",
-    "luxon": "^3.5.0",
     "mqtt": "^5.10.3",
     "postcss": "^8.4.49",
+    "prop-types": "^15.8.1",
     "react": "^18.3.1",
     "react-chartjs-2": "^5.3.0",
-    "react-data-table-component": "^7.6.2",
     "react-dom": "^18.3.1",
     "react-icons": "^5.4.0",
     "react-leaflet": "^4.2.1",
+    "react-markdown": "^9.1.0",
     "react-router-dom": "^7.1.1",
-    "recharts": "^2.15.0",
-    "styled-components": "^6.1.13"
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

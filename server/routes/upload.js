@@ -6,6 +6,30 @@ import verifyUser from '../middleware/authMiddleware.js';
 import Info from '../models/Info.js';
 
 const router = express.Router();
+const normalizeNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const getSensorQuery = (sensorId, user) => {
+  const numericSensorId = normalizeNumber(sensorId);
+  if (numericSensorId === null) return null;
+
+  const query = { id: numericSensorId };
+  const numericUser = normalizeNumber(user);
+  if (numericUser !== null) query.user = numericUser;
+  return query;
+};
+
+const safeUnlink = (filePath) => {
+  fs.unlink(filePath, (error) => {
+    if (error && error.code !== 'ENOENT') {
+      console.error('Remove old logger image error:', error);
+    }
+  });
+};
+
+const isLegacyUnknownImage = (filename = '') => /^logger_unknown\./.test(filename);
 
 // Cấu hình multer lưu file vào thư mục upload/
 const uploadDir = path.join(path.resolve(), 'upload');
@@ -18,9 +42,10 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const sensorId = req.body.sensorId || 'unknown';
+    const sensorId = normalizeNumber(req.body.sensorId) ?? 'unknown';
+    const user = normalizeNumber(req.body.user) ?? 'unknown';
     const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, `logger_${sensorId}${ext}`);
+    cb(null, `logger_${user}_${sensorId}_${Date.now()}${ext}`);
   }
 });
 
@@ -47,16 +72,27 @@ router.post('/', verifyUser, upload.single('file'), async (req, res) => {
     }
 
     const sensorId = req.body.sensorId;
-    if (!sensorId) {
+    const query = getSensorQuery(sensorId, req.body.user);
+    if (!query) {
+      safeUnlink(req.file.path);
       return res.status(400).json({ success: false, message: 'Thiếu sensorId' });
     }
 
-    // Cập nhật trường image trong Info
+    const oldSensor = await Info.findOne(query).lean();
+    if (!oldSensor) {
+      safeUnlink(req.file.path);
+      return res.status(404).json({ success: false, message: 'Không tìm thấy logger trong user/nhóm này' });
+    }
+
     await Info.findOneAndUpdate(
-      { id: Number(sensorId) },
+      query,
       { $set: { image: req.file.filename } },
       { new: true }
     );
+
+    if (oldSensor.image && oldSensor.image !== req.file.filename) {
+      safeUnlink(path.join(uploadDir, oldSensor.image));
+    }
 
     res.status(200).json({
       success: true,
@@ -73,9 +109,13 @@ router.post('/', verifyUser, upload.single('file'), async (req, res) => {
 router.get('/image/:id', async (req, res) => {
   try {
     const sensorId = req.params.id;
-    const sensor = await Info.findOne({ id: Number(sensorId) });
+    const query = getSensorQuery(sensorId, req.query.user);
+    if (!query) {
+      return res.status(400).json({ success: false, message: 'Thiếu sensorId' });
+    }
+    const sensor = await Info.findOne(query);
 
-    if (!sensor || !sensor.image) {
+    if (!sensor || !sensor.image || isLegacyUnknownImage(sensor.image)) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy ảnh' });
     }
 

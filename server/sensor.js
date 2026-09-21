@@ -23,7 +23,7 @@ const userRegister = async () => {
     //   temperature: 25,
     // })
     // await newSen.save()
-    await Info.deleteOne({ user: 0, id: 4161});
+    await Info.deleteOne({ user: 0, id: 40197});
   } catch (error) {
     console.log(error)
   }

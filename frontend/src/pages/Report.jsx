@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Line } from "react-chartjs-2";
 import {
   CategoryScale,
   Chart as ChartJS,
+  Decimation,
   Legend,
   LinearScale,
   LineElement,
@@ -20,10 +21,11 @@ import {
   FaSyncAlt,
   FaTint,
 } from "react-icons/fa";
-import { dmaListGet, exportDailyReportPost, sensorReportAiAnalysisPost, sensorReportPost } from "../api";
+import { dmaListGet, exportDailyReportPost, sensorReportAiAnalysisPost, sensorReportAiAnalysisStream, sensorReportPost } from "../api";
+import AiReportDocument from "../components/ai/AiReportDocument";
 import { useAuth } from "../context/authContext";
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, Decimation, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 const palette = [
   "#0f766e",
@@ -38,21 +40,6 @@ const palette = [
   "#ea580c",
   "#0284c7",
   "#4d7c0f",
-];
-
-const flowPalette = [
-  "#e11d48",
-  "#f59e0b",
-  "#8b5cf6",
-  "#06b6d4",
-  "#84cc16",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-  "#6366f1",
-  "#22c55e",
-  "#0ea5e9",
-  "#a855f7",
 ];
 
 const metricOptions = [
@@ -169,9 +156,71 @@ const formatDateTime = (value) => {
   });
 };
 
+const formatSelectedDateTime = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const time = date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  const day = date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }).replace("/", "-");
+  return `${time} ${day}`;
+};
+
+const isWholeHourLabel = (label) => {
+  const match = String(label || "").match(/(?:^|\D)(\d{1,2}):(\d{2})(?:\D|$)/);
+  return Boolean(match) && Number(match[2]) === 0;
+};
+
+const onlyWholeHourTicks = (scale) => {
+  const wholeHourTicks = scale.ticks.filter((tick) => isWholeHourLabel(scale.getLabelForValue(tick.value)));
+  if (wholeHourTicks.length) scale.ticks = wholeHourTicks;
+};
+
+const getWholeHourIndexSet = (labels = []) => {
+  const indexes = new Set();
+  labels.forEach((label, index) => {
+    if (isWholeHourLabel(label)) indexes.add(index);
+  });
+  return indexes;
+};
+
+const filterTicksByIndexSet = (scale, indexSet) => {
+  const wholeHourTicks = scale.ticks.filter((tick) => indexSet.has(Number(tick.value)));
+  if (wholeHourTicks.length) scale.ticks = wholeHourTicks;
+};
+
 const formatNumber = (value, digits = 2) => (
   Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "—"
 );
+
+const formatChartValue = (value) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return number.toLocaleString("vi-VN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const compactDatasetLabel = (label) => {
+  const parts = String(label || "").split(" - ");
+  return parts.length > 1 ? parts[parts.length - 1] : String(label || "");
+};
+
+const getChartPointX = (chart, index) => {
+  if (!chart || index === null || index === undefined) return null;
+  const pointFromDataset = chart.data.datasets
+    .map((_dataset, datasetIndex) => chart.getDatasetMeta(datasetIndex))
+    .find((meta) => chart.isDatasetVisible(meta.index) && meta.data?.[index])
+    ?.data?.[index];
+  if (Number.isFinite(pointFromDataset?.x)) return pointFromDataset.x;
+
+  const xScale = chart.scales?.x;
+  if (!xScale) return null;
+  const xFromIndex = xScale.getPixelForValue(index);
+  if (Number.isFinite(xFromIndex)) return xFromIndex;
+  const xFromLabel = xScale.getPixelForValue(chart.data.labels?.[index]);
+  return Number.isFinite(xFromLabel) ? xFromLabel : null;
+};
 
 const roundToTwo = (value) => {
   const number = Number(value);
@@ -226,6 +275,11 @@ const SummaryCard = ({ label, value, tone }) => {
 
 const Report = () => {
   const { user, info = [] } = useAuth();
+  const chartRef = useRef(null);
+  const selectedLineRef = useRef(null);
+  const selectedIndexRef = useRef(null);
+  const selectedLineFrameRef = useRef(null);
+  const selectedStateFrameRef = useRef(null);
   const currentUser = Number.isFinite(Number(user?.user)) ? Number(user.user) : 0;
   const savedSettings = useMemo(() => readSavedReportSettings(currentUser), [currentUser]);
   const now = useMemo(() => new Date(), []);
@@ -285,6 +339,7 @@ const Report = () => {
     savedSettings.reportName || getDefaultReportName(initialFromDate, addHoursToDateTimeLocal(initialFromDate, initialDurationHours))
   );
   const [errorMessage, setErrorMessage] = useState("");
+  const [selectedChartIndex, setSelectedChartIndex] = useState(null);
 
   useEffect(() => {
     const fetchDmas = async () => {
@@ -334,7 +389,7 @@ const Report = () => {
   }, [groupFilter, info, search]);
 
   const selectedSensors = activeLoggerIds.map((id) => sensorById[id]).filter(Boolean);
-  const reportSeries = reportData?.series || [];
+  const reportSeries = useMemo(() => reportData?.series || [], [reportData?.series]);
   const dataPointCount = reportSeries.reduce((sum, item) => sum + (item.stats?.count || 0), 0);
   const noDataCount = reportSeries.filter((item) => !item.stats?.count).length;
   const totalVolume = reportSeries.reduce((sum, item) => sum + Number(item.stats?.volume || 0), 0);
@@ -611,29 +666,55 @@ const Report = () => {
       return;
     }
 
+    const token = localStorage.getItem("token");
+    const body = {
+      reportData: {
+        labels: reportData.labels,
+        metric: reportData.metric || selectedMetric,
+        series: reportSeries,
+      },
+      context: {
+        fromDate,
+        toDate,
+        intervalMinutes,
+        sourceMode,
+        loggerCount: activeLoggerIds.length,
+        user: currentUser,
+      },
+    };
+
     setAiLoading(true);
+    setAiAnalysis("");
+
     try {
-      const res = await sensorReportAiAnalysisPost(localStorage.getItem("token"), {
-        reportData: {
-          labels: reportData.labels,
-          metric: reportData.metric || selectedMetric,
-          series: reportSeries,
-        },
-        context: {
-          fromDate,
-          toDate,
-          intervalMinutes,
-          sourceMode,
-          loggerCount: activeLoggerIds.length,
+      // Stream de chu hien dan, khong bi nginx cat sau 60s.
+      await sensorReportAiAnalysisStream(token, body, {
+        onDelta: (_delta, full) => setAiAnalysis(full),
+        onDone: (_full, done) => {
+          if (done?.aiUsage) setAiUsage(done.aiUsage);
         },
       });
-      if (res.data.success) {
-        setAiAnalysis(res.data.analysis || "");
-        setAiUsage(res.data.aiUsage || null);
+    } catch (streamError) {
+      if (streamError?.status === 429) {
+        setAiUsage(streamError.payload?.aiUsage || null);
+        setAiError(streamError.payload?.error || streamError.message);
+        setAiLoading(false);
+        return;
       }
-    } catch (error) {
-      setAiUsage(error.response?.data?.aiUsage || null);
-      setAiError(error.response?.data?.error || "Không phân tích được báo cáo bằng AI");
+
+      // Server cu hoac proxy chan SSE thi quay ve endpoint thuong.
+      try {
+        const res = await sensorReportAiAnalysisPost(token, body);
+        if (res.data.success) {
+          setAiAnalysis(res.data.analysis || "");
+          setAiUsage(res.data.aiUsage || null);
+        } else {
+          setAiError(res.data.error || "Không phân tích được báo cáo bằng AI");
+        }
+      } catch (error) {
+        setAiUsage(error.response?.data?.aiUsage || null);
+        setAiError(error.response?.data?.error || streamError.message || "Không phân tích được báo cáo bằng AI");
+      }
     } finally {
       setAiLoading(false);
     }
@@ -645,18 +726,26 @@ const Report = () => {
     setIsExportPanelOpen((prev) => !prev);
   };
 
-  const chartData = {
-    labels: reportData?.labels?.map(formatDateTime) || [],
+  const chartLabels = useMemo(() => reportData?.labels?.map(formatDateTime) || [], [reportData?.labels]);
+  const wholeHourIndexSet = useMemo(() => getWholeHourIndexSet(chartLabels), [chartLabels]);
+  const filterWholeHourTicks = useCallback((scale) => {
+    filterTicksByIndexSet(scale, wholeHourIndexSet);
+  }, [wholeHourIndexSet]);
+  const formatWholeHourTick = useCallback(function (value) {
+    return wholeHourIndexSet.has(Number(value)) ? this.getLabelForValue(value) : "";
+  }, [wholeHourIndexSet]);
+
+  const chartData = useMemo(() => ({
+    labels: chartLabels,
     datasets: isCombinedReport
       ? reportSeries.flatMap((item, index) => {
-        const pressureColor = palette[index % palette.length];
-        const flowColor = flowPalette[index % flowPalette.length];
+        const loggerColor = palette[index % palette.length];
         return [
           {
             label: `${item.id} ${item.name} - Áp suất`,
             data: (item.pressureValues || []).map(roundToTwo),
-            borderColor: pressureColor,
-            backgroundColor: `${pressureColor}22`,
+            borderColor: loggerColor,
+            backgroundColor: `${loggerColor}22`,
             borderWidth: 2,
             pointRadius: 0,
             pointHoverRadius: 4,
@@ -668,9 +757,10 @@ const Report = () => {
           {
             label: `${item.id} ${item.name} - Lưu lượng`,
             data: (item.flowValues || []).map(roundToTwo),
-            borderColor: flowColor,
-            backgroundColor: `${flowColor}18`,
-            borderWidth: 2,
+            borderColor: loggerColor,
+            backgroundColor: `${loggerColor}18`,
+            borderWidth: 2.5,
+            borderDash: [7, 5],
             pointRadius: 0,
             pointHoverRadius: 4,
             tension: 0.28,
@@ -691,9 +781,143 @@ const Report = () => {
         tension: 0.28,
         spanGaps: true,
       })),
-  };
+  }), [chartLabels, isCombinedReport, reportSeries]);
 
-  const chartOptions = {
+  const isFlowChart = (reportData?.metric?.key || selectedMetric.key) === "flow";
+  const chartTitle = isCombinedReport ? "Lưu lượng và áp lực" : `Biểu đồ ${reportData?.metric?.label || selectedMetric.label}`;
+  const chartLegendItems = useMemo(() => chartData.datasets.map((dataset) => ({
+    label: dataset.label,
+    displayLabel: isCombinedReport && reportSeries.length === 1
+      ? `${compactDatasetLabel(dataset.label)}${dataset.unit ? ` (${dataset.unit})` : ""}`
+      : dataset.label,
+    color: dataset.borderColor || "#0f766e",
+    dashed: Array.isArray(dataset.borderDash) && dataset.borderDash.length > 0,
+    unit: dataset.unit || reportData?.metric?.unit || selectedMetric.unit,
+  })), [chartData.datasets, isCombinedReport, reportData?.metric?.unit, reportSeries.length, selectedMetric.unit]);
+  const selectedChartTitle = selectedChartIndex === null
+    ? ""
+    : formatSelectedDateTime(reportData?.labels?.[selectedChartIndex] || chartData.labels?.[selectedChartIndex]);
+  const selectedChartValues = useMemo(() => selectedChartIndex === null
+    ? []
+    : chartData.datasets.map((dataset) => ({
+      label: isCombinedReport && reportSeries.length === 1 ? compactDatasetLabel(dataset.label) : dataset.label,
+      color: dataset.borderColor || "#0f766e",
+      value: dataset.data?.[selectedChartIndex],
+      unit: dataset.unit || reportData?.metric?.unit || selectedMetric.unit,
+    })).filter((item) => item.value !== null && item.value !== undefined), [
+      chartData.datasets,
+      isCombinedReport,
+      reportData?.metric?.unit,
+      reportSeries.length,
+      selectedChartIndex,
+      selectedMetric.unit,
+    ]);
+
+  const syncSelectedLinePosition = useCallback((nextIndex = selectedIndexRef.current) => {
+    const line = selectedLineRef.current;
+    const chart = chartRef.current;
+    if (!line) return;
+    if (nextIndex === null || nextIndex === undefined || !chart?.chartArea) {
+      line.style.display = "none";
+      return;
+    }
+
+    const x = getChartPointX(chart, nextIndex);
+    if (!Number.isFinite(x)) {
+      line.style.display = "none";
+      return;
+    }
+
+    line.style.display = "block";
+    line.style.left = `${x}px`;
+    line.style.top = `${chart.chartArea.top}px`;
+    line.style.height = `${Math.max(chart.chartArea.bottom - chart.chartArea.top, 0)}px`;
+  }, []);
+
+  const moveSelectedLine = useCallback((nextIndex) => {
+    if (nextIndex === null || nextIndex === undefined) return;
+    selectedIndexRef.current = nextIndex;
+    if (selectedLineFrameRef.current) return;
+    selectedLineFrameRef.current = requestAnimationFrame(() => {
+      selectedLineFrameRef.current = null;
+      syncSelectedLinePosition(selectedIndexRef.current);
+    });
+  }, [syncSelectedLinePosition]);
+
+  const commitSelectedIndex = useCallback((nextIndex) => {
+    if (nextIndex === null || nextIndex === undefined) return;
+    const indexChanged = selectedIndexRef.current !== nextIndex;
+    moveSelectedLine(nextIndex);
+    if (indexChanged && !selectedStateFrameRef.current) {
+      selectedStateFrameRef.current = requestAnimationFrame(() => {
+        selectedStateFrameRef.current = null;
+        setSelectedChartIndex((current) => (
+          current === selectedIndexRef.current ? current : selectedIndexRef.current
+        ));
+      });
+    }
+  }, [moveSelectedLine]);
+
+  useEffect(() => () => {
+    if (selectedLineFrameRef.current) cancelAnimationFrame(selectedLineFrameRef.current);
+    if (selectedStateFrameRef.current) cancelAnimationFrame(selectedStateFrameRef.current);
+  }, []);
+
+  useEffect(() => {
+    const nextLength = chartData.labels.length;
+    setSelectedChartIndex((prev) => {
+      if (!nextLength) {
+        selectedIndexRef.current = null;
+        syncSelectedLinePosition(null);
+        return null;
+      }
+      const nextIndex = prev !== null && prev >= 0 && prev < nextLength ? prev : nextLength - 1;
+      selectedIndexRef.current = nextIndex;
+      requestAnimationFrame(() => syncSelectedLinePosition(nextIndex));
+      return nextIndex;
+    });
+  }, [reportData?.labels?.length, activeLoggerKey, metric, intervalMinutes, sourceMode, syncSelectedLinePosition]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => syncSelectedLinePosition());
+    const handleResize = () => syncSelectedLinePosition();
+    window.addEventListener("resize", handleResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [selectedChartIndex, chartData.labels.length, chartData.datasets.length, activeLoggerKey, metric, intervalMinutes, sourceMode, syncSelectedLinePosition]);
+
+  const chartPlugins = useMemo(() => [], []);
+
+  const selectChartIndexFromEvent = useCallback((event) => {
+    const chart = chartRef.current;
+    if (!chart?.chartArea || !chart.scales?.x || !chartData.labels.length) return;
+    const sourceEvent = event?.nativeEvent || event?.native || event;
+    const clientX = sourceEvent?.touches?.[0]?.clientX
+      ?? sourceEvent?.changedTouches?.[0]?.clientX
+      ?? sourceEvent?.clientX;
+    const canvasRect = chart.canvas.getBoundingClientRect();
+    const chartArea = chart.chartArea;
+    const x = Number.isFinite(clientX)
+      ? clientX - canvasRect.left
+      : sourceEvent?.x;
+    if (!Number.isFinite(x)) return;
+    const boundedX = Math.min(Math.max(x, chartArea.left), chartArea.right);
+    const nextPoint = chartData.labels.reduce(
+      (closest, _label, index) => {
+        const pointX = getChartPointX(chart, index);
+        if (!Number.isFinite(pointX)) return closest;
+        const distance = Math.abs(pointX - boundedX);
+        return distance < closest.distance ? { index, distance } : closest;
+      },
+      { index: null, distance: Infinity }
+    );
+    if (nextPoint.index === null) return;
+    commitSelectedIndex(nextPoint.index);
+  }, [chartData.labels, commitSelectedIndex]);
+
+  const chartOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: "index", intersect: false },
@@ -702,42 +926,92 @@ const Report = () => {
         display: false,
       },
       tooltip: {
+        backgroundColor: "rgba(15, 23, 42, 0.92)",
+        borderColor: "rgba(226, 232, 240, 0.35)",
+        borderWidth: 1,
+        boxPadding: 6,
+        cornerRadius: 12,
+        padding: 12,
+        titleColor: "#f8fafc",
+        bodyColor: "#f8fafc",
         callbacks: {
           label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y ?? "—"} ${ctx.dataset.unit || reportData?.metric?.unit || selectedMetric.unit}`,
         },
       },
+      decimation: {
+        enabled: chartData.labels.length > 1200,
+        algorithm: "lttb",
+        samples: 700,
+      },
+    },
+    onHover: (event, elements) => {
+      if (elements?.length) {
+        commitSelectedIndex(elements[0].index);
+      }
+    },
+    onClick: (event) => {
+      selectChartIndexFromEvent(event);
     },
     scales: isCombinedReport
       ? {
         x: {
-          grid: { color: "rgba(15, 23, 42, 0.06)" },
-          ticks: { maxTicksLimit: 10, color: "#64748b" },
+          border: { display: false },
+          grid: { color: "#e9eef5", drawTicks: false },
+          afterBuildTicks: filterWholeHourTicks,
+          ticks: {
+            maxTicksLimit: 6,
+            color: "#94a3b8",
+            font: { weight: "700" },
+            callback: formatWholeHourTick,
+          },
         },
         pressure: {
           position: "left",
-          title: { display: true, text: "Áp suất (m)" },
-          grid: { color: "rgba(15, 23, 42, 0.08)" },
-          ticks: { color: "#0f766e" },
+          border: { display: false },
+          title: { display: false },
+          grid: { color: "#e9eef5", drawTicks: false },
+          ticks: { color: "#64748b", font: { weight: "800" } },
         },
         flow: {
           position: "right",
-          title: { display: true, text: "Lưu lượng (m³/h)" },
+          min: 0,
+          border: { display: false },
+          title: { display: false },
           grid: { drawOnChartArea: false },
-          ticks: { color: "#2563eb" },
+          ticks: { color: "#64748b", font: { weight: "800" } },
         },
       }
       : {
         x: {
-          grid: { color: "rgba(15, 23, 42, 0.06)" },
-          ticks: { maxTicksLimit: 10, color: "#64748b" },
+          border: { display: false },
+          grid: { color: "#e9eef5", drawTicks: false },
+          afterBuildTicks: filterWholeHourTicks,
+          ticks: {
+            maxTicksLimit: 6,
+            color: "#94a3b8",
+            font: { weight: "700" },
+            callback: formatWholeHourTick,
+          },
         },
         y: {
-          title: { display: true, text: `${reportData?.metric?.label || selectedMetric.label} (${reportData?.metric?.unit || selectedMetric.unit})` },
-          grid: { color: "rgba(15, 23, 42, 0.08)" },
-          ticks: { color: "#475569" },
+          min: isFlowChart ? 0 : undefined,
+          border: { display: false },
+          title: { display: false },
+          grid: { color: "#e9eef5", drawTicks: false },
+          ticks: { color: "#64748b", font: { weight: "800" } },
         },
       },
-  };
+  }), [
+    chartData.labels.length,
+    commitSelectedIndex,
+    filterWholeHourTicks,
+    formatWholeHourTick,
+    isCombinedReport,
+    isFlowChart,
+    reportData?.metric?.unit,
+    selectChartIndexFromEvent,
+    selectedMetric.unit,
+  ]);
 
   const renderStatCell = (item, key) => {
     if (!isCombinedReport) return formatNumber(item.stats?.[key]);
@@ -747,6 +1021,12 @@ const Report = () => {
         <div><span className="font-bold text-blue-700">Lưu lượng:</span> {formatNumber(item.flowStats?.[key])} m³/h</div>
       </div>
     );
+  };
+
+  const renderMeterSumAtToDate = (item) => {
+    const value = item.stats?.meterSumAtToDate ?? item.stats?.lastSum;
+    const number = Number(value);
+    return Number.isFinite(number) ? `${number.toFixed(2)} m³` : "—";
   };
 
   return (
@@ -917,18 +1197,44 @@ const Report = () => {
             <SummaryCard label="Tổng sản lượng" value={`${totalVolume.toFixed(2)} m³`} tone="amber" />
           </div> */}
 
-          <div className="rounded-[28px] border border-white bg-white p-4 shadow-sm">
-            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-xl font-black text-slate-900">Biểu đồ báo cáo</h2>
+          <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <div className="mb-4 flex flex-col gap-3">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">{chartTitle}</h2>
+                  <div className="mt-1 text-sm font-semibold text-slate-500">
+                    {reportData?.labels?.length ? `${reportData.labels.length} mốc dữ liệu · ${reportSeries.length} logger` : "Chưa có dữ liệu biểu đồ"}
+                  </div>
+                </div>
+                <button
+                  onClick={analyzeReportWithAi}
+                  disabled={aiLoading || !reportData?.labels?.length || !reportSeries.length || aiUsage?.remaining === 0}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <FaRobot /> {aiLoading ? "AI đang phân tích..." : "Phân tích AI"}
+                </button>
               </div>
-              <button
-                onClick={analyzeReportWithAi}
-                disabled={aiLoading || !reportData?.labels?.length || !reportSeries.length || aiUsage?.remaining === 0}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <FaRobot /> {aiLoading ? "AI đang phân tích..." : "Phân tích AI"}
-              </button>
+
+              {chartLegendItems.length > 0 && (
+                <div className="flex max-h-20 flex-wrap gap-x-5 gap-y-2 overflow-y-auto">
+                  {chartLegendItems.map((item, index) => (
+                    <div
+                      key={`${item.label}-${index}`}
+                      className="inline-flex min-w-0 items-center gap-2 text-sm font-extrabold text-slate-500"
+                      title={`${item.label} ${item.unit ? `(${item.unit})` : ""}`}
+                    >
+                      <span
+                        className="h-0 w-8 shrink-0 border-t-[3px]"
+                        style={{
+                          borderColor: item.color,
+                          borderStyle: item.dashed ? "dashed" : "solid",
+                        }}
+                      />
+                      <span className="max-w-[260px] truncate">{item.displayLabel}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             {aiUsage && (
               <div className="-mt-2 mb-3 text-right text-xs font-bold text-slate-500">
@@ -936,9 +1242,19 @@ const Report = () => {
               </div>
             )}
 
-            <div className="h-[430px] rounded-[22px] bg-gradient-to-b from-slate-50 to-white p-3">
+            <div className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-inner">
+              <div
+                className="relative h-[430px] cursor-crosshair overflow-hidden rounded-[18px] bg-white p-1"
+                onClick={selectChartIndexFromEvent}
+              >
               {reportData?.labels?.length ? (
-                <Line data={chartData} options={chartOptions} />
+                <>
+                  <Line ref={chartRef} data={chartData} options={chartOptions} plugins={chartPlugins} />
+                  <div
+                    ref={selectedLineRef}
+                    className="pointer-events-none absolute z-20 hidden w-0 -translate-x-1/2 border-l-2 border-dashed border-slate-900/90"
+                  />
+                </>
               ) : (
                 <div className="flex h-full flex-col items-center justify-center text-center text-slate-400">
                   <FaChartLine className="mb-4 text-5xl text-teal-200" />
@@ -946,28 +1262,52 @@ const Report = () => {
                   <div className="mt-1 max-w-md text-sm">Chọn logger hoặc DMA, biểu đồ sẽ tự hiển thị khi có dữ liệu.</div>
                 </div>
               )}
+              </div>
             </div>
 
-            {(aiAnalysis || aiError || aiLoading) && (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="mb-2 flex items-center gap-2 text-sm font-black text-slate-800">
-                  <FaRobot className="text-teal-600" />
-                  Phân tích AI
+            {selectedChartValues.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                <div className="mb-3 text-base font-black text-slate-700">
+                  {selectedChartTitle || `Điểm ${selectedChartIndex + 1}`}
                 </div>
-                {aiLoading && (
-                  <div className="text-sm font-semibold text-slate-500">AI đang đọc dữ liệu biểu đồ và tạo nhận xét...</div>
+                <div className="space-y-2">
+                  {selectedChartValues.map((item, index) => (
+                    <div key={`${item.label}-${index}`} className="flex min-w-0 items-center justify-between gap-3 text-sm font-black">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                        <span className="truncate" style={{ color: item.color }}>{item.label}:</span>
+                      </div>
+                      <span className="shrink-0" style={{ color: item.color }}>
+                        {formatChartValue(item.value)} {item.unit}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(aiAnalysis || aiError || aiLoading) && (
+              <section className="mt-5">
+                {aiLoading && !aiAnalysis && (
+                  <div className="rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm font-bold text-teal-700">
+                    AI đang đọc dữ liệu biểu đồ và tạo nhận xét...
+                  </div>
                 )}
                 {aiError && (
-                  <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
                     {aiError}
                   </div>
                 )}
                 {aiAnalysis && (
-                  <div className="whitespace-pre-wrap text-sm font-medium leading-6 text-slate-700">
-                    {aiAnalysis}
-                  </div>
+                  <AiReportDocument
+                    content={aiAnalysis}
+                    badge="Báo cáo phân tích AI"
+                    fallbackTitle="Báo cáo phân tích áp lực – lưu lượng tại điểm đo"
+                    highlightLabel="Tổng sản lượng trong kỳ"
+                    streaming={aiLoading}
+                  />
                 )}
-              </div>
+              </section>
             )}
           </div>
 
@@ -985,7 +1325,7 @@ const Report = () => {
                     <th className="px-4 py-3">Avg</th>
                     <th className="px-4 py-3">Max</th>
                     <th className="px-4 py-3">Sản lượng</th>
-                    <th className="px-4 py-3">Điểm</th>
+                    <th className="px-4 py-3">Số tổng ĐH</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -997,7 +1337,7 @@ const Report = () => {
                       <td className="px-4 py-3">{renderStatCell(item, "avg")}</td>
                       <td className="px-4 py-3">{renderStatCell(item, "max")}</td>
                       <td className="px-4 py-3">{Number(item.stats?.volume || 0).toFixed(2)} m³</td>
-                      <td className="px-4 py-3">{item.stats?.count || 0}</td>
+                      <td className="px-4 py-3">{renderMeterSumAtToDate(item)}</td>
                     </tr>
                   )) : (
                     <tr>

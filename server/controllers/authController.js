@@ -7,6 +7,8 @@ import { clientRedis } from "../mqtt/redis.js";
 import axios from 'axios';
 import { createSign } from 'crypto';
 
+const PUBLIC_WEB_URL = process.env.PUBLIC_WEB_URL || "https://khca-s.static.good-dns.net/";
+
 const toBase64Url = (value) => Buffer
   .from(value)
   .toString("base64")
@@ -146,10 +148,17 @@ export const unregisterFcmToken = async (req, res) => {
 export const sendFcmTest = async (req, res) => {
   try {
     const requestedToken = req.body?.token;
+    const userTokenQuery = {
+      active: true,
+      $or: [
+        { userId: req.user._id },
+        { userNumber: req.user.user ?? 0 },
+      ],
+    };
     console.log(`FCM test request: hasToken=${Boolean(requestedToken)}, user=${req.user?._id}`);
     let tokenDoc = requestedToken
-      ? await FcmToken.findOne({ token: requestedToken })
-      : await FcmToken.findOne({ active: true }).sort({ updatedAt: -1 });
+      ? await FcmToken.findOne({ token: requestedToken, $or: userTokenQuery.$or })
+      : await FcmToken.findOne(userTokenQuery).sort({ updatedAt: -1 });
 
     if (tokenDoc && !tokenDoc.active) {
       tokenDoc.active = true;
@@ -158,7 +167,7 @@ export const sendFcmTest = async (req, res) => {
     }
 
     if (!tokenDoc) {
-      tokenDoc = await FcmToken.findOne({ active: true }).sort({ updatedAt: -1 });
+      tokenDoc = await FcmToken.findOne(userTokenQuery).sort({ updatedAt: -1 });
     }
 
     if (!tokenDoc) {
@@ -166,19 +175,63 @@ export const sendFcmTest = async (req, res) => {
       return res.status(404).json({ success: false, error: "Không có thiết bị FCM đang bật" });
     }
 
-    const accessToken = await getFcmAccessToken();
     const message = `Test thông báo IoT Water ${new Date().toLocaleTimeString("vi-VN")}`;
+    const isExpoToken = tokenDoc.platform === "expo" ||
+      String(tokenDoc.token).startsWith("ExpoPushToken") ||
+      String(tokenDoc.token).startsWith("ExponentPushToken");
+
+    if (isExpoToken) {
+      const result = await axios.post(
+        "https://exp.host/--/api/v2/push/send",
+        {
+          to: tokenDoc.token,
+          title: "Test IoT Water",
+          body: message,
+          data: {
+            type: "test",
+            message,
+          },
+          sound: "default",
+          priority: "high",
+          channelId: "water-alerts",
+        },
+        {
+          headers: {
+            Accept: "application/json",
+            "Accept-Encoding": "gzip, deflate",
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log(`Expo push test gửi thành công tới token ${tokenDoc.token.slice(0, 18)}.`);
+      return res.status(200).json({ success: true, name: result.data?.data?.id || "expo-push" });
+    }
+
+    const accessToken = await getFcmAccessToken();
     const result = await axios.post(
       `https://fcm.googleapis.com/v1/projects/${process.env.FCM_PROJECT_ID}/messages:send`,
       {
         message: {
           token: tokenDoc.token,
+          notification: {
+            title: "Test IoT Water",
+            body: message,
+          },
+          android: {
+            priority: "HIGH",
+            notification: {
+              channel_id: "water-alerts",
+              sound: "default",
+              priority: "HIGH",
+            },
+          },
           webpush: {
             headers: {
               Urgency: "high",
             },
             fcm_options: {
-              link: "https://khca-s.static.good-dns.net/",
+              link: PUBLIC_WEB_URL,
             },
           },
           data: {
@@ -189,7 +242,7 @@ export const sendFcmTest = async (req, res) => {
             icon: "/img/logo.jpeg",
             badge: "/img/logo.jpeg",
             tag: `iot-water-test-${Date.now()}`,
-            link: "https://khca-s.static.good-dns.net/",
+            link: PUBLIC_WEB_URL,
           },
         },
       },

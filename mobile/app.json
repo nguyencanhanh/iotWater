@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "IoT Water",
+    "owner": "anhnc148s-team",
+    "slug": "anhnc148",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "scheme": "iotwater",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f766e"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.khca.iotwater",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Ung dung can camera khi nguoi dung tai anh logger.",
+        "NSPhotoLibraryUsageDescription": "Ung dung can truy cap thu vien anh khi nguoi dung tai anh logger.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.khca.iotwater",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f766e"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
+    },
+    "extra": {
+      "apiBaseUrl": "https://khca-s.static.good-dns.net/api/api",
+      "eas": {
+        "projectId": "2f45d8a7-fc78-4ec0-835d-7ec94160ff6d"
+      }
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}

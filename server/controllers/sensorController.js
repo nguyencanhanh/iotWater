@@ -5,12 +5,13 @@ import Alarm from "../models/AlarmFlow.js"
 import DnpConfig from "../models/DnpConfig.js";
 import HomeMessage from "../models/HomeMessage.js";
 import ExcelJS from 'exceljs';
-import axios from "axios";
 import { client } from "../mqtt/mqtt.js";
 import cron from 'node-cron'
-import { differenceInCalendarDays } from 'date-fns'
 import { clientRedis } from "../mqtt/redis.js";
 import { acquireAiUsage, releaseAiUsage, respondAiLimit } from "../utils/aiUsage.js";
+import { chatComplete } from "../services/ai/index.js";
+import { pipeAiStream } from "../services/ai/sse.js";
+import { findIncidentsNearLoggers } from "../services/incidents.js";
 
 const scheduledJobs = {};
 // const userGlobal = [0];
@@ -284,29 +285,13 @@ function convertTime(timeConvert, watch) {
   return (timeConvert.getHours() * 60 + timeConvert.getMinutes()) * 60 / watch
 }
 
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
-function getDatesInRange(startDate, endDate) {
-  const dateArray = [];
-  let currentDate = new Date(startDate);
-
-  while (differenceInCalendarDays(endDate, currentDate)) {
-    dateArray.push(new Date(currentDate)); // YYYY-MM-DD
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-  dateArray.push(endDate);
-  return dateArray;
-}
-
-function getLength(lengModal, listDate) {
-  const lengDate = listDate.length;
-  const minute_s = listDate[0].getMinutes();
-  const minute_e = listDate[lengDate - 1].getMinutes();
-  if (lengDate !== 1) {
-    return lengModal * lengDate - lengModal * 2 + (24 - listDate[0].getHours() + listDate[lengDate - 1].getHours()) * 12 + Math.floor((minute_e - minute_s) / 5)
-  }
-  else {
-    return (listDate[lengDate - 1].getHours() - listDate[0].getHours()) * 12 + Math.floor((minute_e - minute_s) / 5)
-  }
+function getFiveMinutePointCount(startDate, endDate) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+  return Math.floor((end.getTime() - start.getTime()) / FIVE_MINUTES_MS) + 1;
 }
 
 const parseHourMinute = (value, fallback) => {
@@ -317,14 +302,35 @@ const parseHourMinute = (value, fallback) => {
   };
 };
 
-const toMinutesOfDay = (date) => date.getHours() * 60 + date.getMinutes();
+const normalizePositiveVolume = (endSum, startSum) => {
+  const endNumber = Number(endSum);
+  const startNumber = Number(startSum);
+  if (!Number.isFinite(endNumber) || !Number.isFinite(startNumber)) return 0;
+  const volume = endNumber - startNumber;
+  return Number.isFinite(volume) && volume > 0 ? volume : 0;
+};
 
-const getProductionVolume = async ({ user, id, start, end }) => {
-  if (!(start instanceof Date) || !(end instanceof Date) || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
-    return 0;
-  }
+const getSensorSumAtOrBefore = async ({ user, id, at }) => {
+  if (!(at instanceof Date) || Number.isNaN(at.getTime())) return null;
 
-  const rows = await Sensor.find({
+  const row = await Sensor.findOne({
+    user,
+    index: id,
+    createAt: { $lte: at },
+    sum: { $ne: null },
+  })
+    .select("sum createAt -_id")
+    .sort({ createAt: -1 })
+    .lean();
+
+  const sum = Number(row?.sum);
+  return Number.isFinite(sum) ? sum : null;
+};
+
+const getFirstSensorSumInWindow = async ({ user, id, start, end }) => {
+  if (!(start instanceof Date) || !(end instanceof Date) || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+  const row = await Sensor.findOne({
     user,
     index: id,
     createAt: { $gte: start, $lte: end },
@@ -334,9 +340,32 @@ const getProductionVolume = async ({ user, id, start, end }) => {
     .sort({ createAt: 1 })
     .lean();
 
-  if (rows.length < 2) return 0;
-  const volume = Number(rows[rows.length - 1].sum) - Number(rows[0].sum);
-  return Number.isFinite(volume) && volume > 0 ? volume : 0;
+  const sum = Number(row?.sum);
+  return Number.isFinite(sum) ? sum : null;
+};
+
+const getSensorStartSumForWindow = async ({ user, id, start, end }) => {
+  const boundarySum = await getSensorSumAtOrBefore({ user, id, at: start });
+  if (Number.isFinite(boundarySum)) return boundarySum;
+  return getFirstSensorSumInWindow({ user, id, start, end });
+};
+
+const getProductionVolume = async ({ user, id, start, end }) => {
+  if (!(start instanceof Date) || !(end instanceof Date) || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+    return 0;
+  }
+
+  const [startSum, endSum] = await Promise.all([
+    getSensorStartSumForWindow({ user, id, start, end }),
+    getSensorSumAtOrBefore({ user, id, at: end }),
+  ]);
+
+  return normalizePositiveVolume(endSum, startSum);
+};
+
+const getProductionVolumeFromCurrentSum = async ({ user, id, start, end, currentSum }) => {
+  const startSum = await getSensorStartSumForWindow({ user, id, start, end });
+  return normalizePositiveVolume(currentSum, startSum);
 };
 
 const reportMetricMap = {
@@ -361,8 +390,7 @@ const normalizeReportIds = (ids) => [...new Set((ids || []).map(Number).filter((
 
 const getBucketLabels = ({ start, end, intervalMs }) => {
   const labels = [];
-  const firstBucket = Math.floor(start.getTime() / intervalMs) * intervalMs;
-  for (let time = firstBucket; time <= end.getTime(); time += intervalMs) {
+  for (let time = start.getTime(); time <= end.getTime(); time += intervalMs) {
     labels.push(new Date(time).toISOString());
   }
   return labels;
@@ -377,6 +405,13 @@ const getDashboardUserNumber = (req) => {
 };
 
 const normalizeMessageText = (value, maxLength) => String(value || "").trim().slice(0, maxLength);
+const NO_GROUP_NAME = "Không có";
+const normalizeGroupName = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return NO_GROUP_NAME;
+  return text.toLowerCase() === "khong co" ? NO_GROUP_NAME : text;
+};
+const dedupeGroupNames = (names = []) => [...new Set(names.map(normalizeGroupName).filter(Boolean))];
 
 export const getHomeMessages = async (req, res) => {
   try {
@@ -478,6 +513,8 @@ export const getTodayWarningHistory = async (req, res) => {
       InfoSen.find({ user: numericUser }).select("id name group -_id").lean(),
     ]);
     const pageHistories = histories.slice(0, limit);
+    const sensorInfoById = Object.fromEntries(sensorInfos.map((sensor) => [Number(sensor.id), sensor]));
+    const sensorInfosWithName = sensorInfos.filter((sensor) => sensor.name);
 
     return res.status(200).json({
       success: true,
@@ -488,8 +525,8 @@ export const getTodayWarningHistory = async (req, res) => {
         ...(() => {
           const message = item.message || item.name || "Cảnh báo";
           const matchedInfo = item.sensorId
-            ? sensorInfos.find((sensor) => Number(sensor.id) === Number(item.sensorId))
-            : sensorInfos.find((sensor) => sensor.name && message.includes(sensor.name));
+            ? sensorInfoById[Number(item.sensorId)]
+            : sensorInfosWithName.find((sensor) => message.includes(sensor.name));
           return {
             ...item,
             message,
@@ -534,6 +571,7 @@ export const getSensorReport = async (req, res) => {
     }
 
     const labels = getBucketLabels({ start, end, intervalMs });
+    const startMs = start.getTime();
     if (labels.length > 3500) {
       return res.status(400).json({
         success: false,
@@ -541,7 +579,7 @@ export const getSensorReport = async (req, res) => {
       });
     }
 
-    const [infos, buckets, stats] = await Promise.all([
+    const [infos, buckets, stats, meterSumsAtToDate] = await Promise.all([
       InfoSen.find({ user: numericUser, id: { $in: ids } }).select("id name group adj").lean(),
       Sensor.aggregate([
         {
@@ -556,9 +594,21 @@ export const getSensorReport = async (req, res) => {
           $addFields: {
             bucketTime: {
               $toDate: {
-                $subtract: [
-                  { $toLong: "$createAt" },
-                  { $mod: [{ $toLong: "$createAt" }, intervalMs] },
+                $add: [
+                  startMs,
+                  {
+                    $multiply: [
+                      {
+                        $floor: {
+                          $divide: [
+                            { $subtract: [{ $toLong: "$createAt" }, startMs] },
+                            intervalMs,
+                          ],
+                        },
+                      },
+                      intervalMs,
+                    ],
+                  },
                 ],
               },
             },
@@ -575,7 +625,7 @@ export const getSensorReport = async (req, res) => {
           },
         },
         { $sort: { "_id.bucket": 1 } },
-      ]),
+      ]).allowDiskUse(true),
       Sensor.aggregate([
         {
           $match: {
@@ -601,11 +651,30 @@ export const getSensorReport = async (req, res) => {
             count: { $sum: 1 },
           },
         },
-      ]),
+      ]).allowDiskUse(true),
+      Sensor.aggregate([
+        {
+          $match: {
+            user: numericUser,
+            index: { $in: ids },
+            createAt: { $lte: end },
+            sum: { $type: "number" },
+          },
+        },
+        { $sort: { index: 1, createAt: -1 } },
+        {
+          $group: {
+            _id: "$index",
+            meterSumAtToDate: { $first: "$sum" },
+            meterAtToDate: { $first: "$createAt" },
+          },
+        },
+      ]).allowDiskUse(true),
     ]);
 
     const infoById = Object.fromEntries(infos.map((info) => [info.id, info]));
     const statById = Object.fromEntries(stats.map((item) => [item._id, item]));
+    const meterSumById = Object.fromEntries(meterSumsAtToDate.map((item) => [item._id, item]));
     const bucketByLogger = buckets.reduce((map, item) => {
       const loggerId = Number(item._id.index);
       const label = item._id.bucket.toISOString();
@@ -621,6 +690,7 @@ export const getSensorReport = async (req, res) => {
     const series = ids.map((id) => {
       const info = infoById[id] || {};
       const stat = statById[id];
+      const meterSum = meterSumById[id];
       const values = labels.map((label) => {
         const value = bucketByLogger[id]?.[label];
         return Number.isFinite(Number(value)) ? Number(value) : null;
@@ -638,6 +708,10 @@ export const getSensorReport = async (req, res) => {
           avg: realValues.length ? realValues.reduce((sum, value) => sum + value, 0) / realValues.length : null,
           count: stat?.count || 0,
           volume: Number.isFinite(rawVolume) && rawVolume > 0 ? rawVolume : 0,
+          firstSum: stat?.firstSum ?? null,
+          lastSum: stat?.lastSum ?? null,
+          meterSumAtToDate: Number.isFinite(Number(meterSum?.meterSumAtToDate)) ? Number(meterSum.meterSumAtToDate) : null,
+          meterAtToDate: meterSum?.meterAtToDate || null,
           firstAt: stat?.firstAt || null,
           lastAt: stat?.lastAt || null,
         },
@@ -668,6 +742,25 @@ const getAiNumber = (value) => {
   return Number.isFinite(number) ? Number(number.toFixed(2)) : null;
 };
 
+const formatAiDateTime = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const parts = new Intl.DateTimeFormat("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date).reduce((result, part) => {
+    result[part.type] = part.value;
+    return result;
+  }, {});
+  return `${parts.hour}:${parts.minute} ${parts.day}/${parts.month}/${parts.year}`;
+};
+
 const getEvenSamples = (labels = [], series = [], maxPoints = 16) => {
   const length = Math.min(labels.length, series.length);
   if (!length) return [];
@@ -675,13 +768,14 @@ const getEvenSamples = (labels = [], series = [], maxPoints = 16) => {
   const samples = [];
   for (let index = 0; index < length; index += step) {
     samples.push({
-      time: labels[index],
+      time: formatAiDateTime(labels[index]),
       value: getAiNumber(series[index]),
     });
   }
   const lastIndex = length - 1;
-  if (samples[samples.length - 1]?.time !== labels[lastIndex]) {
-    samples.push({ time: labels[lastIndex], value: getAiNumber(series[lastIndex]) });
+  const lastLabel = formatAiDateTime(labels[lastIndex]);
+  if (samples[samples.length - 1]?.time !== lastLabel) {
+    samples.push({ time: lastLabel, value: getAiNumber(series[lastIndex]) });
   }
   return samples;
 };
@@ -693,15 +787,16 @@ const getCombinedSamples = (labels = [], pressureValues = [], flowValues = [], m
   const samples = [];
   for (let index = 0; index < length; index += step) {
     samples.push({
-      time: labels[index],
+      time: formatAiDateTime(labels[index]),
       pressure: getAiNumber(pressureValues[index]),
       flow: getAiNumber(flowValues[index]),
     });
   }
   const lastIndex = length - 1;
-  if (samples[samples.length - 1]?.time !== labels[lastIndex]) {
+  const lastLabel = formatAiDateTime(labels[lastIndex]);
+  if (samples[samples.length - 1]?.time !== lastLabel) {
     samples.push({
-      time: labels[lastIndex],
+      time: lastLabel,
       pressure: getAiNumber(pressureValues[lastIndex]),
       flow: getAiNumber(flowValues[lastIndex]),
     });
@@ -709,13 +804,36 @@ const getCombinedSamples = (labels = [], pressureValues = [], flowValues = [], m
   return samples;
 };
 
-const compactStats = (stats = {}) => ({
-  min: getAiNumber(stats.min),
-  avg: getAiNumber(stats.avg),
-  max: getAiNumber(stats.max),
-  volume: getAiNumber(stats.volume),
-  count: Number(stats.count || 0),
-});
+const buildAiMetricStats = (stats = {}, labels = [], values = []) => {
+  const numericPoints = (Array.isArray(values) ? values : [])
+    .map((value, index) => ({
+      value: Number(value),
+      time: labels[index],
+    }))
+    .filter((item) => Number.isFinite(item.value));
+  const minPoint = numericPoints.reduce((min, item) => (
+    !min || item.value < min.value ? item : min
+  ), null);
+  const maxPoint = numericPoints.reduce((max, item) => (
+    !max || item.value > max.value ? item : max
+  ), null);
+
+  return {
+    min: getAiNumber(stats.min ?? minPoint?.value),
+    minAt: formatAiDateTime(stats.minAt || minPoint?.time),
+    avg: getAiNumber(stats.avg ?? (
+      numericPoints.length
+        ? numericPoints.reduce((sum, item) => sum + item.value, 0) / numericPoints.length
+        : null
+    )),
+    max: getAiNumber(stats.max ?? maxPoint?.value),
+    maxAt: formatAiDateTime(stats.maxAt || maxPoint?.time),
+    volume: getAiNumber(stats.volume),
+    count: Number(stats.count || numericPoints.length || 0),
+    firstAt: formatAiDateTime(stats.firstAt || labels[0]),
+    lastAt: formatAiDateTime(stats.lastAt || labels[labels.length - 1]),
+  };
+};
 
 const buildBusinessSummary = (compactSeries, isCombined) => {
   const volumeItems = compactSeries.map((item) => {
@@ -748,7 +866,7 @@ const buildBusinessSummary = (compactSeries, isCombined) => {
   };
 };
 
-const buildReportAnalysisPrompt = ({ reportData, context }) => {
+const buildReportAnalysisPrompt = ({ reportData, context, incidents = [] }) => {
   const labels = Array.isArray(reportData?.labels) ? reportData.labels : [];
   const series = Array.isArray(reportData?.series) ? reportData.series.slice(0, 40) : [];
   const isCombined = reportData?.metric?.key === "pressureFlow";
@@ -761,52 +879,222 @@ const buildReportAnalysisPrompt = ({ reportData, context }) => {
     if (isCombined) {
       return {
         ...base,
-        pressureStats: compactStats(item.pressureStats),
-        flowStats: compactStats(item.flowStats),
+        pressureStats: buildAiMetricStats(item.pressureStats, labels, item.pressureValues || []),
+        flowStats: buildAiMetricStats(item.flowStats, labels, item.flowValues || []),
         samples: getCombinedSamples(labels, item.pressureValues || [], item.flowValues || []),
       };
     }
     return {
       ...base,
-      stats: compactStats(item.stats),
+      stats: buildAiMetricStats(item.stats, labels, item.values || []),
       samples: getEvenSamples(labels, item.values || []),
     };
   });
   const businessSummary = buildBusinessSummary(compactSeries, isCombined);
 
   return `Bạn là chuyên gia phân tích vận hành hệ thống cấp nước và datalogger.
-Hãy viết báo cáo AI theo đúng format chung dưới đây, bằng tiếng Việt, ngắn gọn, rõ hành động.
+Hãy viết báo cáo AI bằng tiếng Việt, theo đúng template áp lực - lưu lượng dưới đây.
 
-FORMAT BẮT BUỘC:
-## 1. Tình hình kinh doanh dựa trên sản lượng
-- Tổng sản lượng trong kỳ: nêu số m³ nếu có.
-- Nhận định kinh doanh: sản lượng đang tập trung ở logger/nhóm nào, logger nào thấp hoặc không có dữ liệu.
-- Tác động: nêu nguy cơ thất thu, bất thường tiêu thụ, hoặc điểm cần đối soát nếu có.
-
-## 2. Tình hình vận hành kỹ thuật
-- Tóm tắt xu hướng áp suất/lưu lượng/chỉ số theo dữ liệu đang xem.
-- Nêu logger ổn định và logger dao động mạnh nếu thấy trong dữ liệu.
-
-## 3. Bất thường và rủi ro
-- Liệt kê các logger thiếu dữ liệu, sản lượng bằng 0, lưu lượng/áp suất bất thường.
-- Nếu chưa đủ dữ liệu để kết luận, ghi rõ "chưa đủ dữ liệu".
-
-## 4. Đề xuất xử lý
-- Đưa các bước kiểm tra thực địa/đối soát dữ liệu theo thứ tự ưu tiên.
-
-## 5. Kết luận nhanh
-- Viết 2-3 câu chốt lại tình hình chính.
-
-QUY TẮC:
+QUY TẮC BẮT BUỘC:
+- Chỉ trả về Markdown thuần, không bọc trong \`\`\`markdown, không có lời chào, không có câu dẫn trước/sau báo cáo.
+- Dòng đầu tiên bắt buộc là đúng tiêu đề: # BÁO CÁO PHÂN TÍCH ÁP LỰC – LƯU LƯỢNG TẠI ĐIỂM ĐO
 - Không bịa số liệu ngoài dữ liệu JSON.
-- Không viết quá dài.
-- Ưu tiên phân tích sản lượng cho phần kinh doanh.
-- Nếu thiếu dữ liệu, nói thẳng là chưa đủ dữ liệu.
+- Không kết luận rò rỉ, vỡ ống hoặc hỏng thiết bị chỉ dựa trên một dấu hiệu đơn lẻ.
+- Nếu thiếu áp lực hoặc thiếu lưu lượng thì vẫn giữ đề mục template và ghi "chưa đủ dữ liệu".
+- Đơn vị áp lực trong hệ thống là mét nước (m). Nếu template ghi bar thì thay bằng m, không tự quy đổi sang bar.
+- Số liệu làm tròn tối đa 2 chữ số thập phân.
+- Không dùng LaTeX/MathJax. Viết số và đơn vị dưới dạng văn bản thuần, ví dụ "253.21 m3/h", không dùng $...$ hay \\text{}.
+- Tuyệt đối không dùng thời gian ISO/UTC như 2026-07-30T03:00:00.000Z. Chỉ dùng định dạng HH:mm DD/MM/YYYY hoặc HH:mm nếu cùng ngày.
+- Nếu chỉ có 1 logger, viết một báo cáo đầy đủ theo template.
+- Nếu có nhiều logger, viết phần "Tổng quan các điểm đo" thật ngắn rồi phân tích từng logger theo template rút gọn nhưng vẫn giữ đủ 9 mục chính.
+- Ưu tiên chỉ ra thời điểm min/max, khung giờ cao điểm/thấp điểm/ban đêm nếu dữ liệu mẫu đủ thể hiện.
+- Phần "Sự cố hiện trường" là các điểm nhân viên đã ghi nhận trên bản đồ quanh điểm đo. Nếu danh sách này có dữ liệu, bắt buộc đối chiếu thời điểm và khoảng cách của từng sự cố với diễn biến áp lực – lưu lượng, và nêu rõ ở mục 6 và mục 8.
+- Nếu danh sách sự cố trống, ghi "không có sự cố hiện trường nào được ghi nhận" và tuyệt đối không tự bịa ra sự cố.
+- Sự cố có trường "thoiDiem" ghi "xảy ra trước kỳ phân tích và chưa xử lý xong" thì chỉ nhắc đến như yếu tố còn tồn tại, không coi là nguyên nhân của biến động trong kỳ nếu không có dấu hiệu số liệu đi kèm.
+- Khi viết báo cáo, diễn đạt bằng tiếng Việt tự nhiên. Tuyệt đối không in ra tên trường JSON thô như "thoiDiem", "distanceMeters" hay "nearestLoggerId".
+
+TEMPLATE BẮT BUỘC:
+# BÁO CÁO PHÂN TÍCH ÁP LỰC – LƯU LƯỢNG TẠI ĐIỂM ĐO
+
+**Điểm đo:** [Tên điểm đo]
+**Logger ID:** [ID thiết bị]
+**Khu vực/Tuyến ống:** [Tên khu vực/nhóm]
+**Thời gian phân tích:** [Từ ngày giờ] – [Đến ngày giờ]
+**Tổng sản lượng trong kỳ:** [xxx] m³
+
+---
+
+## 1. Tổng quan tình trạng vận hành
+
+Trong kỳ phân tích, điểm đo ghi nhận:
+
+* **Áp lực:** dao động từ **[Pmin] m đến [Pmax] m**, trung bình **[Pavg] m**.
+* **Lưu lượng:** dao động từ **[Qmin] m³/h đến [Qmax] m³/h**, trung bình **[Qavg] m³/h**.
+* **Tổng sản lượng:** **[Volume] m³**.
+* **Thời điểm áp lực cao nhất:** [Thời gian] – [Giá trị] m.
+* **Thời điểm áp lực thấp nhất:** [Thời gian] – [Giá trị] m.
+* **Thời điểm lưu lượng lớn nhất:** [Thời gian] – [Giá trị] m³/h.
+* **Thời điểm lưu lượng thấp nhất:** [Thời gian] – [Giá trị] m³/h.
+
+**Đánh giá tổng quan:**
+[Ổn định / Có dao động / Có dấu hiệu bất thường / Bất thường nghiêm trọng].
+
+---
+
+## 2. Phân tích diễn biến áp lực
+
+Áp lực tại điểm đo trong kỳ **[ổn định / dao động nhẹ / dao động mạnh / có thời điểm mất áp]**.
+
+### Diễn biến đáng chú ý
+
+* Trong khoảng **[thời gian]**, áp lực duy trì ở mức **[x–y] m**.
+* Áp lực cao nhất đạt **[Pmax] m** vào **[thời gian]**.
+* Áp lực thấp nhất đạt **[Pmin] m** vào **[thời gian]**.
+* Ghi nhận **[số lần]** thời điểm/khoảng thời gian áp lực xuống dưới ngưỡng **[ngưỡng] m**.
+* [Nếu có] Xuất hiện hiện tượng tăng/giảm áp đột ngột tại **[thời gian]**.
+
+**Nhận định:**
+[Mô tả ngắn nguyên nhân có khả năng xảy ra: thay đổi nhu cầu sử dụng nước, vận hành bơm, điều tiết van, sự cố đường ống, mất tín hiệu cảm biến hoặc nguyên nhân khác.]
+
+---
+
+## 3. Phân tích diễn biến lưu lượng
+
+Lưu lượng tại điểm đo **[ổn định / biến động theo nhu cầu / dao động mạnh / xuất hiện bất thường]** trong kỳ.
+
+### Diễn biến đáng chú ý
+
+* Lưu lượng trung bình đạt **[Qavg] m³/h**.
+* Lưu lượng cực đại **[Qmax] m³/h** tại **[thời gian]**.
+* Lưu lượng cực tiểu **[Qmin] m³/h** tại **[thời gian]**.
+* Khung giờ tiêu thụ/lưu lượng cao tập trung vào **[thời gian]**.
+* Khung giờ lưu lượng thấp tập trung vào **[thời gian]**.
+* [Nếu có] Lưu lượng vẫn duy trì cao bất thường trong khung giờ nhu cầu thấp.
+
+**Nhận định:**
+[Đánh giá đặc điểm sử dụng nước và các biến động đáng chú ý tại điểm đo.]
+
+---
+
+## 4. Phân tích tương quan áp lực – lưu lượng
+
+Diễn biến đồng thời của áp lực và lưu lượng cho thấy:
+
+**[Tương quan bình thường / Có dấu hiệu bất thường / Chưa đủ dữ liệu kết luận].**
+
+Các thời điểm cần chú ý:
+
+* **Lưu lượng tăng – áp lực giảm:** [nhận xét nếu có trong dữ liệu].
+* **Lưu lượng giảm – áp lực tăng:** [nhận xét nếu có trong dữ liệu].
+* **Lưu lượng cao – áp lực rất thấp:** [nhận xét nếu có trong dữ liệu].
+* **Lưu lượng > 0 nhưng áp lực = 0:** [nhận xét nếu có trong dữ liệu].
+* **Áp lực hoặc lưu lượng thay đổi đột ngột:** [nhận xét nếu có trong dữ liệu].
+
+**Kết luận tương quan:**
+[Mô tả cụ thể mối quan hệ giữa hai đại lượng dựa trên biểu đồ.]
+
+---
+
+## 5. Phân tích theo khung thời gian
+
+### Giờ cao điểm
+
+**Khung giờ:** [xx:xx – xx:xx]
+
+* Áp lực trung bình: **[x] m**
+* Lưu lượng trung bình: **[x] m³/h**
+* Đặc điểm: [Mô tả]
+
+### Giờ thấp điểm
+
+**Khung giờ:** [xx:xx – xx:xx]
+
+* Áp lực trung bình: **[x] m**
+* Lưu lượng trung bình: **[x] m³/h**
+* Đặc điểm: [Mô tả]
+
+### Ban đêm
+
+**Khung giờ:** [xx:xx – xx:xx]
+
+* Áp lực trung bình: **[x] m**
+* Lưu lượng trung bình: **[x] m³/h**
+* Lưu lượng thấp nhất: **[x] m³/h**
+
+**Nhận định:**
+[Nếu lưu lượng ban đêm vẫn cao bất thường, đánh dấu để theo dõi và kết hợp dữ liệu hiện trường trước khi kết luận nguyên nhân.]
+
+---
+
+## 6. Các bất thường phát hiện
+
+**Mức độ:** [Bình thường / Cần theo dõi / Cảnh báo / Nghiêm trọng]
+
+Các bất thường chính:
+
+1. **[Tên bất thường]**
+   Thời gian: [Thời gian]
+   Giá trị: [Thông số]
+   Nhận định: [Nguyên nhân có khả năng]
+
+2. **[Tên bất thường]**
+   Thời gian: [Thời gian]
+   Giá trị: [Thông số]
+   Nhận định: [Nguyên nhân có khả năng]
+
+3. **[Tên bất thường]**
+   Thời gian: [Thời gian]
+   Giá trị: [Thông số]
+   Nhận định: [Nguyên nhân có khả năng]
+
+**Đối chiếu sự cố hiện trường:**
+[Nếu có sự cố trong danh sách: nêu tên sự cố, khoảng cách tới điểm đo, thời điểm ghi nhận và nó có trùng với biến động áp lực/lưu lượng nào không. Nếu không có: ghi "Không có sự cố hiện trường nào được ghi nhận quanh điểm đo trong kỳ".]
+
+> Không kết luận rò rỉ, vỡ ống hoặc hỏng thiết bị chỉ dựa trên một dấu hiệu đơn lẻ. Cần kết hợp áp lực, lưu lượng, thời gian kéo dài, dữ liệu lịch sử và thông tin vận hành thực tế.
+
+---
+
+## 7. Đánh giá tình trạng điểm đo
+
+| Hạng mục | Đánh giá |
+| --- | --- |
+| Áp lực | [Ổn định / Bất thường] |
+| Lưu lượng | [Ổn định / Bất thường] |
+| Tương quan áp lực – lưu lượng | [Hợp lý / Cần kiểm tra] |
+| Dữ liệu cảm biến | [Tin cậy / Có dấu hiệu lỗi] |
+| Nguy cơ sự cố | [Thấp / Trung bình / Cao] |
+| Mức độ cần xử lý | [Theo dõi / Kiểm tra / Khẩn cấp] |
+
+**Đánh giá chung:**
+[Viết 2–4 câu tóm tắt tình trạng vận hành của điểm đo.]
+
+---
+
+## 8. Đề xuất xử lý
+
+1. **[Theo dõi]:** Tiếp tục theo dõi [thông số] trong [thời gian].
+2. **[Kiểm tra dữ liệu]:** Đối chiếu dữ liệu hiện tại với dữ liệu lịch sử của cùng điểm đo.
+3. **[Kiểm tra vận hành]:** Đối chiếu thời điểm bất thường với hoạt động bơm, van và lịch vận hành mạng lưới.
+4. **[Kiểm tra hiện trường]:** Kiểm tra đồng hồ, logger, cảm biến áp lực và đường truyền tín hiệu nếu bất thường kéo dài.
+5. **[Xử lý ưu tiên]:** [Đề xuất cụ thể dựa trên bất thường phát hiện].
+6. **[Sự cố hiện trường]:** [Nếu có sự cố chưa xử lý xong trong danh sách, nêu rõ cần xử lý/kiểm tra lại điểm nào trước].
+
+---
+
+## 9. Kết luận nhanh
+
+Trong kỳ **[thời gian]**, điểm đo **[Tên – ID]** ghi nhận tổng sản lượng **[Volume] m³**, áp lực trung bình **[Pavg] m** và lưu lượng trung bình **[Qavg] m³/h**.
+
+Diễn biến áp lực – lưu lượng được đánh giá **[ổn định / có dấu hiệu bất thường / bất thường nghiêm trọng]**. Điểm đáng chú ý nhất là **[mô tả bất thường quan trọng nhất]** tại **[thời gian]**.
+
+**Mức cảnh báo: [Bình thường / Cần theo dõi / Cần kiểm tra / Cần xử lý ngay].**
+
+**Hành động ưu tiên:** [Một câu nêu việc quan trọng nhất cần thực hiện].
 
 Ngữ cảnh báo cáo:
 ${JSON.stringify({
-    fromDate: context?.fromDate,
-    toDate: context?.toDate,
+    fromDate: formatAiDateTime(context?.fromDate),
+    toDate: formatAiDateTime(context?.toDate),
     intervalMinutes: context?.intervalMinutes,
     sourceMode: context?.sourceMode,
     metric: reportData?.metric || context?.metric,
@@ -818,77 +1106,155 @@ ${JSON.stringify({
   }, null, 2)}
 
 Dữ liệu logger đã rút gọn:
-${JSON.stringify(compactSeries, null, 2)}`;
+${JSON.stringify(compactSeries, null, 2)}
+
+Sự cố hiện trường do nhân viên ghi nhận quanh các điểm đo (bán kính 500m):
+${incidents.length ? JSON.stringify(incidents, null, 2) : "Không có sự cố nào được ghi nhận."}`;
+};
+
+const normalizeAiAnalysisText = (content) => {
+  let text = String(content || "").trim();
+  text = text
+    .replace(/^```(?:markdown|md)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+
+  const headingIndex = text.search(/#\s*BÁO CÁO PHÂN TÍCH/i);
+  return headingIndex > 0 ? text.slice(headingIndex).trim() : text;
+};
+
+const REPORT_ANALYSIS_SYSTEM_PROMPT = "Bạn phân tích dữ liệu kỹ thuật cấp nước. Chỉ trả về Markdown thuần theo đúng template người dùng cung cấp, không code fence, không lời dẫn, không bịa số liệu và ưu tiên phát hiện bất thường vận hành.";
+
+const buildReportAnalysisMessages = ({ reportData, context, incidents }) => [
+  { role: "system", content: REPORT_ANALYSIS_SYSTEM_PROMPT },
+  { role: "user", content: buildReportAnalysisPrompt({ reportData, context, incidents }) },
+];
+
+// Gan them su co hien truong quanh cac logger duoc phan tich. Loi o day khong duoc
+// lam hong ca bao cao, chi bo qua phan su co.
+const loadReportIncidents = async (req, { reportData, context }) => {
+  try {
+    const user = Number(context?.user ?? req.user?.user ?? 0);
+    const loggerIds = (reportData?.series || []).map((item) => item.id);
+    return await findIncidentsNearLoggers({
+      user: Number.isFinite(user) ? user : 0,
+      loggerIds,
+      fromDate: context?.fromDate,
+      toDate: context?.toDate,
+    });
+  } catch (error) {
+    console.error("Không tải được sự cố hiện trường cho báo cáo AI:", error.message);
+    return [];
+  }
+};
+
+const validateAnalysisRequest = (req, res) => {
+  const { reportData, context = {} } = req.body || {};
+  if (!reportData || !Array.isArray(reportData.labels) || !Array.isArray(reportData.series) || !reportData.series.length) {
+    res.status(400).json({ success: false, error: "Chưa có dữ liệu báo cáo để phân tích" });
+    return null;
+  }
+  return { reportData, context };
+};
+
+const mapAiErrorResponse = (res, error) => {
+  const status = error?.statusCode;
+  if (status === 503) {
+    return res.status(503).json({
+      success: false,
+      error: "AI đang bận hoặc chưa sẵn sàng, vui lòng thử lại sau ít phút",
+    });
+  }
+  if (status === 504) {
+    return res.status(504).json({ success: false, error: "AI phản hồi quá lâu, vui lòng thử lại" });
+  }
+  console.error("Không phân tích được báo cáo bằng AI:", error.message);
+  return res.status(502).json({
+    success: false,
+    error: error.message || "Không phân tích được báo cáo bằng AI",
+  });
 };
 
 export const analyzeSensorReport = async (req, res) => {
   let aiUsage;
   try {
-    const { reportData, context = {} } = req.body;
-    if (!reportData || !Array.isArray(reportData.labels) || !Array.isArray(reportData.series) || !reportData.series.length) {
-      return res.status(400).json({ success: false, error: "Chưa có dữ liệu báo cáo để phân tích" });
-    }
+    const input = validateAnalysisRequest(req, res);
+    if (!input) return undefined;
 
     aiUsage = await acquireAiUsage(req);
-    const baseUrl = (process.env.GEMINI_WEB2API_BASE_URL || "http://127.0.0.1:8081/v1").replace(/\/+$/, "");
-    const model = process.env.GEMINI_WEB2API_MODEL || "gemini-3.5-flash";
-    const apiKey = process.env.GEMINI_WEB2API_API_KEY || "sk-gemini";
-    const timeout = Number(process.env.GEMINI_WEB2API_TIMEOUT_MS) || 120000;
-    const prompt = buildReportAnalysisPrompt({ reportData, context });
 
-    const response = await axios.post(
-      `${baseUrl}/chat/completions`,
-      {
-        model,
-        messages: [
-          {
-            role: "system",
-            content: "Bạn phân tích dữ liệu kỹ thuật cấp nước. Trả lời bằng tiếng Việt, súc tích, ưu tiên phát hiện bất thường và khuyến nghị vận hành.",
-          },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.2,
-        stream: false,
-      },
-      {
-        timeout,
-        headers: {
-          "Content-Type": "application/json",
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        },
-      }
-    );
+    const controller = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) controller.abort(new Error("client disconnected"));
+    });
 
-    const analysis = response.data?.choices?.[0]?.message?.content?.trim();
+    const incidents = await loadReportIncidents(req, input);
+
+    const result = await chatComplete({
+      messages: buildReportAnalysisMessages({ ...input, incidents }),
+      temperature: 0.2,
+      longForm: true,
+      signal: controller.signal,
+      cacheNamespace: "report-analysis",
+    });
+
+    const analysis = normalizeAiAnalysisText(result.content);
     if (!analysis) {
-      await releaseAiUsage(aiUsage).catch((releaseError) => {
-        console.error("Không hoàn lại lượt AI báo cáo:", releaseError.message);
-      });
-      aiUsage = null;
+      aiUsage = await releaseAiUsage(aiUsage).catch(() => null);
       return res.status(502).json({ success: false, error: "AI không trả về nội dung phân tích" });
     }
 
-    return res.status(200).json({ success: true, analysis, model, aiUsage });
+    // Trả từ cache thì không tính là một lượt sử dụng.
+    if (result.cached) {
+      aiUsage = await releaseAiUsage(aiUsage).catch(() => aiUsage);
+    }
+
+    return res.status(200).json({
+      success: true,
+      analysis,
+      model: result.model,
+      provider: result.provider,
+      cached: result.cached,
+      aiUsage,
+    });
   } catch (error) {
     if (error?.statusCode === 429) return respondAiLimit(res, error);
-    if (aiUsage) await releaseAiUsage(aiUsage).catch((releaseError) => {
-      console.error("Không hoàn lại lượt AI báo cáo:", releaseError.message);
-    });
-    const code = error?.code || error?.cause?.code;
-    const upstreamMessage = error.response?.data?.error?.message || error.response?.data?.message;
-    if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT") {
-      return res.status(503).json({
-        success: false,
-        error: "AI service chưa chạy hoặc backend chưa kết nối được gemini-web2api",
-      });
-    }
-    console.error("Không phân tích được báo cáo bằng AI:", upstreamMessage || error.message);
-    return res.status(500).json({
-      success: false,
-      error: upstreamMessage || "Không phân tích được báo cáo bằng AI",
-    });
+    if (aiUsage) await releaseAiUsage(aiUsage).catch(() => null);
+    if (error?.statusCode === 499 || res.writableEnded) return undefined;
+    return mapAiErrorResponse(res, error);
   }
 };
+
+// Bản stream: chữ hiện dần, đồng thời heartbeat giữ cho nginx không cắt kết nối.
+export const analyzeSensorReportStream = async (req, res) => {
+  const input = validateAnalysisRequest(req, res);
+  if (!input) return undefined;
+
+  let aiUsage;
+  try {
+    aiUsage = await acquireAiUsage(req);
+  } catch (error) {
+    if (error?.statusCode === 429) return respondAiLimit(res, error);
+    return res.status(500).json({ success: false, error: "Không khởi tạo được phiên phân tích AI" });
+  }
+
+  const incidents = await loadReportIncidents(req, input);
+
+  await pipeAiStream({
+    req,
+    res,
+    messages: buildReportAnalysisMessages({ ...input, incidents }),
+    temperature: 0.2,
+    onDone: () => ({ aiUsage }),
+    onError: async () => {
+      const released = await releaseAiUsage(aiUsage).catch(() => null);
+      return { aiUsage: released };
+    },
+  });
+
+  return undefined;
+};
+
 
 const toLocalDateOnly = (value) => {
   const date = new Date(value);
@@ -915,23 +1281,6 @@ const makeDailyWindow = ({ reportDay, startHour, endHour }) => {
   return { start, end };
 };
 
-const lowerBoundByTime = (rows, targetMs) => {
-  let left = 0;
-  let right = rows.length;
-  while (left < right) {
-    const mid = Math.floor((left + right) / 2);
-    if (new Date(rows[mid].createAt).getTime() < targetMs) left = mid + 1;
-    else right = mid;
-  }
-  return left;
-};
-
-const getRowsInWindow = (rows, start, end) => {
-  const startIndex = lowerBoundByTime(rows, start.getTime());
-  const endIndex = lowerBoundByTime(rows, end.getTime() + 1);
-  return rows.slice(startIndex, endIndex);
-};
-
 const toSafeNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -942,22 +1291,64 @@ const roundReportNumber = (value) => {
   return Number.isFinite(number) ? Number(number.toFixed(2)) : 0;
 };
 
-const getDailyLoggerMetric = (rows, start, end) => {
-  const windowRows = getRowsInWindow(rows, start, end);
-  if (windowRows.length < 2) {
-    return { volume: 0, minFlow: null, count: windowRows.length };
-  }
+const getDailyMetricsFromDb = async ({ user, ids, start, end }) => {
+  if (!ids.length) return {};
+  const noFlowSentinel = 9007199254740991;
+  const rows = await Sensor.aggregate([
+    {
+      $match: {
+        user,
+        index: { $in: ids },
+        createAt: { $gte: start, $lte: end },
+      },
+    },
+    { $sort: { index: 1, createAt: 1 } },
+    {
+      $group: {
+        _id: "$index",
+        firstSum: { $first: "$sum" },
+        lastSum: { $last: "$sum" },
+        minFlow: {
+          $min: {
+            $cond: [
+              { $isNumber: "$flow" },
+              "$flow",
+              noFlowSentinel,
+            ],
+          },
+        },
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        id: "$_id",
+        count: 1,
+        volume: { $subtract: ["$lastSum", "$firstSum"] },
+        minFlow: {
+          $cond: [
+            { $eq: ["$minFlow", noFlowSentinel] },
+            null,
+            "$minFlow",
+          ],
+        },
+      },
+    },
+  ]).allowDiskUse(true);
 
-  const firstSum = toSafeNumber(windowRows[0].sum);
-  const lastSum = toSafeNumber(windowRows[windowRows.length - 1].sum);
-  const rawVolume = firstSum !== null && lastSum !== null ? lastSum - firstSum : 0;
-  const flowValues = windowRows.map((row) => toSafeNumber(row.flow)).filter((value) => value !== null);
-
-  return {
-    volume: Number.isFinite(rawVolume) && rawVolume > 0 ? roundReportNumber(rawVolume) : 0,
-    minFlow: flowValues.length ? roundReportNumber(Math.min(...flowValues)) : null,
-    count: windowRows.length,
-  };
+  return Object.fromEntries(rows.map((row) => {
+    const volume = row.count >= 2 ? Number(row.volume) : 0;
+    const minFlow = row.count >= 2 ? toSafeNumber(row.minFlow) : null;
+    return [
+      Number(row.id),
+      {
+        volume: Number.isFinite(volume) && volume > 0 ? roundReportNumber(volume) : 0,
+        minFlow: minFlow === null ? null : roundReportNumber(minFlow),
+        count: row.count,
+      },
+    ];
+  }));
 };
 
 const setCellBorder = (cell) => {
@@ -1050,7 +1441,7 @@ const appendDnpMonthlyAverageSheet = async (workbook, { user }) => {
         volume: { $subtract: ["$lastSum", "$firstSum"] },
       },
     },
-  ]);
+  ]).allowDiskUse(true);
 
   const totalByMonth = monthlyRows.reduce((map, row) => {
     const volume = Number(row.volume);
@@ -1166,55 +1557,35 @@ export const exportDailyReport = async (req, res) => {
     }
 
     const calculationDays = [addLocalDays(fromDay, -1), ...displayDays];
-    const firstWindow = makeDailyWindow({ reportDay: calculationDays[0], startHour, endHour });
-    const lastWindow = makeDailyWindow({ reportDay: displayDays[displayDays.length - 1], startHour, endHour });
-    const [infos, rows, dnpConfig] = await Promise.all([
+    const [infos, dnpConfig] = await Promise.all([
       InfoSen.find({ user: numericUser, id: { $in: ids } }).select("id name group").lean(),
-      Sensor.find({
-        user: numericUser,
-        index: { $in: ids },
-        createAt: { $gte: firstWindow.start, $lte: lastWindow.end },
-      })
-        .select("index flow sum createAt -_id")
-        .sort({ index: 1, createAt: 1 })
-        .lean(),
       DnpConfig.findOne({ user: numericUser }).lean(),
     ]);
     const dnpLoggerIds = [...new Set((dnpConfig?.loggerIds || []).map(Number).filter(Number.isFinite))];
-    const dnpRows = dnpLoggerIds.length
-      ? await Sensor.find({
-        user: numericUser,
-        index: { $in: dnpLoggerIds },
-        createAt: { $gte: firstWindow.start, $lte: lastWindow.end },
-      })
-        .select("index flow sum createAt -_id")
-        .sort({ index: 1, createAt: 1 })
-        .lean()
-      : [];
+    const metricIds = [...new Set([...ids, ...dnpLoggerIds])];
 
     const infoById = Object.fromEntries(infos.map((info) => [info.id, info]));
-    const rowsById = rows.reduce((map, row) => {
-      if (!map[row.index]) map[row.index] = [];
-      map[row.index].push(row);
-      return map;
-    }, {});
-    const dnpRowsById = dnpRows.reduce((map, row) => {
-      if (!map[row.index]) map[row.index] = [];
-      map[row.index].push(row);
-      return map;
-    }, {});
+    const dayMetricResults = await mapWithConcurrency(calculationDays, 4, async (day) => {
+      const key = day.toLocaleDateString("sv-SE");
+      const { start, end } = makeDailyWindow({ reportDay: day, startHour, endHour });
+      const metrics = await getDailyMetricsFromDb({
+        user: numericUser,
+        ids: metricIds,
+        start,
+        end,
+      });
+      return { key, metrics };
+    });
 
     const metricsByDayKey = {};
     const dnpTotalsByDayKey = {};
-    calculationDays.forEach((day) => {
-      const key = day.toLocaleDateString("sv-SE");
-      const { start, end } = makeDailyWindow({ reportDay: day, startHour, endHour });
+    dayMetricResults.forEach(({ key, metrics }) => {
       metricsByDayKey[key] = Object.fromEntries(ids.map((id) => [
         id,
-        getDailyLoggerMetric(rowsById[id] || [], start, end),
+        metrics[id] || { volume: 0, minFlow: null, count: 0 },
       ]));
       dnpTotalsByDayKey[key] = dnpLoggerIds.reduce((sum, id) => (
-        sum + Number(getDailyLoggerMetric(dnpRowsById[id] || [], start, end).volume || 0)
+        sum + Number(metrics[id]?.volume || 0)
       ), 0);
     });
 
@@ -1348,19 +1719,28 @@ export const getSensorProduction = async (req, res) => {
     const sensorId = Number(id);
     const numericUser = Number(user);
     const now = new Date();
+    const latestSensor = await Sensor.findOne({
+      user: numericUser,
+      index: sensorId,
+      createAt: { $lte: now },
+      sum: { $ne: null },
+    })
+      .select("sum createAt -_id")
+      .sort({ createAt: -1 })
+      .lean();
+    const currentSum = Number(latestSensor?.sum);
+    const currentAt = latestSensor?.createAt ? new Date(latestSensor.createAt) : now;
+    const hasCurrentSum = Number.isFinite(currentSum) && !Number.isNaN(currentAt.getTime());
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
     const yesterdayStart = new Date(todayStart);
     yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    const past24Start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const past48Start = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const past24Start = new Date((hasCurrentSum ? currentAt : now).getTime() - 24 * 60 * 60 * 1000);
+    const past48Start = new Date((hasCurrentSum ? currentAt : now).getTime() - 48 * 60 * 60 * 1000);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
     const yearStart = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
     const previousMonthEnd = todayStart > monthStart ? todayStart : monthStart;
     const previousYearEnd = todayStart > yearStart ? todayStart : yearStart;
-    const rangeEnd = new Date(now);
-    rangeEnd.setHours(23, 59, 59, 999);
-
     const [
       dayTotal,
       previousDayTotal,
@@ -1371,13 +1751,21 @@ export const getSensorProduction = async (req, res) => {
       yearTotal,
       previousYearTotal,
     ] = await Promise.all([
-      getProductionVolume({ user: numericUser, id: sensorId, start: todayStart, end: now }),
+      hasCurrentSum
+        ? getProductionVolumeFromCurrentSum({ user: numericUser, id: sensorId, start: todayStart, end: currentAt, currentSum })
+        : getProductionVolume({ user: numericUser, id: sensorId, start: todayStart, end: now }),
       getProductionVolume({ user: numericUser, id: sensorId, start: yesterdayStart, end: todayStart }),
-      getProductionVolume({ user: numericUser, id: sensorId, start: past24Start, end: now }),
+      hasCurrentSum
+        ? getProductionVolumeFromCurrentSum({ user: numericUser, id: sensorId, start: past24Start, end: currentAt, currentSum })
+        : getProductionVolume({ user: numericUser, id: sensorId, start: past24Start, end: now }),
       getProductionVolume({ user: numericUser, id: sensorId, start: past48Start, end: past24Start }),
-      getProductionVolume({ user: numericUser, id: sensorId, start: monthStart, end: now }),
+      hasCurrentSum
+        ? getProductionVolumeFromCurrentSum({ user: numericUser, id: sensorId, start: monthStart, end: currentAt, currentSum })
+        : getProductionVolume({ user: numericUser, id: sensorId, start: monthStart, end: now }),
       getProductionVolume({ user: numericUser, id: sensorId, start: monthStart, end: previousMonthEnd }),
-      getProductionVolume({ user: numericUser, id: sensorId, start: yearStart, end: now }),
+      hasCurrentSum
+        ? getProductionVolumeFromCurrentSum({ user: numericUser, id: sensorId, start: yearStart, end: currentAt, currentSum })
+        : getProductionVolume({ user: numericUser, id: sensorId, start: yearStart, end: now }),
       getProductionVolume({ user: numericUser, id: sensorId, start: yearStart, end: previousYearEnd }),
     ]);
 
@@ -1385,45 +1773,21 @@ export const getSensorProduction = async (req, res) => {
     const endTime = parseHourMinute(endHour, "23:59");
     const startMinute = startTime.hour * 60 + startTime.minute;
     const endMinute = endTime.hour * 60 + endTime.minute;
-    const chartStart = new Date(now);
-    chartStart.setDate(chartStart.getDate() - days + 1);
-    chartStart.setHours(0, 0, 0, 0);
-
-    const rows = await Sensor.find({
-      user: numericUser,
-      index: sensorId,
-      createAt: { $gte: chartStart, $lte: rangeEnd },
-      sum: { $ne: null },
-    })
-      .select("sum createAt -_id")
-      .sort({ createAt: 1 })
-      .lean();
-
-    const grouped = {};
-    rows.forEach((row) => {
-      const date = new Date(row.createAt);
-      const minuteOfDay = toMinutesOfDay(date);
-      const inWindow = startMinute <= endMinute
-        ? minuteOfDay >= startMinute && minuteOfDay <= endMinute
-        : minuteOfDay >= startMinute || minuteOfDay <= endMinute;
-      if (!inWindow) return;
-
-      const key = date.toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(row);
-    });
-
-    const chartData = [];
-    for (let i = days - 1; i >= 0; i--) {
+    const chartData = await Promise.all(Array.from({ length: days }, async (_, index) => {
+      const i = days - 1 - index;
       const date = new Date(now);
       date.setDate(date.getDate() - i);
       const key = date.toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
-      const dayRows = grouped[key] || [];
-      const volume = dayRows.length >= 2
-        ? Math.max(Number(dayRows[dayRows.length - 1].sum) - Number(dayRows[0].sum), 0)
-        : 0;
-      chartData.push({ date: key, volume });
-    }
+      const windowStart = new Date(date);
+      windowStart.setHours(startTime.hour, startTime.minute, 0, 0);
+      const windowEnd = new Date(date);
+      if (startMinute > endMinute) {
+        windowEnd.setDate(windowEnd.getDate() + 1);
+      }
+      windowEnd.setHours(endTime.hour, endTime.minute, 59, 999);
+      const volume = await getProductionVolume({ user: numericUser, id: sensorId, start: windowStart, end: windowEnd });
+      return { date: key, volume };
+    }));
 
     return res.status(200).json({
       success: true,
@@ -1449,12 +1813,56 @@ export const getSensorProduction = async (req, res) => {
 
 //   return `${datePart} ${timePart}`; // Kết quả dạng "dd/mm/yyyy HH:MM"
 // };
-function getRowIndexFromTime(timeStr) {
-  const [hourStr, minStr] = timeStr.split(":");
-  const hour = parseInt(hourStr, 10);
-  const minute = parseInt(minStr, 10);
-  const slot = hour * 4 + Math.floor(minute / 15);
-  return 3 + slot; // bắt đầu từ dòng 3
+const EXCEL_SLOT_MINUTES = 15;
+const EXCEL_SLOT_COUNT = 24 * 60 / EXCEL_SLOT_MINUTES;
+const HALF_EXCEL_SLOT_MS = EXCEL_SLOT_MINUTES * 60 * 1000 / 2;
+const VIETNAM_TIME_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function getVietnamTimeParts(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const vietnamDate = new Date(date.getTime() + VIETNAM_TIME_OFFSET_MS);
+  return {
+    hour: vietnamDate.getUTCHours(),
+    minute: vietnamDate.getUTCMinutes(),
+    second: vietnamDate.getUTCSeconds(),
+    millisecond: vietnamDate.getUTCMilliseconds(),
+  };
+}
+
+function getNearestQuarterHourSamples(entries = []) {
+  const samples = Array(EXCEL_SLOT_COUNT).fill(null);
+
+  entries.forEach((entry) => {
+    const timeParts = getVietnamTimeParts(entry.createAt);
+    if (!timeParts) return;
+
+    const totalMs =
+      ((timeParts.hour * 60 + timeParts.minute) * 60 + timeParts.second) * 1000
+      + timeParts.millisecond;
+    const slot = Math.round(totalMs / (EXCEL_SLOT_MINUTES * 60 * 1000));
+    if (slot < 0 || slot >= EXCEL_SLOT_COUNT) return;
+
+    const slotMs = slot * EXCEL_SLOT_MINUTES * 60 * 1000;
+    const distanceMs = Math.abs(totalMs - slotMs);
+    if (distanceMs > HALF_EXCEL_SLOT_MS) return;
+
+    const isExactQuarterHour =
+      timeParts.minute % EXCEL_SLOT_MINUTES === 0
+      && timeParts.second === 0
+      && timeParts.millisecond === 0;
+    const current = samples[slot];
+    if (
+      !current
+      || (isExactQuarterHour && !current.isExactQuarterHour)
+      || (isExactQuarterHour === current.isExactQuarterHour && distanceMs < current.distanceMs)
+    ) {
+      samples[slot] = { entry, distanceMs, isExactQuarterHour };
+    }
+  });
+
+  return samples.map((sample) => sample?.entry ?? null);
 }
 
 const exportFakeDataToExcel = async (sensorData, res, adj) => {
@@ -1521,13 +1929,11 @@ const exportFakeDataToExcel = async (sensorData, res, adj) => {
       worksheet.getRow(2).getCell(startCol + 1).value = 'Lưu lượng';
       worksheet.getRow(2).getCell(startCol + 2).value = 'Sản lượng';
       worksheet.getRow(2).getCell(startCol + 3).value = 'Sum';
-      daySum.data?.forEach(entry => {
-        if (Math.floor(entry.createAt / 60000) % 15) {
-          return; // chỉ lấy mỗi 15 phút 1 lần
-        }
-        const date = new Date(entry.createAt);
-        const timeStr = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // HH:mm
-        const rowIndex = getRowIndexFromTime(timeStr);
+      const quarterHourSamples = getNearestQuarterHourSamples(daySum.data);
+      quarterHourSamples.forEach((entry, slot) => {
+        if (!entry) return;
+
+        const rowIndex = 3 + slot;
         const row = worksheet.getRow(rowIndex);
 
         row.getCell(startCol).value = entry.Pressure;
@@ -1694,7 +2100,7 @@ export const exportSensors = async (req, res) => {
           endOfDaySum: 1
         }
       }
-    ]);
+    ]).allowDiskUse(true);
     return exportFakeDataToExcel(sensorData, res, adj);
   } catch (error) {
     if (!res.headersSent) {
@@ -1737,7 +2143,7 @@ export const upInterval = async (req, res) => {
       // }
       const result = await publishMessage(
         14,
-        Number(profs.sum).toFixed(1) * 10,
+        Number(profs.sum).toFixed(3) * 1000,
         profs.sen_id,
         profs.user,
         null,
@@ -1973,6 +2379,22 @@ function secondsUntilEndOfDay() {
   return Math.floor((end - now) / 1000); // đổi ms → s
 }
 
+const mapWithConcurrency = async (items, limit, mapper) => {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(limit, 1), items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }));
+
+  return results;
+};
+
 
 export const getSensors = async (req, res) => {
   try {
@@ -1984,15 +2406,21 @@ export const getSensors = async (req, res) => {
     const pram = []
     const pramFlow = []
     if (profs.totalMap) {
-      const senMap = {};
-      for (let i = 0; i < Number(profs.totalMap.length); i++) {
-        const sensor = await Sensor.findOne({ index: profs.totalMap[i].id, user: profs.totalMap[0].user }).sort({ $natural: -1 });
-        senMap[profs.totalMap[i].id] = sensor
-      }
+      const ids = [...new Set(
+        profs.totalMap.map((item) => Number(item.id)).filter(Number.isFinite)
+      )];
+      const mapUser = Number(profs.totalMap[0]?.user ?? profs.user ?? 0);
+      const latestSensors = await mapWithConcurrency(ids, 6, async (id) => (
+        Sensor.findOne({ user: mapUser, index: id })
+          .sort({ createAt: -1 })
+          .lean()
+      ));
+      const senMap = Object.fromEntries(
+        latestSensors.filter(Boolean).map((sensor) => [sensor.index, sensor])
+      );
       return res.status(200).json({ success: true, sensors: senMap })
     }
     if (profs.timeGet) {
-      const lengModal = 288
       const startOfToday = new Date(profs.timeGet[0]);
       const endOfToday = new Date(profs.timeGet[1]);
       startOfToday.setUTCSeconds(0, 0);
@@ -2093,21 +2521,15 @@ export const getSensors = async (req, res) => {
             endOfDaySum: 1
           }
         }
-      ]);
-      const listDate = getDatesInRange(startOfToday, endOfToday);
-      const lengArray = getLength(lengModal, listDate)
-      const sensorH = []
-      const flowH = []
+      ]).allowDiskUse(true);
+      const lengArray = getFiveMinutePointCount(startOfToday, endOfToday)
+      const sensorH = Array(lengArray).fill(null)
+      const flowH = Array(lengArray).fill(null)
       const sensorT = Array(lengArray).fill(null)
-      const startDate = startOfToday
-      const offSetHour = startOfToday.getHours() * 12
-      const offSetMinute = Math.floor(startOfToday.getMinutes() / 5)
       result[0].data.forEach((sensor) => {
         const dateOfSensor = new Date(sensor.createAt)
-        const currentDate = dateOfSensor
-        const convert = differenceInCalendarDays(currentDate, startDate)
-        const convertTimeValue = Math.floor(convertTime(sensor.createAt, 300))
-        const index = convert * lengModal + convertTimeValue - offSetHour - offSetMinute;
+        const index = Math.floor((dateOfSensor.getTime() - startOfToday.getTime()) / FIVE_MINUTES_MS);
+        if (index < 0 || index >= lengArray) return;
         addDateElement(sensorH, sensor, index, "Pressure");
         addDateElement(flowH, sensor, index, "flow");
         sensorT[index] = sensor
@@ -2124,7 +2546,8 @@ export const getSensors = async (req, res) => {
       startOfToday.setHours(0, 0, 0, 0);
       yesterday?.setHours(0, 0, 0, 0);
     }
-    for (let i = 0; i < Number(profs.total); i++) {
+    const sensorIndexes = Array.from({ length: Number(profs.total) || 0 }, (_, i) => i);
+    await mapWithConcurrency(sensorIndexes, 4, async (i) => {
       const viewMode = profs.viewModes && profs.viewModes[profs.info[i].id] ? profs.viewModes[profs.info[i].id] : 'today';
       timeTrackingRet[i] = 0;
       const sensorY = await (async () => {
@@ -2136,11 +2559,14 @@ export const getSensors = async (req, res) => {
               createAt: { $gte: past48hStart, $lt: past24hStart },
             })
               .select("flow Pressure createAt")
-              .sort({ createAt: 1 });
+              .sort({ createAt: 1 })
+              .lean();
             return dataR;
           }
-          if (await clientRedis.exists(`sensorY:${profs.info[i].id}`)) {
-            return JSON.parse(await clientRedis.get(`sensorY:${profs.info[i].id}`))
+          const sensorYCacheKey = `sensorY:${profs.info[i].id}`;
+          const cachedSensorY = await clientRedis.get(sensorYCacheKey);
+          if (cachedSensorY) {
+            return JSON.parse(cachedSensorY)
           }
           const dataR = await Sensor.find({
             index: profs.info[i].id,
@@ -2148,8 +2574,9 @@ export const getSensors = async (req, res) => {
             createAt: { $gte: yesterday, $lt: startOfToday },
           })
             .select("flow Pressure createAt")
-            .sort({ createAt: 1 });
-          clientRedis.set(`sensorY:${profs.info[i].id}`, JSON.stringify(dataR), { EX: secondsUntilEndOfDay() });
+            .sort({ createAt: 1 })
+            .lean();
+          clientRedis.set(sensorYCacheKey, JSON.stringify(dataR), { EX: secondsUntilEndOfDay() });
           return dataR;
         } else {
           return [];
@@ -2175,6 +2602,7 @@ export const getSensors = async (req, res) => {
                   _id: null,
                   firstSum: { $first: "$sum" },
                   lastSum: { $last: "$sum" },
+                  lastCreateAt: { $last: "$createAt" },
                   battery: { $last: "$battery" },
                   temperature: { $last: "$temperature" },
                   avgPressure: { $avg: "$Pressure" },
@@ -2194,7 +2622,7 @@ export const getSensors = async (req, res) => {
             stats: { $arrayElemAt: ["$stats", 0] },
           }
         }
-      ]);
+      ]).allowDiskUse(true);
       let sensorT = Array(86400 / profs.info[i].watch).fill(null)
       let sensorYRest = []
       let flowYRest = []
@@ -2202,9 +2630,13 @@ export const getSensors = async (req, res) => {
       let dataFlow = []
       let timeTracking = 0
       let currentStart = 0;
-      if (!profs.date[1] && viewMode !== 'past24h' && await clientRedis.exists(`sensorYRest:${profs.info[i].id}`)) {
-        sensorYRest = JSON.parse(await clientRedis.get(`sensorYRest:${profs.info[i].id}`))
-        flowYRest = JSON.parse(await clientRedis.get(`flowYRest:${profs.info[i].id}`))
+      const compareCacheKeys = [`sensorYRest:${profs.info[i].id}`, `flowYRest:${profs.info[i].id}`];
+      const compareCache = !profs.date[1] && viewMode !== 'past24h'
+        ? await clientRedis.mGet(compareCacheKeys)
+        : [];
+      if (compareCache.length === compareCacheKeys.length && compareCache[0] && compareCache[1]) {
+        sensorYRest = JSON.parse(compareCache[0])
+        flowYRest = JSON.parse(compareCache[1])
       }
       else {
         sensorY.forEach((sensor) => {
@@ -2222,15 +2654,26 @@ export const getSensors = async (req, res) => {
           }
         })
         if (!profs.date[1] && viewMode !== 'past24h') {
-          clientRedis.set(`sensorYRest:${profs.info[i].id}`, JSON.stringify(sensorYRest), { EX: secondsUntilEndOfDay() });
-          clientRedis.set(`flowYRest:${profs.info[i].id}`, JSON.stringify(flowYRest), { EX: secondsUntilEndOfDay() });
+          await Promise.all([
+            clientRedis.set(compareCacheKeys[0], JSON.stringify(sensorYRest), { EX: secondsUntilEndOfDay() }),
+            clientRedis.set(compareCacheKeys[1], JSON.stringify(flowYRest), { EX: secondsUntilEndOfDay() }),
+          ]);
         }
       }
-      if (!profs.date[1] && viewMode !== 'past24h' && await clientRedis.exists(`dataPressure:${profs.info[i].id}`)) {
-        dataPressure = JSON.parse(await clientRedis.get(`dataPressure:${profs.info[i].id}`))
-        dataFlow = JSON.parse(await clientRedis.get(`dataFlow:${profs.info[i].id}`))
-        sensorT = JSON.parse(await clientRedis.get(`sensorT:${profs.info[i].id}`))
-        timeTracking = JSON.parse(await clientRedis.get(`timeTracking:${profs.info[i].id}`))
+      const chartCacheKeys = [
+        `dataPressure:${profs.info[i].id}`,
+        `dataFlow:${profs.info[i].id}`,
+        `sensorT:${profs.info[i].id}`,
+        `timeTracking:${profs.info[i].id}`,
+      ];
+      const chartCache = !profs.date[1] && viewMode !== 'past24h'
+        ? await clientRedis.mGet(chartCacheKeys)
+        : [];
+      if (chartCache.length === chartCacheKeys.length && chartCache.every(Boolean)) {
+        dataPressure = JSON.parse(chartCache[0])
+        dataFlow = JSON.parse(chartCache[1])
+        sensorT = JSON.parse(chartCache[2])
+        timeTracking = JSON.parse(chartCache[3])
       }
       else {
         result[0].data.forEach((sensor) => {
@@ -2258,27 +2701,45 @@ export const getSensors = async (req, res) => {
           }
         })
         if (!profs.date[1] && viewMode !== 'past24h') {
-          clientRedis.set(`dataPressure:${profs.info[i].id}`, JSON.stringify(dataPressure), { EX: 60 });
-          clientRedis.set(`dataFlow:${profs.info[i].id}`, JSON.stringify(dataFlow), { EX: 60 });
-          clientRedis.set(`sensorT:${profs.info[i].id}`, JSON.stringify(sensorT), { EX: 60 });
-          clientRedis.set(`timeTracking:${profs.info[i].id}`, JSON.stringify(timeTracking), { EX: 60 });
+          await Promise.all([
+            clientRedis.set(chartCacheKeys[0], JSON.stringify(dataPressure), { EX: 60 }),
+            clientRedis.set(chartCacheKeys[1], JSON.stringify(dataFlow), { EX: 60 }),
+            clientRedis.set(chartCacheKeys[2], JSON.stringify(sensorT), { EX: 60 }),
+            clientRedis.set(chartCacheKeys[3], JSON.stringify(timeTracking), { EX: 60 }),
+          ]);
         }
       }
       if (result[0].data && result[0].data.length > 0) {
-        const sensorY24 = await Sensor.findOne({
-          index: profs.info[i].id,
-          user: profs.user,
-          createAt: { $gte: result[0].data[result[0].data.length - 1].createAt - 86400000 },
-        }).select('sum -_id').lean();
         const stats = result[0].stats
+        const lastSum = Number(stats.lastSum);
+        const lastCreateAt = stats.lastCreateAt ? new Date(stats.lastCreateAt) : new Date(result[0].data[result[0].data.length - 1].createAt);
+        const dayStart = new Date(lastCreateAt);
+        dayStart.setHours(0, 0, 0, 0);
+        const past24Start = new Date(lastCreateAt.getTime() - 24 * 60 * 60 * 1000);
+        const [dayTotal, total24] = await Promise.all([
+          getProductionVolumeFromCurrentSum({
+            user: profs.user,
+            id: profs.info[i].id,
+            start: dayStart,
+            end: lastCreateAt,
+            currentSum: lastSum,
+          }),
+          getProductionVolumeFromCurrentSum({
+            user: profs.user,
+            id: profs.info[i].id,
+            start: past24Start,
+            end: lastCreateAt,
+            currentSum: lastSum,
+          }),
+        ]);
         battery[i] = stats.battery
         temperature[i] = stats.temperature
         pram[i] = { max: stats.maxPressure, min: stats.minPressure, avg: stats.avgPressure }
-        pramFlow[i] = { max: stats.maxFlow, min: stats.minFlow, total24: stats.lastSum - sensorY24.sum, total: stats.lastSum - stats.firstSum, avg: stats.avgFlow, sum: stats.lastSum };
+        pramFlow[i] = { max: stats.maxFlow, min: stats.minFlow, total24, total: dayTotal, avg: stats.avgFlow, sum: stats.lastSum };
       }
       sensors[i] = { sensorYRest, flowYRest, dataFlow, sensorT, dataPressure }
       timeTrackingRet[i] = Math.round(timeTracking / 60)
-    }
+    })
     return res.status(200).json({ success: true, sensors, timeTrackingRet, battery, temperature, pram, pramFlow })
   } catch (error) {
     return res.status(500).json({ success: false, error: "Sensor not found" })
@@ -2318,9 +2779,19 @@ export const addSensor = async (req, res) => {
 
 export const viewSensor = async (req, res) => {
   try {
-    const { id } = req.body;
-    const sensor = await InfoSen.findOne({ id: id });
-    return res.status(200).json({ success: true, sensor });
+    const { id, user } = req.body;
+    const query = { id: Number(id) };
+    const numericUser = Number(user);
+    if (Number.isFinite(numericUser)) query.user = numericUser;
+    const sensor = await InfoSen.findOne(query);
+    if (!sensor) {
+      return res.status(404).json({ success: false, error: "Sensor not found" });
+    }
+    const sensorData = sensor.toObject();
+    if (/^logger_unknown\./.test(sensorData.image || "")) {
+      sensorData.image = "";
+    }
+    return res.status(200).json({ success: true, sensor: sensorData });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Sensor not found" })
   }
@@ -2329,9 +2800,12 @@ export const viewSensor = async (req, res) => {
 
 export const updateSensor = async (req, res) => {
   try {
-    const { sen_name, sen_description, id } = req.body;
+    const { sen_name, sen_description, id, user } = req.body;
+    const query = { id: Number(id) };
+    const numericUser = Number(user);
+    if (Number.isFinite(numericUser)) query.user = numericUser;
     const updateSensor = await InfoSen.findOneAndUpdate(
-      { id: id },
+      query,
       {
         $set: {
           description: sen_description,
@@ -2340,6 +2814,9 @@ export const updateSensor = async (req, res) => {
       },
       { new: true }
     );
+    if (!updateSensor) {
+      return res.status(404).json({ success: false, error: "Sensor not found" });
+    }
     return res.status(200).json({ success: true, message: "Edit data successfully." })
   } catch (error) {
     return res.status(500).json({ success: false, error: "Sensor edit Failed due to some Reason " })
@@ -2350,15 +2827,14 @@ export const getGroup = async (req, res) => {
   try {
     const { user } = req.query;
     const sen_group = []
-    const group = []
-    const Groups = await Group.find({ user: user });
-    const senGroup = await InfoSen.find({ user: user });
-    group.push("Không có")
-    Groups.forEach((sensor) => {
-      group.push(sensor.name)
-    })
+    const Groups = await Group.find({ user: user }).sort({ sortOrder: 1, createAt: 1, name: 1 }).lean();
+    const senGroup = await InfoSen.find({ user: user }).lean();
+    const savedGroups = dedupeGroupNames(Groups.map((sensor) => sensor.name));
+    const group = savedGroups.includes(NO_GROUP_NAME)
+      ? savedGroups
+      : [NO_GROUP_NAME, ...savedGroups];
     senGroup.forEach((sensor) => {
-      sen_group.push({ group: sensor.group, name: sensor.name })
+      sen_group.push({ group: normalizeGroupName(sensor.group), name: sensor.name })
     })
     return res.status(200).json({ success: true, group, sen_group });
   } catch (error) {
@@ -2369,7 +2845,11 @@ export const getGroup = async (req, res) => {
 export const getSensorInGroup = async (req, res) => {
   try {
     const { group, user } = req.query
-    const senInGroup = await InfoSen.find({ group: group, user: user }).sort({ createAt: -1 });
+    const groupName = normalizeGroupName(group);
+    const groupQuery = groupName === NO_GROUP_NAME
+      ? { $or: [{ group: NO_GROUP_NAME }, { group: "Khong co" }, { group: "" }, { group: null }, { group: { $exists: false } }] }
+      : { group: groupName };
+    const senInGroup = await InfoSen.find({ user: user, ...groupQuery }).sort({ sortOrder: 1, createAt: -1 }).lean();
     return res.status(200).json({ success: true, senInGroup });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
@@ -2382,21 +2862,51 @@ export const getGroupInfo = async (req, res) => {
     const data = {}
     const valueSenS = []
     let dataSensorOnline = 0;
-    const senGroup = await InfoSen.find({ user: user }).sort({ createAt: -1 });
-    for (let i = 0; i < senGroup.length; i++) {
-      const startOfToday = new Date() - senGroup[i].interval * 2000;
-      const valueSen = await Sensor.findOne({ index: senGroup[i].id, user: user, createAt: { $gte: startOfToday } }).sort({ createAt: -1 });
-      valueSenS[senGroup[i].id] = valueSen
-      if (valueSen) {
+    const numericUser = Number(user);
+    const [senGroup, groups] = await Promise.all([
+      InfoSen.find({ user: user }).sort({ sortOrder: 1, createAt: -1 }).lean(),
+      Group.find({ user: user }).sort({ sortOrder: 1, createAt: 1, name: 1 }).lean(),
+    ]);
+    const ids = [...new Set(senGroup.map((sensor) => Number(sensor.id)).filter(Number.isFinite))];
+    const latestSensors = await mapWithConcurrency(ids, 6, async (id) => (
+      Sensor.findOne({ user: numericUser, index: id })
+        .sort({ createAt: -1 })
+        .lean()
+    ));
+    const latestById = Object.fromEntries(
+      latestSensors.filter(Boolean).map((sensor) => [Number(sensor.index), sensor])
+    );
+
+    senGroup.forEach((sensor) => {
+      const valueSen = latestById[Number(sensor.id)] || null;
+      const onlineAfter = Date.now() - (Number(sensor.interval) || 0) * 2000;
+      const isOnline = valueSen && new Date(valueSen.createAt).getTime() >= onlineAfter;
+      valueSenS[sensor.id] = isOnline ? valueSen : null
+      if (isOnline) {
         dataSensorOnline += 1;
       }
-    }
-    senGroup.forEach((sensor) => {
-      // if (!sensor.group || sensor.group === "") sensor.group = "Khong co"
-      if (!data[sensor.group]) data[sensor.group] = []
-      data[sensor.group].push(sensor)
     })
-    return res.status(200).json({ success: true, data, valueSenS, dataSensorOnline });
+    senGroup.forEach((sensor) => {
+      const groupName = normalizeGroupName(sensor.group);
+      if (!data[groupName]) data[groupName] = []
+      data[groupName].push({ ...sensor, group: groupName })
+    })
+    const savedGroupNames = dedupeGroupNames(groups.map((group) => group.name));
+    const existingNames = Object.keys(data);
+    const groupOrder = [
+      ...(savedGroupNames.includes(NO_GROUP_NAME) ? [] : [NO_GROUP_NAME]),
+      ...savedGroupNames,
+      ...existingNames.filter((name) => name && !savedGroupNames.includes(name)),
+    ].filter((name, index, arr) => arr.indexOf(name) === index);
+    const orderedData = {};
+    groupOrder.forEach((groupName) => {
+      if (data[groupName]) orderedData[groupName] = data[groupName];
+    });
+    existingNames.forEach((groupName) => {
+      if (!orderedData[groupName]) orderedData[groupName] = data[groupName];
+    });
+
+    return res.status(200).json({ success: true, data: orderedData, groupOrder, valueSenS, dataSensorOnline });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
   }
@@ -2416,7 +2926,7 @@ export const changeGroup = async (req, res) => {
       { name: profs.name, user: profs.user },
       {
         $set: {
-          group: profs.newGroup, // Thêm name vào đây
+          group: normalizeGroupName(profs.newGroup), // Thêm name vào đây
           createAt: Date.now(),
         }
       },
@@ -2431,8 +2941,12 @@ export const changeGroup = async (req, res) => {
 export const deleteGroup = async (req, res) => {
   try {
     const profs = req.body;
-    const delGroup = await Group.deleteOne({ name: profs.groupToRemove, user: profs.user })
-    const deleteGroup = await InfoSen.updateMany({ group: profs.groupToRemove, user: profs.user }, { $set: { group: "Không có" } })
+    const groupToRemove = normalizeGroupName(profs.groupToRemove);
+    if (groupToRemove === NO_GROUP_NAME) {
+      return res.status(400).json({ success: false, error: "Không thể xóa nhóm Không có" });
+    }
+    const delGroup = await Group.deleteOne({ name: groupToRemove, user: profs.user })
+    const deleteGroup = await InfoSen.updateMany({ group: groupToRemove, user: profs.user }, { $set: { group: NO_GROUP_NAME } })
     return res.status(200).json({ success: true });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
@@ -2442,9 +2956,15 @@ export const deleteGroup = async (req, res) => {
 export const addGroup = async (req, res) => {
   try {
     const profs = req.body;
+    const groupName = normalizeGroupName(profs.newGroup);
+    if (groupName === NO_GROUP_NAME) {
+      return res.status(400).json({ success: false, error: "Nhóm Không có đã có sẵn" });
+    }
+    const lastGroup = await Group.findOne({ user: profs.user }).sort({ sortOrder: -1 }).lean();
     const newGroup = new Group({
-      name: profs.newGroup,
-      user: profs.user
+      name: groupName,
+      user: profs.user,
+      sortOrder: Number(lastGroup?.sortOrder || 0) + 1,
     })
     await newGroup.save()
     return res.status(200).json({ success: true });
@@ -2508,3 +3028,51 @@ export const addGroup = async (req, res) => {
 //     return res.status(500).json({ success: false, error: "Group get failed due to some reason" });
 //   }
 // }
+
+export const updateSensorOrder = async (req, res) => {
+  try {
+    const { user, order } = req.body; // order is array of ids: [id1, id2, id3]
+    if (!Array.isArray(order)) {
+      return res.status(400).json({ success: false, error: "Order must be an array" });
+    }
+    const numericUser = Number(user);
+
+    // Cập nhật trường sortOrder cho từng sensor
+    const updatePromises = order.map((id, index) =>
+      InfoSen.updateOne(
+        { id: Number(id), user: numericUser },
+        { $set: { sortOrder: index } }
+      )
+    );
+    await Promise.all(updatePromises);
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Error updating sensor order:", error);
+    return res.status(500).json({ success: false, error: "Failed to update sensor order in DB" });
+  }
+}
+
+export const updateGroupOrder = async (req, res) => {
+  try {
+    const { user, order } = req.body;
+    if (!Array.isArray(order)) {
+      return res.status(400).json({ success: false, error: "Order must be an array" });
+    }
+    const numericUser = Number(user);
+    const groupNames = dedupeGroupNames(order);
+
+    await Promise.all(groupNames.map((name, index) => (
+      Group.updateOne(
+        { user: numericUser, name },
+        { $set: { sortOrder: index + 1 } },
+        { upsert: true }
+      )
+    )));
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Error updating group order:", error);
+    return res.status(500).json({ success: false, error: "Failed to update group order in DB" });
+  }
+}

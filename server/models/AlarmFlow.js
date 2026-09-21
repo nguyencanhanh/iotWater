@@ -14,6 +14,7 @@ const AlarmFlow = new mongoose.Schema({
 })
 
 AlarmFlow.index({ user: 1, createAt: -1 });
+AlarmFlow.index({ user: 1, group: 1, createAt: -1 });
 AlarmFlow.index({ sensorId: 1, createAt: -1 });
 
 const Alarm = mongoose.model("Alarm", AlarmFlow)

@@ -1,0 +1,15 @@
+[Unit]
+Description=Gemini Web2API local proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/KHCA/iotWater/gemini-web2api
+ExecStart=/usr/bin/python3 -m gemini_web2api --config /root/KHCA/iotWater/gemini-web2api/config.json
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

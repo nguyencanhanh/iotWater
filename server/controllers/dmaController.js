@@ -1,131 +1,19 @@
 import Dma from "../models/Dma.js";
 import InfoSen from "../models/Info.js";
 import Sensor from "../models/Sensor.js";
-import axios from "axios";
 import { acquireAiUsage, releaseAiUsage, respondAiLimit } from "../utils/aiUsage.js";
-
-const normalizeIds = (ids) => [...new Set((ids || []).map(Number).filter((id) => Number.isFinite(id)))];
-const normalizeLinks = (links) => {
-  const seen = new Set();
-  return (links || [])
-    .map((link) => ({ parentId: Number(link.parentId), childId: Number(link.childId) }))
-    .filter((link) => Number.isFinite(link.parentId) && Number.isFinite(link.childId) && link.parentId !== link.childId)
-    .filter((link) => {
-      const key = `${link.parentId}:${link.childId}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-};
-const getLeafSensorIds = (rootIds, links) => {
-  const childIds = new Set((links || []).map((link) => Number(link.childId)));
-  const parentIds = new Set((links || []).map((link) => Number(link.parentId)));
-  const leaves = [...childIds].filter((id) => !parentIds.has(id));
-
-  return leaves.length ? leaves : normalizeIds(rootIds);
-};
-
-const toDateRange = (fromDate, toDate) => {
-  const start = new Date(fromDate);
-  const end = new Date(toDate);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
-};
-
-const getLoggerStats = async ({ user, ids, start, end }) => {
-  if (!ids.length) return [];
-
-  const [stats, infos] = await Promise.all([
-    Sensor.aggregate([
-      {
-        $match: {
-          user,
-          index: { $in: ids },
-          createAt: { $gte: start, $lte: end },
-        },
-      },
-      { $sort: { createAt: 1 } },
-      {
-        $group: {
-          _id: "$index",
-          firstSum: { $first: "$sum" },
-          lastSum: { $last: "$sum" },
-          minFlow: { $min: "$flow" },
-          avgFlow: { $avg: "$flow" },
-          maxFlow: { $max: "$flow" },
-          firstAt: { $first: "$createAt" },
-          lastAt: { $last: "$createAt" },
-        },
-      },
-    ]),
-    InfoSen.find({ user, id: { $in: ids } }).select("id name group").lean(),
-  ]);
-
-  const statById = Object.fromEntries(stats.map((item) => [item._id, item]));
-  const infoById = Object.fromEntries(infos.map((item) => [item.id, item]));
-
-  return ids.map((id) => {
-    const stat = statById[id];
-    const info = infoById[id] || {};
-    const rawVolume = Number(stat?.lastSum ?? 0) - Number(stat?.firstSum ?? 0);
-    return {
-      id,
-      name: info.name || `Logger ${id}`,
-      group: info.group || "",
-      volume: Number.isFinite(rawVolume) && rawVolume > 0 ? rawVolume : 0,
-      minFlow: Number(stat?.minFlow ?? 0),
-      avgFlow: Number(stat?.avgFlow ?? 0),
-      maxFlow: Number(stat?.maxFlow ?? 0),
-      firstAt: stat?.firstAt || null,
-      lastAt: stat?.lastAt || null,
-      hasData: Boolean(stat),
-    };
-  });
-};
-
-const buildSensorTree = ({ rootIds, links, statsById }) => {
-  const linksByParent = links.reduce((map, link) => {
-    if (!map[link.parentId]) map[link.parentId] = [];
-    map[link.parentId].push(link.childId);
-    return map;
-  }, {});
-
-  const buildNode = (id, path = []) => {
-    if (path.includes(id)) return null;
-
-    const stat = statsById[id] || {
-      id,
-      name: `Logger ${id}`,
-      group: "",
-      volume: 0,
-      minFlow: 0,
-      avgFlow: 0,
-      maxFlow: 0,
-      firstAt: null,
-      lastAt: null,
-      hasData: false,
-    };
-    const children = (linksByParent[id] || [])
-      .map((childId) => buildNode(childId, [...path, id]))
-      .filter(Boolean);
-    const childTotal = children.reduce((sum, child) => sum + child.volume, 0);
-    const branchLoss = children.length ? stat.volume - childTotal : 0;
-    const branchLossRate = stat.volume > 0 ? (branchLoss / stat.volume) * 100 : 0;
-    const totalBranchLoss = branchLoss + children.reduce((sum, child) => sum + child.totalBranchLoss, 0);
-
-    return {
-      ...stat,
-      children,
-      childTotal,
-      branchLoss,
-      branchLossRate,
-      totalBranchLoss,
-    };
-  };
-
-  return rootIds.map((id) => buildNode(id)).filter(Boolean);
-};
+import { chatComplete } from "../services/ai/index.js";
+import { pipeAiStream } from "../services/ai/sse.js";
+import { findIncidentsNearLoggers } from "../services/incidents.js";
+import {
+  buildSensorTree,
+  calculateNode,
+  getLeafSensorIds,
+  getLoggerStats,
+  normalizeIds,
+  normalizeLinks,
+  toDateRange,
+} from "../services/dma/engine.js";
 
 const toDmaPayload = (body) => ({
   user: Number(body.user),
@@ -189,7 +77,7 @@ const compactDmaResult = (node, depth = 0) => ({
   children: (node?.children || []).slice(0, 20).map((child) => compactDmaResult(child, depth + 1)),
 });
 
-const buildDmaAnalysisPrompt = ({ result, context }) => `Bạn là chuyên gia phân tích DMA trong hệ thống cấp nước.
+const buildDmaAnalysisPrompt = ({ result, context, incidents = [] }) => `Bạn là chuyên gia phân tích DMA trong hệ thống cấp nước.
 Hãy phân tích dữ liệu thất thoát DMA dưới đây bằng tiếng Việt, ngắn gọn, có tính vận hành thực tế.
 
 FORMAT BẮT BUỘC:
@@ -205,23 +93,33 @@ FORMAT BẮT BUỘC:
 - Liệt kê logger không có dữ liệu hoặc sản lượng bằng 0 nếu có.
 - Nếu dữ liệu chưa đủ để kết luận, nói rõ "chưa đủ dữ liệu".
 
-## 4. Khuyến nghị xử lý
-- Đưa 3-6 việc nên làm theo thứ tự ưu tiên: kiểm tra logger, đối soát đồng hồ, khảo sát rò rỉ, kiểm tra van cô lập, MNF ban đêm.
+## 4. Sự cố hiện trường đã ghi nhận
+- Nếu danh sách sự cố có dữ liệu: nêu sự cố nằm gần logger nào, cách bao xa, đã xử lý chưa, và nó có giải thích được phần thất thoát đang thấy hay không.
+- Nếu danh sách trống: ghi rõ "chưa có sự cố hiện trường nào được ghi nhận trong khu vực này".
 
-## 5. Kết luận nhanh
+## 5. Khuyến nghị xử lý
+- Đưa 3-6 việc nên làm theo thứ tự ưu tiên: kiểm tra logger, đối soát đồng hồ, khảo sát rò rỉ, kiểm tra van cô lập, MNF ban đêm.
+- Ưu tiên các điểm sự cố chưa xử lý xong nếu có.
+
+## 6. Kết luận nhanh
 - Viết 2-3 câu chốt lại tình hình.
 
 QUY TẮC:
 - Không bịa số liệu ngoài JSON.
 - Dùng đơn vị m3 và % khi nhắc số.
+- Không dùng LaTeX/MathJax. Viết số và đơn vị dưới dạng văn bản thuần, ví dụ "253.21 m3/h", không dùng $...$ hay \\text{}.
 - Nếu loss âm, giải thích có thể do sai lệch đồng hồ, chênh chu kỳ ghi nhận, hoặc cấu hình nhánh chưa đúng.
 - Ưu tiên phân tích để người vận hành biết cần kiểm tra điểm nào trước.
+- Tuyệt đối không bịa ra sự cố hiện trường ngoài danh sách được cung cấp.
 
 Ngữ cảnh:
 ${JSON.stringify(context || {}, null, 2)}
 
 Dữ liệu DMA đã rút gọn:
-${JSON.stringify(compactDmaResult(result), null, 2)}`;
+${JSON.stringify(compactDmaResult(result), null, 2)}
+
+Sự cố hiện trường do nhân viên ghi nhận quanh các logger của DMA (bán kính 500m):
+${incidents.length ? JSON.stringify(incidents, null, 2) : "Không có sự cố nào được ghi nhận."}`;
 
 const isValidParent = async ({ user, dmaId, parentDmaId }) => {
   if (!parentDmaId) return true;
@@ -238,56 +136,6 @@ const isValidParent = async ({ user, dmaId, parentDmaId }) => {
   return true;
 };
 
-const calculateNode = async ({ dma, allDmas, user, start, end }) => {
-  const childrenDmas = allDmas.filter((item) => String(item.parentDmaId || "") === String(dma._id));
-  const sensorLinks = normalizeLinks(dma.sensorLinks);
-  const linkedIds = sensorLinks.flatMap((link) => [link.parentId, link.childId]);
-  const consumeIds = sensorLinks.length ? getLeafSensorIds(dma.inletLoggerIds || [], sensorLinks) : dma.consumeLoggerIds || [];
-  const sensorTreeIds = normalizeIds([...(dma.inletLoggerIds || []), ...consumeIds, ...linkedIds]);
-  const [inlets, consumes, children] = await Promise.all([
-    getLoggerStats({ user, ids: dma.inletLoggerIds || [], start, end }),
-    getLoggerStats({ user, ids: consumeIds, start, end }),
-    Promise.all(childrenDmas.map((child) => calculateNode({ dma: child, allDmas, user, start, end }))),
-  ]);
-  const sensorTreeStats = sensorLinks.length
-    ? await getLoggerStats({ user, ids: sensorTreeIds, start, end })
-    : [];
-  const statsById = Object.fromEntries(sensorTreeStats.map((item) => [item.id, item]));
-  const sensorTree = sensorLinks.length
-    ? buildSensorTree({ rootIds: dma.inletLoggerIds || [], links: sensorLinks, statsById })
-    : [];
-
-  const inletTotal = inlets.reduce((sum, item) => sum + item.volume, 0);
-  const consumeTotal = consumes.reduce((sum, item) => sum + item.volume, 0);
-  const childInletTotal = children.reduce((sum, item) => sum + item.inletTotal, 0);
-  const childLossTotal = children.reduce((sum, item) => sum + item.loss + item.childLossTotal, 0);
-  const accountedTotal = consumeTotal + childInletTotal;
-  const sensorTreeLoss = sensorTree.reduce((sum, item) => sum + item.totalBranchLoss, 0);
-  const loss = sensorLinks.length ? sensorTreeLoss : inletTotal - accountedTotal;
-  const lossRate = inletTotal > 0 ? (loss / inletTotal) * 100 : 0;
-  const mnf = inlets.reduce((sum, item) => sum + item.minFlow, 0);
-
-  return {
-    dmaId: dma._id,
-    name: dma.name,
-    description: dma.description || "",
-    group: dma.group || "",
-    parentDmaId: dma.parentDmaId || null,
-    inlets,
-    consumes,
-    sensorLinks,
-    sensorTree,
-    children,
-    inletTotal,
-    consumeTotal,
-    childInletTotal,
-    childLossTotal,
-    accountedTotal,
-    loss,
-    lossRate,
-    mnf,
-  };
-};
 
 export const listDma = async (req, res) => {
   try {
@@ -382,71 +230,143 @@ export const calculateDma = async (req, res) => {
   }
 };
 
+const DMA_ANALYSIS_SYSTEM_PROMPT = "Bạn phân tích DMA cấp nước. Trả lời bằng tiếng Việt, thực tế, ưu tiên phát hiện thất thoát, nhánh bất thường và khuyến nghị vận hành.";
+
+const buildDmaAnalysisMessages = ({ result, context, incidents }) => [
+  { role: "system", content: DMA_ANALYSIS_SYSTEM_PROMPT },
+  { role: "user", content: buildDmaAnalysisPrompt({ result, context, incidents }) },
+];
+
+// Gom toan bo logger cua DMA (dau vao, tieu thu va ca cay sensor nhieu tang).
+const collectDmaLoggerIds = (node, acc = new Set()) => {
+  if (!node) return acc;
+  [...(node.inlets || []), ...(node.consumes || [])].forEach((item) => acc.add(Number(item?.id)));
+  const walkTree = (nodes = []) => nodes.forEach((child) => {
+    acc.add(Number(child?.id));
+    walkTree(child.children || []);
+  });
+  walkTree(node.sensorTree || []);
+  (node.children || []).forEach((child) => collectDmaLoggerIds(child, acc));
+  return acc;
+};
+
+const loadDmaIncidents = async (req, { result, context }) => {
+  try {
+    const user = Number(context?.user ?? req.user?.user ?? 0);
+    const loggerIds = [...collectDmaLoggerIds(result)].filter(Number.isFinite);
+    return await findIncidentsNearLoggers({
+      user: Number.isFinite(user) ? user : 0,
+      loggerIds,
+      fromDate: context?.fromDate,
+      toDate: context?.toDate,
+    });
+  } catch (error) {
+    console.error("Không tải được sự cố hiện trường cho DMA:", error.message);
+    return [];
+  }
+};
+
+const validateDmaAnalysisRequest = (req, res) => {
+  const { result, context = {} } = req.body || {};
+  if (!result || !result.name) {
+    res.status(400).json({ success: false, error: "Chưa có kết quả DMA để phân tích" });
+    return null;
+  }
+  return { result, context };
+};
+
+const mapDmaAiError = (res, error) => {
+  const status = error?.statusCode;
+  if (status === 503) {
+    return res.status(503).json({
+      success: false,
+      error: "AI đang bận hoặc chưa sẵn sàng, vui lòng thử lại sau ít phút",
+    });
+  }
+  if (status === 504) {
+    return res.status(504).json({ success: false, error: "AI phản hồi quá lâu, vui lòng thử lại" });
+  }
+  console.error("Không phân tích được DMA bằng AI:", error.message);
+  return res.status(502).json({
+    success: false,
+    error: error.message || "Không phân tích được DMA bằng AI",
+  });
+};
+
 export const analyzeDma = async (req, res) => {
   let aiUsage;
   try {
-    const { result, context = {} } = req.body;
-    if (!result || !result.name) {
-      return res.status(400).json({ success: false, error: "Chưa có kết quả DMA để phân tích" });
-    }
+    const input = validateDmaAnalysisRequest(req, res);
+    if (!input) return undefined;
 
     aiUsage = await acquireAiUsage(req);
-    const baseUrl = (process.env.GEMINI_WEB2API_BASE_URL || "http://127.0.0.1:8081/v1").replace(/\/+$/, "");
-    const model = process.env.GEMINI_WEB2API_MODEL || "gemini-3.5-flash";
-    const apiKey = process.env.GEMINI_WEB2API_API_KEY || "sk-gemini";
-    const timeout = Number(process.env.GEMINI_WEB2API_TIMEOUT_MS) || 120000;
-    const prompt = buildDmaAnalysisPrompt({ result, context });
 
-    const response = await axios.post(
-      `${baseUrl}/chat/completions`,
-      {
-        model,
-        messages: [
-          {
-            role: "system",
-            content: "Bạn phân tích DMA cấp nước. Trả lời bằng tiếng Việt, thực tế, ưu tiên phát hiện thất thoát, nhánh bất thường và khuyến nghị vận hành.",
-          },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.2,
-        stream: false,
-      },
-      {
-        timeout,
-        headers: {
-          "Content-Type": "application/json",
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        },
-      }
-    );
+    const controller = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) controller.abort(new Error("client disconnected"));
+    });
 
-    const analysis = response.data?.choices?.[0]?.message?.content?.trim();
+    const incidents = await loadDmaIncidents(req, input);
+
+    const aiResult = await chatComplete({
+      messages: buildDmaAnalysisMessages({ ...input, incidents }),
+      temperature: 0.2,
+      longForm: true,
+      signal: controller.signal,
+      cacheNamespace: "dma-analysis",
+    });
+
+    const analysis = aiResult.content.trim();
     if (!analysis) {
-      await releaseAiUsage(aiUsage).catch((releaseError) => {
-        console.error("Không hoàn lại lượt AI DMA:", releaseError.message);
-      });
-      aiUsage = null;
+      aiUsage = await releaseAiUsage(aiUsage).catch(() => null);
       return res.status(502).json({ success: false, error: "AI không trả về nội dung phân tích DMA" });
     }
 
-    return res.status(200).json({ success: true, analysis, model, aiUsage });
+    if (aiResult.cached) {
+      aiUsage = await releaseAiUsage(aiUsage).catch(() => aiUsage);
+    }
+
+    return res.status(200).json({
+      success: true,
+      analysis,
+      model: aiResult.model,
+      provider: aiResult.provider,
+      cached: aiResult.cached,
+      aiUsage,
+    });
   } catch (error) {
     if (error?.statusCode === 429) return respondAiLimit(res, error);
-    if (aiUsage) await releaseAiUsage(aiUsage).catch((releaseError) => {
-      console.error("Không hoàn lại lượt AI DMA:", releaseError.message);
-    });
-    const code = error?.code || error?.cause?.code;
-    const upstreamMessage = error.response?.data?.error?.message || error.response?.data?.message;
-    if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT") {
-      return res.status(503).json({
-        success: false,
-        error: "AI service chưa chạy hoặc backend chưa kết nối được gemini-web2api",
-      });
-    }
-    console.error("Không phân tích được DMA bằng AI:", upstreamMessage || error.message);
-    return res.status(500).json({
-      success: false,
-      error: upstreamMessage || "Không phân tích được DMA bằng AI",
-    });
+    if (aiUsage) await releaseAiUsage(aiUsage).catch(() => null);
+    if (error?.statusCode === 499 || res.writableEnded) return undefined;
+    return mapDmaAiError(res, error);
   }
+};
+
+export const analyzeDmaStream = async (req, res) => {
+  const input = validateDmaAnalysisRequest(req, res);
+  if (!input) return undefined;
+
+  let aiUsage;
+  try {
+    aiUsage = await acquireAiUsage(req);
+  } catch (error) {
+    if (error?.statusCode === 429) return respondAiLimit(res, error);
+    return res.status(500).json({ success: false, error: "Không khởi tạo được phiên phân tích AI" });
+  }
+
+  const incidents = await loadDmaIncidents(req, input);
+
+  await pipeAiStream({
+    req,
+    res,
+    messages: buildDmaAnalysisMessages({ ...input, incidents }),
+    temperature: 0.2,
+    onDone: () => ({ aiUsage }),
+    onError: async () => {
+      const released = await releaseAiUsage(aiUsage).catch(() => null);
+      return { aiUsage: released };
+    },
+  });
+
+  return undefined;
 };

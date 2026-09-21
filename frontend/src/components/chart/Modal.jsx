@@ -5,18 +5,39 @@ import { ChartMadal } from './Chart';
 import { TableModal, SensorDataDisplay } from './Table';
 import { exportDataPost, getLoggerImageUrl } from '../../api/index';
 import { useAuth } from '../../context/authContext'
-import {differenceInCalendarDays} from 'date-fns'
 
-function generateLabelsAndData(watch, hourStart, listDate) {
-  const minuteS = listDate[0].getMinutes()
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
+const toValidDate = (value) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDateLabel = (date) => date.toLocaleDateString("sv-SE", {
+  timeZone: "Asia/Ho_Chi_Minh",
+});
+
+const toDateTimeLocalValue = (value) => {
+  const date = toValidDate(value);
+  if (!date) return "";
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
+};
+
+function generateLabelsAndData(fromDate, toDate) {
+  const start = toValidDate(fromDate);
+  const end = toValidDate(toDate);
   const labels = [];
   const verticalLines = [];
-  let dateStep = 0
-  let hour = hourStart
-  for (let i = 0; i < watch; i++) {
-    const minute = (minuteS + i * 5) % 60;
-    if(i !== 0 && minute === 0) hour++;
-    if(hour === 24) hour = 0
+
+  if (!start || !end || end < start) return { labels, verticalLines };
+
+  const pointCount = Math.floor((end.getTime() - start.getTime()) / FIVE_MINUTES_MS) + 1;
+  for (let i = 0; i < pointCount; i++) {
+    const currentDate = new Date(start.getTime() + i * FIVE_MINUTES_MS);
+    const hour = currentDate.getHours();
+    const minute = currentDate.getMinutes();
+
     if(hour === 0 && minute === 0){
       verticalLines.push({
         type: "line",
@@ -27,7 +48,7 @@ function generateLabelsAndData(watch, hourStart, listDate) {
         borderWidth: 2,
         borderDash: [5, 5],
       });
-      labels.push(`${listDate[++dateStep].toISOString().split("T")[0]} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+      labels.push(`${formatDateLabel(currentDate)} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
     }
     else{
       labels.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
@@ -36,36 +57,9 @@ function generateLabelsAndData(watch, hourStart, listDate) {
   return { labels, verticalLines };
 }
 
-function getLength(lengModal, listDate, start, end) {
-  const lengDate = listDate.length;
-  const minute_s = listDate[0].getMinutes();
-  const minute_e = listDate[lengDate - 1].getMinutes();
-  if (lengDate !== 1) {
-    return lengModal * lengDate - lengModal * 2 + (24 - listDate[0].getHours() + listDate[lengDate - 1].getHours()) * 12 + Math.floor((minute_e - minute_s) / 5)
-  }
-  else {
-    return (end - start) * 12 + Math.floor((minute_e - minute_s) / 5)
-  }
-}
-
-function convertTime(timeConvert, watch) {
-  return (timeConvert.getHours() * 3600 + timeConvert.getMinutes() * 60) / watch
-}
-
-function getDatesInRange(startDate, endDate) {
-  const dateArray = [];
-  const currentDate = new Date(startDate);
-  while (differenceInCalendarDays(endDate, currentDate)) {
-    dateArray.push(new Date(currentDate)); // YYYY-MM-DD
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-  dateArray.push(new Date(endDate)); // YYYY-MM-DD
-  return dateArray;
-}
-
-
 const ModalData = (props) => {
   const { user } = useAuth()
+  const userId = Number(user?.user ?? 0);
   const dateData = props.dateData;
   const name = props.idMap ? props.info[props.idMap[dateData[2]]].name : props.dateData[3];
   const adj = props.idMap ? props.info[props.idMap[dateData[2]]].adj : props.dateData[4];
@@ -73,14 +67,10 @@ const ModalData = (props) => {
   const [dataModal, setDataModal] = useState(null);
   const [showImage, setShowImage] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [fromDate, setFromDate] = useState(dateData[0]);
-  const [toDate, setToDate] = useState(dateData[1]);
-  const [offset, setOffset] = useState(Math.floor(convertTime(new Date(dateData[0]), 300)));
-  const [listDate, setListDate] = useState(getDatesInRange(dateData[0], new Date(dateData[1])));
-  const startDate = new Date(fromDate).getHours();
-  const endDate = new Date(toDate).getHours();
+  const [fromDate, setFromDate] = useState(() => toDateTimeLocalValue(dateData[0]));
+  const [toDate, setToDate] = useState(() => toDateTimeLocalValue(dateData[1]));
   
-  const [dataLabel, setDataLabel] = useState(generateLabelsAndData(getLength(288, listDate, startDate, endDate), startDate, listDate));
+  const [dataLabel, setDataLabel] = useState(generateLabelsAndData(fromDate, toDate));
   const fetchSensors = async () => {
     try {
       const res = await sensorListGet(localStorage.getItem("token"), { sen_name: dateData[2], timeGet: [fromDate, toDate], user: user.user });
@@ -108,12 +98,9 @@ const ModalData = (props) => {
     }
     const startDate = new Date(fromDate);
     const endDate = new Date(toDate);
-    const listDateTemp = getDatesInRange(startDate, endDate);
     try {
-      setOffset(Math.floor(convertTime(new Date(fromDate), 300)))
-      setDataLabel(generateLabelsAndData(getLength(288, listDateTemp, startDate.getHours(), endDate.getHours()), startDate.getHours(), listDateTemp));
-      setListDate(listDateTemp);
-    } catch (e){
+      setDataLabel(generateLabelsAndData(startDate, endDate));
+    } catch (error){
       console.error("An unexpected error occurred:", error);
     } finally {
       fetchSensors();
@@ -204,11 +191,11 @@ const ModalData = (props) => {
           <div className="w-full bg-gray-200 p-4 rounded-lg shadow">
             <SensorDataDisplay param={dataModal.param} sum={dataModal.sum}/>
             <ChartMadal
-              length={288 * listDate.length}
+              length={dataLabel.labels.length}
               dataLabel={dataLabel}
               dataModal={dataModal}
             />
-            <TableModal dataModal={dataModal} adj={adj} startDate={listDate} offset={offset} startHour={startDate} />
+            <TableModal dataModal={dataModal} adj={adj} fromDate={fromDate} />
           </div>
         )}
       </div>
@@ -224,7 +211,7 @@ const ModalData = (props) => {
       >
         <div className="flex justify-center items-center p-4">
           <img
-            src={getLoggerImageUrl(sensorId)}
+            src={getLoggerImageUrl(sensorId, userId)}
             alt={`Logger ${name}`}
             className="max-w-full max-h-[60vh] object-contain rounded-lg"
             onError={() => { setImageError(true); setShowImage(false); alert('Logger này chưa có ảnh'); }}

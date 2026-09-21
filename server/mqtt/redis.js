@@ -8,7 +8,7 @@ async function connectRedis(url = process.env.REDIS_URL) {
     clientRedis = createClient({ url });
 
     clientRedis.on("error", (err) => {
-        clientRedis.error("Redis error:", err);
+        console.error("Redis error:", err);
     });
 
     try {

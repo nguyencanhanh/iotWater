@@ -1,23 +1,17 @@
 import React, { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Tooltip, GeoJSON, CircleMarker, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import L from "leaflet";
-import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
-import markerIcon from "leaflet/dist/images/marker-icon.png";
-import markerShadow from "leaflet/dist/images/marker-shadow.png";
+import "../map/leafletIconFix";
 import { FaBullhorn, FaCheckCircle, FaChevronLeft, FaChevronRight, FaExclamationTriangle, FaGlobeAsia, FaHistory, FaPaperPlane, FaSyncAlt, FaTrashAlt, FaUnlink } from "react-icons/fa";
 
-// Fix Leaflet marker icon bị mất khi build production với Vite
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIcon2x,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-});
 // import mqtt from "mqtt";
 import { useAuth } from "../../context/authContext";
 import { sensorListGet, getGroup, warningHistoryTodayGet, homeMessagesGet, homeMessagePost, homeMessageDelete, generalSettingsGet } from "../../api/index";
 import ModalData from "../chart/Modal";
+import MapPointLayer from "../map/MapPointLayer";
+import MapPointControl from "../map/MapPointControl";
+import MapPointForm from "../map/MapPointForm";
+import useMapPoints from "../map/useMapPoints";
 import { getMqttClient } from "../../pages/AdminDashboard";
 // import { produce } from "immer";
 // import L from "leaflet";
@@ -67,6 +61,7 @@ const StatusCard = ({ label, value, icon, colorClass }) => (
 );
 
 const MARKER_TOOLTIP_MIN_ZOOM = 15;
+const DEFAULT_MAP_CENTER = [21.2731, 106.1946];
 const WARNING_HISTORY_PAGE_SIZE = 20;
 
 const getDateInputValue = (date = new Date()) => {
@@ -111,6 +106,17 @@ const formatMessageTime = (value) => {
         minute: "2-digit",
     });
 };
+
+const isSameHomeMessages = (current = [], next = []) => (
+    current.length === next.length
+    && current.every((item, index) => {
+        const nextItem = next[index];
+        return item?._id === nextItem?._id
+            && item?.sender === nextItem?.sender
+            && item?.message === nextItem?.message
+            && item?.createAt === nextItem?.createAt;
+    })
+);
 
 const warningTypeLabels = {
     lost_signal: "Mất tín hiệu",
@@ -168,12 +174,58 @@ function AdminSummary() {
     const [dateData, setDateData] = useState([]);
     const [groups, setGroups] = useState([]);
     const [pipeLayer, setPipesLayer] = useState(null);
+    const [showMapPoints, setShowMapPoints] = useState(true);
+    const [showHotspots, setShowHotspots] = useState(false);
+    const [addPointMode, setAddPointMode] = useState(false);
+    const [pointFormOpen, setPointFormOpen] = useState(false);
+    const [editingPoint, setEditingPoint] = useState(null);
+    const [draftLocation, setDraftLocation] = useState(null);
     const [metersLayer, setMetersLayer] = useState(null);
     const [warning, setWarning] = useState({})
     const warningHistoryRequestRef = useRef(false);
+    const homeMessagesLoadedRef = useRef(false);
     const client = getMqttClient();
     const topic = "iotwatter@2024";
     const topicWarning = "khca/warning"
+
+    const canEditMapPoints = user?.role !== "trial";
+    const mapPoints = useMapPoints({ user: user.user, canEdit: canEditMapPoints });
+
+    useEffect(() => {
+        if (showHotspots) mapPoints.loadHotspots();
+    }, [showHotspots, mapPoints.points.length]);
+
+    const handlePickLocation = (location) => {
+        setDraftLocation(location);
+        setEditingPoint(null);
+        setPointFormOpen(true);
+        setAddPointMode(false);
+    };
+
+    const handleEditPoint = (point) => {
+        setEditingPoint(point);
+        setDraftLocation({ lat: point.lat, lng: point.lng });
+        setPointFormOpen(true);
+    };
+
+    const handleSubmitPoint = async (payload) => {
+        const saved = await mapPoints.savePoint(payload, editingPoint);
+        if (!saved) return;
+        setPointFormOpen(false);
+        setEditingPoint(null);
+        setDraftLocation(null);
+        if (showHotspots) mapPoints.loadHotspots();
+    };
+
+    const handleDeletePoint = async (point) => {
+        if (!window.confirm(`Xoá điểm "${point.title}"?`)) return;
+        const removed = await mapPoints.removePoint(point);
+        if (!removed) return;
+        setPointFormOpen(false);
+        setEditingPoint(null);
+        setDraftLocation(null);
+        if (showHotspots) mapPoints.loadHotspots();
+    };
 
     useEffect(() => {
         const fetchSensors = async () => {
@@ -206,10 +258,11 @@ function AdminSummary() {
     }, []);
 
     useEffect(() => {
+        const sensors = Array.isArray(info) ? info : [];
         setWeatherData(
             selectedGroup
-                ? info.filter((sensor) => sensor.group === selectedGroup)
-                : info
+                ? sensors.filter((sensor) => sensor.group === selectedGroup)
+                : sensors
         );
     }, [info, selectedGroup]);
 
@@ -318,20 +371,27 @@ function AdminSummary() {
 
     useEffect(() => {
         let canceled = false;
+        homeMessagesLoadedRef.current = false;
         const fetchHomeMessages = async () => {
-            setHomeMessagesLoading(true);
+            if (!homeMessagesLoadedRef.current) setHomeMessagesLoading(true);
             try {
                 const res = await homeMessagesGet(localStorage.getItem("token"), user.user);
                 if (!canceled && res.data.success) {
-                    setHomeMessages(res.data.messages || []);
+                    const nextMessages = res.data.messages || [];
+                    setHomeMessages((current) => (
+                        isSameHomeMessages(current, nextMessages) ? current : nextMessages
+                    ));
                 }
             } catch (error) {
                 if (!canceled) {
                     console.error("Không lấy được tin nhắn trang chủ:", error);
-                    setHomeMessages([]);
+                    setHomeMessages((current) => current.length ? [] : current);
                 }
             } finally {
-                if (!canceled) setHomeMessagesLoading(false);
+                if (!canceled) {
+                    homeMessagesLoadedRef.current = true;
+                    setHomeMessagesLoading(false);
+                }
             }
         };
 
@@ -451,7 +511,12 @@ function AdminSummary() {
         const lastTime = new Date(latest.createAt).getTime();
         if (!hasValidValue || !Number.isFinite(lastTime)) return false;
 
-        const maxAgeMs = Math.max(Number(point.watch || 60) * 1000 * 3, 15 * 60 * 1000);
+        // Phai dua vao "interval" (chu ky logger DAY du lieu len, giay), khong phai
+        // "watch" (chu ky LAY MAU, mac dinh 60s va khong doi khi nguoi dung sua interval).
+        // Logger dat interval 1800 (30 phut) van bi bao do vi 60*3 = 180s luon thua
+        // nguong san 15 phut. Cong thuc nay khop voi isConnected() ben server.
+        const pushPeriodSec = Number(point.interval) || Number(point.watch) || 60;
+        const maxAgeMs = Math.max(pushPeriodSec * 2 * 1000, 15 * 60 * 1000);
         return Date.now() - lastTime <= maxAgeMs;
     };
     const totalSensors = weatherData?.length || 0;
@@ -462,12 +527,17 @@ function AdminSummary() {
         return level && level !== "normal";
     }).length || 0;
     const showMarkerTooltip = mapZoom >= mapTooltipMinZoom;
+    // weatherData co the la null o lan render dau (info chua tai xong).
+    const firstSensor = Array.isArray(weatherData) ? weatherData[0] : null;
+    const mapCenter = Number.isFinite(Number(firstSensor?.lat)) && Number.isFinite(Number(firstSensor?.lng))
+        ? [Number(firstSensor.lat), Number(firstSensor.lng)]
+        : DEFAULT_MAP_CENTER;
 
     return (
         <div className="relative h-full min-h-[calc(100vh-3.5rem)] w-full overflow-hidden">
             {/* Bản đồ ở lớp dưới */}
             <div className="absolute inset-0 z-0">
-                <MapContainer center={[weatherData[0]?.lat, weatherData[0]?.lng]} zoom={15} className="h-full w-full" zoomControl={false}>
+                <MapContainer center={mapCenter} zoom={15} className="h-full w-full" zoomControl={false}>
                     <MapZoomTracker onZoomChange={setMapZoom} />
                     <TileLayer
                         url="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
@@ -482,11 +552,14 @@ function AdminSummary() {
                         <>
                             {/* Lớp phụ để bắt sự kiện click, nhưng không hiển thị gì */}
                             <GeoJSON
+                                key={`pipe-hit-${addPointMode}`}
                                 data={pipeLayer}
                                 style={() => ({
                                     color: "#ffffff",
                                     weight: 40,
                                     opacity: 0, // Vô hình
+                                    // Khi đang thêm điểm, lớp bắt click này phải nhường click cho bản đồ.
+                                    interactive: !addPointMode,
                                 })}
                                 onEachFeature={(feature, layer) => {
                                     const name = feature.properties?.name || "Không tên";
@@ -497,11 +570,13 @@ function AdminSummary() {
 
                             {/* Lớp chính để hiển thị đường ống thật sự */}
                             <GeoJSON
+                                key={`pipe-line-${addPointMode}`}
                                 data={pipeLayer}
                                 style={(feature) => ({
                                     color: feature.properties?.stroke || "#0000FF",
                                     weight: feature.properties?.["stroke-width"] || 2,
                                     opacity: feature.properties?.["stroke-opacity"] || 1,
+                                    interactive: !addPointMode,
                                 })}
                             />
                         </>
@@ -510,11 +585,13 @@ function AdminSummary() {
                         <>
                             {/* Lớp phụ để bắt click, vô hình nhưng rộng */}
                             <GeoJSON
+                                key={`meter-hit-${addPointMode}`}
                                 data={metersLayer}
                                 style={() => ({
                                     color: "#ffffff",       // Màu trắng để dễ phân biệt (nhưng opacity = 0)
                                     weight: 40,             // Rộng hơn để dễ click
                                     opacity: 0,             // Vô hình
+                                    interactive: !addPointMode,
                                 })}
                                 onEachFeature={(feature, layer) => {
                                     if (feature.properties?.name || feature.properties?.description) {
@@ -527,11 +604,13 @@ function AdminSummary() {
 
                             {/* Lớp chính hiển thị thật sự */}
                             <GeoJSON
+                                key={`meter-line-${addPointMode}`}
                                 data={metersLayer}
                                 style={(feature) => ({
                                     color: feature.properties?.stroke || "#0000FF", // fallback màu xanh dương
                                     weight: feature.properties?.["stroke-width"] || 2,
                                     opacity: feature.properties?.["stroke-opacity"] || 1,
+                                    interactive: !addPointMode,
                                 })}
                             />
                         </>
@@ -568,6 +647,8 @@ function AdminSummary() {
                                         level={warningLevel}
                                     />
                                     <Marker position={[point.lat, point.lng]}
+                                        key={`sensor-${point.id}-${addPointMode}`}
+                                        interactive={!addPointMode}
                                         eventHandlers={{
                                             click: () => handleMarkerClick(point)
                                         }}
@@ -601,8 +682,43 @@ function AdminSummary() {
                                 </React.Fragment>
                             );
                         })}
+                    <MapPointLayer
+                        points={mapPoints.points}
+                        hotspots={mapPoints.hotspots}
+                        showPoints={showMapPoints}
+                        showHotspots={showHotspots}
+                        addMode={addPointMode}
+                        canEdit={canEditMapPoints}
+                        onPickLocation={handlePickLocation}
+                        onEdit={handleEditPoint}
+                    />
                 </MapContainer>
             </div>
+
+            {addPointMode && (
+                <div className="pointer-events-none absolute inset-0 z-[5] ring-4 ring-inset ring-teal-400/70" />
+            )}
+
+
+            <MapPointForm
+                open={pointFormOpen}
+                point={editingPoint}
+                lat={draftLocation?.lat}
+                lng={draftLocation?.lng}
+                groups={mapPoints.groups}
+                saving={mapPoints.saving}
+                onClose={() => {
+                    setPointFormOpen(false);
+                    setEditingPoint(null);
+                    setDraftLocation(null);
+                }}
+                onSubmit={handleSubmitPoint}
+                onDelete={handleDeletePoint}
+                onPickAgain={() => {
+                    setPointFormOpen(false);
+                    setAddPointMode(true);
+                }}
+            />
 
             <div className="absolute right-4 top-4 z-10 flex max-h-[calc(100vh-5rem)] flex-col items-end gap-3 overflow-y-auto overflow-x-hidden pb-4">
                 <div
@@ -832,6 +948,23 @@ function AdminSummary() {
                         </div>
                     </div>
                 </div>
+                <MapPointControl
+                    stats={mapPoints.stats}
+                    loading={mapPoints.loading}
+                    error={mapPoints.error}
+                    canEdit={canEditMapPoints}
+                    showPoints={showMapPoints}
+                    onTogglePoints={setShowMapPoints}
+                    showHotspots={showHotspots}
+                    onToggleHotspots={setShowHotspots}
+                    addMode={addPointMode}
+                    onToggleAddMode={setAddPointMode}
+                    typeFilter={mapPoints.typeFilter}
+                    onTypeFilter={mapPoints.setTypeFilter}
+                    statusFilter={mapPoints.statusFilter}
+                    onStatusFilter={mapPoints.setStatusFilter}
+                    onReload={mapPoints.reload}
+                />
             </div>
             {showModal ? <ModalData info={weatherData} dateData={dateData} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}
         </div>

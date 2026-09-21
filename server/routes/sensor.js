@@ -1,5 +1,5 @@
 import express from "express";
-import { addSensor, analyzeSensorReport, createHomeMessage, deleteHomeMessage, getHomeMessages, getLoggerConfigStatus, getSensorProduction, getSensorReport, getSensors, getTodayWarningHistory, updateSensor, viewSensor, exportSensors, exportDailyReport, upInterval} from "../controllers/sensorController.js";
+import { addSensor, analyzeSensorReport, analyzeSensorReportStream, createHomeMessage, deleteHomeMessage, getHomeMessages, getLoggerConfigStatus, getSensorProduction, getSensorReport, getSensors, getTodayWarningHistory, updateSensor, viewSensor, exportSensors, exportDailyReport, upInterval} from "../controllers/sensorController.js";
 import verifyUser from "../middleware/authMiddleware.js";
 
 const router = express.Router()
@@ -18,6 +18,7 @@ router.delete('/home-messages/:id' , verifyUser, deleteHomeMessage )
 router.get('/warning-history/today' , verifyUser, getTodayWarningHistory )
 router.post('/report' , verifyUser, getSensorReport )
 router.post('/report/ai-analysis' , verifyUser, analyzeSensorReport )
+router.post('/report/ai-analysis/stream' , verifyUser, analyzeSensorReportStream )
 router.post('/report/daily-export' , verifyUser, exportDailyReport )
 
 

@@ -1,26 +1,30 @@
 import React, { useEffect, useState, useRef } from "react";
 import { sensorUpdateGet, sensorUpdatePut, uploadLoggerImage, getLoggerImageUrl } from "../../api/index";
 import { produce } from "immer";
+import { useAuth } from "../../context/authContext";
 
 function EditComponent({ step, id, setIsEdit }) {
+    const { user } = useAuth();
+    const userId = Number(user?.user ?? 0);
     const [sensor, setSensor] = useState(null);
     const [sensorLoading, setSensorLoading] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [hasImage, setHasImage] = useState(false);
+    const [imageVersion, setImageVersion] = useState(Date.now());
     const fileInputRef = useRef(null);
 
     useEffect(() => {
         const fetchSensor = async () => {
             setSensorLoading(true);
             try {
-                const res = await sensorUpdateGet(localStorage.getItem("token"), { id: id });
+                setHasImage(false);
+                setImageVersion(Date.now());
+                const res = await sensorUpdateGet(localStorage.getItem("token"), { id, user: userId });
                 if (res.data.success) {
                     setSensor(res.data.sensor);
-                    if (res.data.sensor?.image) {
-                        setHasImage(true);
-                    }
+                    setHasImage(Boolean(res.data.sensor?.image));
                 }
             } catch (error) {
                 if (error.response && !error.response.data.success) {
@@ -31,7 +35,11 @@ function EditComponent({ step, id, setIsEdit }) {
             }
         };
         fetchSensor();
-    }, []);
+    }, [id, userId]);
+
+    useEffect(() => () => {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+    }, [previewUrl]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -45,6 +53,7 @@ function EditComponent({ step, id, setIsEdit }) {
                 sen_name: sensor.name,
                 sen_description: sensor.description,
                 id: id,
+                user: userId,
             });
             if (res.data.success) {
                 alert("Cập nhật thông tin cảm biến thành công");
@@ -71,12 +80,13 @@ function EditComponent({ step, id, setIsEdit }) {
         }
         setUploading(true);
         try {
-            const res = await uploadLoggerImage(localStorage.getItem("token"), id, selectedFile);
+            const res = await uploadLoggerImage(localStorage.getItem("token"), id, selectedFile, userId);
             if (res.data.success) {
                 alert("Upload ảnh thành công!");
                 setHasImage(true);
                 setSelectedFile(null);
                 setPreviewUrl(null);
+                setImageVersion(Date.now());
             }
         } catch (error) {
             console.error("Upload error:", error);
@@ -161,7 +171,7 @@ function EditComponent({ step, id, setIsEdit }) {
                             {hasImage && !previewUrl && (
                                 <div className="mb-3">
                                     <img
-                                        src={getLoggerImageUrl(id)}
+                                        src={getLoggerImageUrl(id, userId, imageVersion)}
                                         alt={`Logger ${id}`}
                                         className="h-64 w-full rounded-md border border-gray-300 object-cover"
                                         onError={(e) => { e.target.style.display = 'none'; setHasImage(false); }}

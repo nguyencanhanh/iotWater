@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from '../../context/authContext'
 // import { Link } from "react-router-dom";
 import { Battery, battery } from "../chart/Chart";
@@ -44,6 +44,108 @@ export const detailTableColumnOptions = [
 
 export const defaultOverviewMetrics = overviewMetricOptions.map((item) => item.key);
 export const defaultDetailTableColumns = detailTableColumnOptions.map((item) => item.key);
+
+const detailDisplayIntervalOptions = [
+  { value: 1, label: "1 phút" },
+  { value: 5, label: "5 phút" },
+  { value: 10, label: "10 phút" },
+  { value: 15, label: "15 phút" },
+  { value: 30, label: "30 phút" },
+  { value: 60, label: "1 giờ" },
+];
+
+const normalizeDisplayIntervalValue = (value) => {
+  const number = Number(value);
+  return detailDisplayIntervalOptions.some((option) => option.value === number) ? number : 1;
+};
+
+const averageByIndexes = (values = [], indexes = []) => {
+  const numbers = indexes
+    .map((index) => values?.[index])
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+  if (!numbers.length) return null;
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+};
+
+const lastDefinedByIndexes = (values = [], indexes = []) => {
+  for (let i = indexes.length - 1; i >= 0; i -= 1) {
+    const value = values?.[indexes[i]];
+    if (value !== null && value !== undefined) return value;
+  }
+  return null;
+};
+
+const getSourceMinutesFromWatch = (watch) => {
+  const minutesFromWatch = Number(watch || 0) / 60;
+  return Number.isFinite(minutesFromWatch) && minutesFromWatch > 0 ? minutesFromWatch : 1;
+};
+
+const buildDisplayBuckets = (labels = [], watch, intervalValue) => {
+  const indexes = labels.map((_label, index) => index);
+  if (!labels.length) {
+    return indexes.map((index) => ({ label: labels[index], indexes: [index] }));
+  }
+
+  const displayMinutes = Number(intervalValue);
+  const sourceMinutes = getSourceMinutesFromWatch(watch);
+  if (!Number.isFinite(displayMinutes) || displayMinutes <= 0) {
+    return indexes.map((index) => ({ label: labels[index], indexes: [index] }));
+  }
+
+  const buckets = [];
+  indexes.forEach((index) => {
+    const bucketIndex = Math.floor((index * sourceMinutes) / displayMinutes);
+    if (!buckets[bucketIndex]) {
+      buckets[bucketIndex] = {
+        label: labels[index],
+        indexes: [],
+      };
+    }
+    buckets[bucketIndex].indexes.push(index);
+  });
+
+  return buckets.filter(Boolean);
+};
+
+const buildDetailDisplayData = (sensorData, labels, watch, intervalValue) => {
+  const buckets = buildDisplayBuckets(labels, watch, intervalValue);
+  const sourceRows = sensorData?.sensorT || [];
+  const aggregateSeries = (values) => buckets.map((bucket) => averageByIndexes(values, bucket.indexes));
+  const rows = buckets.map((bucket) => {
+    const row = lastDefinedByIndexes(sourceRows, bucket.indexes);
+    const pressure = averageByIndexes(sensorData?.dataPressure, bucket.indexes);
+    const flow = averageByIndexes(sensorData?.dataFlow, bucket.indexes);
+    const battery = lastDefinedByIndexes(
+      bucket.indexes.map((index) => sourceRows?.[index]?.battery),
+      bucket.indexes.map((_index, position) => position)
+    );
+
+    if (!row && pressure === null && flow === null && battery === null) return null;
+
+    return {
+      ...(row || {}),
+      Pressure: pressure ?? row?.Pressure,
+      flow: flow ?? row?.flow,
+      battery: battery ?? row?.battery,
+    };
+  });
+
+  return {
+    labels: buckets.map((bucket) => bucket.label),
+    indexes: buckets.map((_bucket, index) => index),
+    rows,
+    data: {
+      ...sensorData,
+      dataPressure: aggregateSeries(sensorData?.dataPressure),
+      sensorYRest: aggregateSeries(sensorData?.sensorYRest),
+      dataFlow: aggregateSeries(sensorData?.dataFlow),
+      flowYRest: aggregateSeries(sensorData?.flowYRest),
+      sensorT: rows,
+    },
+  };
+};
 
 const formatMetricNumber = (value, digits = 2) => {
   const number = Number(value);
@@ -439,6 +541,42 @@ function generateLabelsAndData(watch, viewMode = 'today') {
   return labels;
 };
 
+function generateLabelsByLength(watch, length, viewMode = 'today') {
+  const total = Math.max(Number(length || 0), 0);
+  if (!total) return [];
+
+  const intervalMinutes = getSourceMinutesFromWatch(watch);
+  let startMinuteOffset = 0;
+
+  if (viewMode === 'past24h') {
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    startMinuteOffset = Math.round(currentMinutes / intervalMinutes) * intervalMinutes;
+  }
+
+  return Array.from({ length: total }, (_item, index) => {
+    const totalMinutes = Math.round(index * intervalMinutes + startMinuteOffset) % 1440;
+    const hour = Math.floor(totalMinutes / 60);
+    const minute = Math.floor(totalMinutes % 60);
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  });
+}
+
+const getSensorDataLength = (sensorData, baseLabels = []) => Math.max(
+  baseLabels.length,
+  sensorData?.dataPressure?.length || 0,
+  sensorData?.sensorYRest?.length || 0,
+  sensorData?.dataFlow?.length || 0,
+  sensorData?.flowYRest?.length || 0
+);
+
+const getDetailLabels = (deviceInfo, sensorData, baseLabels, viewMode) => {
+  const expectedLength = Math.ceil(1440 / getSourceMinutesFromWatch(deviceInfo?.watch));
+  const sourceLength = Math.max(getSensorDataLength(sensorData, []), expectedLength);
+  if (!sourceLength) return [];
+  return generateLabelsByLength(deviceInfo?.watch, sourceLength, viewMode);
+};
+
 const laInit = (info, viewModes = {}) => {
   const la = []
   for (let i = 0; i < info.length; i++) {
@@ -467,8 +605,9 @@ function SensorList() {
   const { user } = useAuth()
   user.user = 0
   const groupPram = useParams().group
-  const groupID = useLocation().state.sensorIDs;
-  const idMap = useLocation().state.sensorMap
+  const location = useLocation();
+  const groupID = location.state?.sensorIDs || [];
+  const idMap = location.state?.sensorMap || {};
   const [sensorLoading, setSensorLoading] = useState(false);
   const [dateData, setDateData] = useState([])
   const [dataPressure, setDataPressure] = useState(null)
@@ -481,7 +620,6 @@ function SensorList() {
   const [batteryInit, setBatteryInit] = useState([]);
   const [temp, setTemp] = useState([]);
   const [isViEdit, setIsEdit] = useState(Array(groupID.length).fill(false));
-  const [scrollPosition, setScrollPosition] = useState(Array(groupID.length).fill(0));
   const [activeTab, setActiveTab] = useState(Array(groupID.length).fill('detail')); // 'detail' | 'overview'
   const [fullScreenSensor, setFullScreenSensor] = useState(null);
   const [fromDates, setFromDates] = useState(Array(groupID.length).fill(""));
@@ -496,7 +634,35 @@ function SensorList() {
   const getSensorDisplaySettings = (device) => ({
     overviewMetrics: device?.displaySettings?.overviewMetrics?.length ? device.displaySettings.overviewMetrics : defaultOverviewMetrics,
     detailColumns: device?.displaySettings?.detailColumns?.length ? device.displaySettings.detailColumns : defaultDetailTableColumns,
+    detailChartInterval: normalizeDisplayIntervalValue(device?.displaySettings?.detailChartInterval),
+    detailTableInterval: normalizeDisplayIntervalValue(device?.displaySettings?.detailTableInterval),
   });
+
+  const updateDetailDisplayInterval = async (step, key, value) => {
+    const currentSensor = dataInfo[step];
+    const current = getSensorDisplaySettings(currentSensor);
+    const nextValue = normalizeDisplayIntervalValue(value);
+    const displaySettings = {
+      ...current,
+      [key]: nextValue,
+    };
+
+    try {
+      const res = await intervalUpdatePut(localStorage.getItem("token"), {
+        displaySettings,
+        sen_id: currentSensor.id,
+        user: user.user,
+      });
+      setdataInfo((prevData) =>
+        produce(prevData, (draft) => {
+          draft[step].displaySettings = res.data.displaySettings || displaySettings;
+        })
+      );
+    } catch (error) {
+      console.error(error);
+      alert(error?.response?.data?.error || "Lỗi khi lưu khoảng xem dữ liệu");
+    }
+  };
 
   const updateSensorDisplaySettings = async (step, type, key) => {
     const currentSensor = dataInfo[step];
@@ -540,7 +706,7 @@ function SensorList() {
     try {
       const res = await getSensorInGroup(localStorage.getItem("token"), `group=${encodeURIComponent(groupPram)}&user=${encodeURIComponent(user.user)}`);
       if (res.data.success) {
-        const resInfo = res.data.senInGroup
+        const resInfo = res.data.senInGroup || [];
         setdataInfo(resInfo)
         setFilteredDevices(resInfo)
         fetchSensors(resInfo.length, resInfo)
@@ -559,7 +725,10 @@ function SensorList() {
       const startOfToday = new Date();
       const res = await sensorListGet(localStorage.getItem("token"), { total: total, info: info, user: user.user, date: [startOfToday, null], viewModes: viewModes });
       if (res.data.success) {
-        const data = res.data.sensors
+        const data = res.data.sensors.map((sensor, index) => ({
+          ...sensor,
+          sourceWatch: info?.[index]?.watch,
+        }))
         data.forEach((sensor, index) => {
           addDataSensor(index, sensor.sensorT, sensor.dataPressure, sensor.dataFlow)
         })
@@ -598,6 +767,9 @@ function SensorList() {
     setDateData(data)
   }
 
+  const labelsByStep = useMemo(() => laInit(dataInfo, viewModes), [dataInfo, viewModes]);
+  const currentTimeByStep = useMemo(() => currentTime(dataInfo, viewModes), [dataInfo, viewModes]);
+
   return (
     <>
       {sensorLoading ? (
@@ -605,7 +777,7 @@ function SensorList() {
           <div>Loading...</div>
         </div>
       ) : (
-        <div className="p-5">
+        <div className="p-5 pb-28 sm:pb-5">
           <div className="text-center mb-4">
             <h3 className="text-2xl font-bold">Quản lý cảm biến</h3>
           </div>
@@ -641,11 +813,24 @@ function SensorList() {
                 <div>Loading...</div>
               </div>
             ) : (filteredDevices.map((device) => {
-              const step = idMap[device.id]
+              const step = dataInfo.findIndex(d => d.id === device.id);
+              if (step === -1) return null;
               const isFullScreen = fullScreenSensor === device.id;
               return (
                 (() => {
                   const display = getSensorDisplaySettings(dataInfo[step]);
+                  const sensorViewMode = viewModes[device.id] || 'today';
+                  const sourceWatch = dataPressure?.[step]?.sourceWatch || dataInfo[step]?.watch;
+                  const sourceLabels = getDetailLabels(
+                    { watch: sourceWatch },
+                    dataPressure?.[step],
+                    labelsByStep[step] || [],
+                    sensorViewMode
+                  );
+                  const detailChartInterval = display.detailChartInterval;
+                  const detailTableInterval = display.detailTableInterval;
+                  const detailChartDisplay = buildDetailDisplayData(dataPressure?.[step], sourceLabels, sourceWatch, detailChartInterval);
+                  const detailTableDisplay = buildDetailDisplayData(dataPressure?.[step], sourceLabels, sourceWatch, detailTableInterval);
                   return (
                 <li
                   className={isFullScreen
@@ -678,6 +863,11 @@ function SensorList() {
                         setViewMode={(mode) => changeSensorViewMode(device.id, mode)}
                         displaySettings={display}
                         updateDisplaySettings={(type, key) => updateSensorDisplaySettings(step, type, key)}
+                        detailChartDisplayInterval={detailChartInterval}
+                        detailTableDisplayInterval={detailTableInterval}
+                        detailDisplayOptions={detailDisplayIntervalOptions}
+                        setDetailChartDisplayInterval={(value) => updateDetailDisplayInterval(step, "detailChartInterval", value)}
+                        setDetailTableDisplayInterval={(value) => updateDetailDisplayInterval(step, "detailTableInterval", value)}
                       />
                       <button
                         className="text-gray-500 hover:text-teal-600 transition p-1 rounded-lg hover:bg-gray-300/50"
@@ -725,9 +915,9 @@ function SensorList() {
                     </div>
                   </div>
 
-                  <div className="w-full overflow-x-auto pb-1">
-                    <div className="flex min-w-max flex-nowrap items-center gap-2 rounded-xl border border-gray-300/40 bg-gray-300/30 px-2.5 py-2 shadow-sm">
-                      <input
+                  <div className="w-full overflow-hidden pb-1">
+                    <div className="flex flex-row items-center gap-2 rounded-xl border border-gray-300/40 bg-gray-300/30 px-2 py-1.5 shadow-sm w-full">
+                       <input
                         type="datetime-local"
                         value={fromDates[step] || ""}
                         onChange={(e) => {
@@ -738,9 +928,9 @@ function SensorList() {
                           const val = `${d}T${String(h).padStart(2, "0")}:${String(rm % 60).padStart(2, "0")}`;
                           setFromDates(prev => { const n = [...prev]; n[step] = val; return n; });
                         }}
-                        className="min-h-10 w-[170px] rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm text-gray-800 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200 sm:w-[190px]"
+                        className="min-h-10 w-full flex-1 min-w-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
                       />
-                      <span className="shrink-0 text-xs font-semibold text-gray-500">đến</span>
+                      <span className="shrink-0 text-[11px] font-semibold text-gray-500">đến</span>
                       <input
                         type="datetime-local"
                         value={toDates[step] || ""}
@@ -752,7 +942,7 @@ function SensorList() {
                           const val = `${d}T${String(h).padStart(2, "0")}:${String(rm % 60).padStart(2, "0")}`;
                           setToDates(prev => { const n = [...prev]; n[step] = val; return n; });
                         }}
-                        className="min-h-10 w-[170px] rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm text-gray-800 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200 sm:w-[190px]"
+                        className="min-h-10 w-full flex-1 min-w-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
                       />
                       <button
                         onClick={() => {
@@ -762,7 +952,7 @@ function SensorList() {
                           }
                           handleData([fromDates[step], toDates[step], device.id, device.name, device.adj]);
                         }}
-                        className="min-h-10 shrink-0 rounded-lg bg-teal-600 px-3.5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700"
+                        className="min-h-10 shrink-0 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-teal-700"
                       >
                         Xem dữ liệu
                       </button>
@@ -773,8 +963,24 @@ function SensorList() {
                     <SensorOverview pram={pram[step]} pramFlow={pramFlow[step]} sensorData={dataPressure[step]} watch={dataInfo[step].watch} visibleMetrics={display.overviewMetrics} sensorId={device.id} userId={user.user} lat={device.lat} lng={device.lng} step={step} />
                   ) : (
                     <div className="w-full">
-                      <RealTimeLineChart name={step} adj={device.adj} label={laInit(dataInfo, viewModes)[step]} data={dataPressure[step]} scrollPosition={scrollPosition[step]} />
-                      <ScrollableTable step={step} watch={dataInfo[step].watch} adj={device.adj} currentTimeDate={currentTime(dataInfo, viewModes)[step]} handle={setScrollPosition} data={dataPressure[step]} labels={laInit(dataInfo, viewModes)[step]} visibleColumns={display.detailColumns} />
+                      <RealTimeLineChart
+                        name={step}
+                        rangeKey={`${device.id}-${detailChartInterval}-${sourceWatch}-${detailChartDisplay.labels.length}`}
+                        adj={device.adj}
+                        label={detailChartDisplay.labels}
+                        data={detailChartDisplay.data}
+                      />
+                      <ScrollableTable
+                        step={step}
+                        watch={sourceWatch}
+                        adj={device.adj}
+                        currentTimeDate={currentTimeByStep[step]}
+                        data={detailTableDisplay.data}
+                        labels={detailTableDisplay.labels}
+                        rowIndexes={detailTableDisplay.indexes}
+                        tableRows={detailTableDisplay.rows}
+                        visibleColumns={display.detailColumns}
+                      />
                     </div>
                   )}
                 </li>

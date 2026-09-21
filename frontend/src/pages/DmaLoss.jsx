@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FaCalculator, FaEdit, FaPlus, FaRobot, FaSave, FaSitemap, FaSyncAlt, FaTint, FaTrash, FaWater } from "react-icons/fa";
-import { dmaAnalyzePost, dmaCalculatePost, dmaCreatePost, dmaDelete, dmaListGet, dmaUpdatePut, getGroupInfo } from "../api";
+import AiReportDocument from "../components/ai/AiReportDocument";
+import { dmaAnalyzePost, dmaAnalyzeStream, dmaCalculatePost, dmaCreatePost, dmaDelete, dmaListGet, dmaUpdatePut, getGroupInfo } from "../api";
 import { useAuth } from "../context/authContext";
 
 const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
@@ -411,25 +412,48 @@ const DmaLoss = () => {
       return;
     }
 
+    const token = localStorage.getItem("token");
+    const body = {
+      result,
+      context: {
+        dmaName: selectedDma?.name,
+        fromDate,
+        toDate,
+        user: currentUser,
+      },
+    };
+
     setAiLoading(true);
     setAiError("");
+    setAiAnalysis("");
+
     try {
-      const res = await dmaAnalyzePost(localStorage.getItem("token"), {
-        result,
-        context: {
-          dmaName: selectedDma?.name,
-          fromDate,
-          toDate,
-          user: currentUser,
+      await dmaAnalyzeStream(token, body, {
+        onDelta: (_delta, full) => setAiAnalysis(full),
+        onDone: (_full, done) => {
+          if (done?.aiUsage) setAiUsage(done.aiUsage);
         },
       });
-      if (res.data.success) {
-        setAiAnalysis(res.data.analysis || "");
-        setAiUsage(res.data.aiUsage || null);
+    } catch (streamError) {
+      if (streamError?.status === 429) {
+        setAiUsage(streamError.payload?.aiUsage || null);
+        setAiError(streamError.payload?.error || streamError.message);
+        setAiLoading(false);
+        return;
       }
-    } catch (error) {
-      setAiUsage(error.response?.data?.aiUsage || null);
-      setAiError(error.response?.data?.error || "Không phân tích được DMA bằng AI");
+
+      try {
+        const res = await dmaAnalyzePost(token, body);
+        if (res.data.success) {
+          setAiAnalysis(res.data.analysis || "");
+          setAiUsage(res.data.aiUsage || null);
+        } else {
+          setAiError(res.data.error || "Không phân tích được DMA bằng AI");
+        }
+      } catch (error) {
+        setAiUsage(error.response?.data?.aiUsage || null);
+        setAiError(error.response?.data?.error || streamError.message || "Không phân tích được DMA bằng AI");
+      }
     } finally {
       setAiLoading(false);
     }
@@ -573,11 +597,22 @@ const DmaLoss = () => {
                     {aiLoading ? "AI đang phân tích..." : "Phân tích AI"}
                   </button>
                 </div>
-                {(aiAnalysis || aiError || aiLoading) && (
+                {(aiError || (aiLoading && !aiAnalysis)) && (
                   <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    {aiLoading && <div className="text-sm font-semibold text-slate-500">AI đang đọc dữ liệu thất thoát và cây sensor...</div>}
+                    {aiLoading && !aiAnalysis && (
+                      <div className="text-sm font-semibold text-slate-500">AI đang đọc dữ liệu thất thoát và cây sensor...</div>
+                    )}
                     {aiError && <div className="text-sm font-bold text-red-600">{aiError}</div>}
-                    {aiAnalysis && <div className="whitespace-pre-line text-sm leading-6 text-slate-700">{aiAnalysis}</div>}
+                  </div>
+                )}
+                {aiAnalysis && (
+                  <div className="mt-4">
+                    <AiReportDocument
+                      content={aiAnalysis}
+                      badge="Phân tích AI DMA"
+                      fallbackTitle={`Báo cáo phân tích thất thoát DMA${selectedDma?.name ? ` – ${selectedDma.name}` : ""}`}
+                      streaming={aiLoading}
+                    />
                   </div>
                 )}
               </div>

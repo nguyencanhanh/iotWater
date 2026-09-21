@@ -11,6 +11,8 @@ const sensorSchema = new mongoose.Schema({
     createAt: {type: Date},
 });
 sensorSchema.index({ user: 1, createAt: 1, index: 1 });
+sensorSchema.index({ user: 1, index: 1, createAt: 1 });
+sensorSchema.index({ user: 1, index: 1, createAt: -1 });
 const Sensor = mongoose.model("Sensor", sensorSchema);
 
 export default Sensor;

@@ -1,6 +1,9 @@
 import GeneralSetting from "../models/GeneralSetting.js";
-
-const DEFAULT_MAP_TOOLTIP_MIN_ZOOM = 15;
+import {
+  DEFAULT_GENERAL_SETTING,
+  normalizeGeneralSetting,
+  normalizeGeneralSettingUpdate,
+} from "../services/generalSetting.js";
 
 const getRequestUser = (req) => {
   const bodyUser = Number(req.body?.user);
@@ -10,21 +13,15 @@ const getRequestUser = (req) => {
   return Number(req.user?.user ?? 0);
 };
 
-const normalizeZoom = (value) => {
-  const zoom = Number(value);
-  if (!Number.isFinite(zoom)) return DEFAULT_MAP_TOOLTIP_MIN_ZOOM;
-  return Math.min(Math.max(Math.round(zoom), 1), 22);
-};
-
 export const getGeneralSetting = async (req, res) => {
   try {
     const user = getRequestUser(req);
     const setting = await GeneralSetting.findOne({ user }).lean();
     return res.status(200).json({
       success: true,
-      setting: setting || {
+      setting: setting ? { ...setting, ...normalizeGeneralSetting(setting) } : {
         user,
-        mapTooltipMinZoom: DEFAULT_MAP_TOOLTIP_MIN_ZOOM,
+        ...DEFAULT_GENERAL_SETTING,
       },
     });
   } catch (error) {
@@ -35,9 +32,10 @@ export const getGeneralSetting = async (req, res) => {
 export const updateGeneralSetting = async (req, res) => {
   try {
     const user = getRequestUser(req);
+    const current = await GeneralSetting.findOne({ user }).lean();
     const payload = {
       user,
-      mapTooltipMinZoom: normalizeZoom(req.body.mapTooltipMinZoom),
+      ...normalizeGeneralSettingUpdate(req.body, current || DEFAULT_GENERAL_SETTING),
       updatedAt: new Date(),
     };
     const setting = await GeneralSetting.findOneAndUpdate(

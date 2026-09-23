@@ -2,17 +2,18 @@ import React, { lazy, Suspense, useEffect, useMemo, useState, useRef } from "rea
 import { MapContainer, TileLayer, Marker, Tooltip, GeoJSON, CircleMarker, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "../map/leafletIconFix";
-import { FaBullhorn, FaCheckCircle, FaChevronLeft, FaChevronRight, FaExclamationTriangle, FaGlobeAsia, FaHistory, FaPaperPlane, FaSyncAlt, FaTrashAlt, FaUnlink } from "react-icons/fa";
+import { FaBullhorn, FaCheckCircle, FaChevronLeft, FaChevronRight, FaEye, FaEyeSlash, FaExclamationTriangle, FaGlobeAsia, FaHistory, FaPaperPlane, FaSyncAlt, FaTrashAlt, FaUnlink } from "react-icons/fa";
 
 // import mqtt from "mqtt";
 import { useAuth } from "../../context/authContext";
-import { mapPointImageUrl, sensorListGet, getGroup, warningHistoryTodayGet, homeMessagesGet, homeMessagePost, homeMessageDelete, generalSettingsGet } from "../../api/index";
+import { mapPointImageUrl, sensorListGet, getGroup, warningHistoryTodayGet, homeMessagesGet, homeMessagePost, homeMessageDelete, generalSettingsGet, generalSettingsPut } from "../../api/index";
 import ModalData from "../chart/Modal";
 import MapPointLayer from "../map/MapPointLayer";
 import MapPointControl from "../map/MapPointControl";
 import MapPointForm from "../map/MapPointForm";
 import useMapPoints from "../map/useMapPoints";
 import { getMqttClient } from "../../pages/AdminDashboard";
+import { shouldShowLoggerTooltip } from "./mapTooltipVisibility";
 
 const IncidentReportPanel = lazy(() => import("../map/IncidentReportPanel"));
 // import { produce } from "immer";
@@ -160,6 +161,10 @@ function AdminSummary() {
     const [panelTab, setPanelTab] = useState("status");
     const [mapZoom, setMapZoom] = useState(MARKER_TOOLTIP_MIN_ZOOM);
     const [mapTooltipMinZoom, setMapTooltipMinZoom] = useState(MARKER_TOOLTIP_MIN_ZOOM);
+    const [showMapTooltipsOnLoad, setShowMapTooltipsOnLoad] = useState(false);
+    const [selectedTooltipLoggerId, setSelectedTooltipLoggerId] = useState(null);
+    const [tooltipSettingSaving, setTooltipSettingSaving] = useState(false);
+    const [tooltipSettingError, setTooltipSettingError] = useState("");
     const [warningHistory, setWarningHistory] = useState([]);
     const [warningHistoryLoading, setWarningHistoryLoading] = useState(false);
     const [warningHistoryLoadingMore, setWarningHistoryLoadingMore] = useState(false);
@@ -336,8 +341,11 @@ function AdminSummary() {
             try {
                 const res = await generalSettingsGet(localStorage.getItem("token"), user.user);
                 const zoom = Number(res.data.setting?.mapTooltipMinZoom);
-                if (!canceled && res.data.success && Number.isFinite(zoom)) {
-                    setMapTooltipMinZoom(Math.min(Math.max(Math.round(zoom), 1), 22));
+                if (!canceled && res.data.success) {
+                    if (Number.isFinite(zoom)) {
+                        setMapTooltipMinZoom(Math.min(Math.max(Math.round(zoom), 1), 22));
+                    }
+                    setShowMapTooltipsOnLoad(res.data.setting?.showMapTooltipsOnLoad === true);
                 }
             } catch (error) {
                 if (!canceled) {
@@ -434,12 +442,36 @@ function AdminSummary() {
     }, [user.user]);
 
     const handleMarkerClick = (point) => {
+        setSelectedTooltipLoggerId(point.id);
+    };
+
+    const handleOpenLoggerDetail = (point) => {
         setShowModal(true);
         const startDate = new Date();
         const endDate = new Date();
         startDate.setHours(0, 0, 0, 0);
         endDate.setHours(24, 0, 0, 0);
         setDateData([startDate, endDate, point.id, point.name, point.adj]);
+    };
+
+    const handleToggleTooltipsOnLoad = async () => {
+        const nextValue = !showMapTooltipsOnLoad;
+        setTooltipSettingSaving(true);
+        setTooltipSettingError("");
+        try {
+            const res = await generalSettingsPut(localStorage.getItem("token"), {
+                user: user.user,
+                showMapTooltipsOnLoad: nextValue,
+            });
+            if (res.data.success) {
+                setShowMapTooltipsOnLoad(res.data.setting?.showMapTooltipsOnLoad === true);
+                if (!nextValue) setSelectedTooltipLoggerId(null);
+            }
+        } catch (error) {
+            setTooltipSettingError(error.response?.data?.error || "Không lưu được cài đặt hiển thị");
+        } finally {
+            setTooltipSettingSaving(false);
+        }
     };
 
     const changeGroupMap = (e) => {
@@ -556,7 +588,7 @@ function AdminSummary() {
         const level = getWarningLevel(point);
         return level && level !== "normal";
     }).length || 0;
-    const showMarkerTooltip = mapZoom >= mapTooltipMinZoom;
+    const showMarkerTooltipAtCurrentZoom = mapZoom >= mapTooltipMinZoom;
     // weatherData co the la null o lan render dau (info chua tai xong).
     const firstSensor = Array.isArray(weatherData) ? weatherData[0] : null;
     const mapCenter = Number.isFinite(Number(firstSensor?.lat)) && Number.isFinite(Number(firstSensor?.lng))
@@ -683,8 +715,8 @@ function AdminSummary() {
                                             click: () => handleMarkerClick(point)
                                         }}
                                     >
-                                        {showMarkerTooltip && (
-                                            <Tooltip permanent direction="top" className="w-150">
+                                        {shouldShowLoggerTooltip(showMapTooltipsOnLoad, selectedTooltipLoggerId, point.id, showMarkerTooltipAtCurrentZoom) && (
+                                            <Tooltip permanent interactive direction="top" className="w-150">
                                                 <div className={`rounded-md border-2 p-1 shadow ${tooltipStateClass}`}>
                                                     <h3 className="font-semibold">{point.name}</h3>
                                                     <table className="w-full">
@@ -705,6 +737,16 @@ function AdminSummary() {
                                                             </tr>
                                                         </tbody>
                                                     </table>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            handleOpenLoggerDetail(point);
+                                                        }}
+                                                        className="mt-1 w-full rounded bg-teal-600 px-2 py-1 text-xs font-bold text-white hover:bg-teal-700"
+                                                    >
+                                                        Xem chi tiết
+                                                    </button>
                                                 </div>
                                             </Tooltip>
                                         )}
@@ -781,12 +823,29 @@ function AdminSummary() {
                             </button>
                             <div className={`${isPanelOpen ? "flex" : "hidden"} min-w-0 flex-1 items-center justify-between gap-2`}>
                                 <h3 className="truncate text-lg font-bold text-gray-800">Trạng thái cảm biến</h3>
-                                <span className="shrink-0 rounded bg-teal-100 px-2 py-1 text-xs font-semibold text-teal-700">
-                                    {selectedGroup || "Tất cả nhóm"}
-                                </span>
+                                <div className="flex shrink-0 items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={handleToggleTooltipsOnLoad}
+                                        disabled={tooltipSettingSaving}
+                                        className={`flex h-8 w-8 items-center justify-center rounded text-white shadow disabled:cursor-wait disabled:opacity-60 ${showMapTooltipsOnLoad ? "bg-teal-600 hover:bg-teal-700" : "bg-gray-500 hover:bg-gray-600"}`}
+                                        title={showMapTooltipsOnLoad ? "Đang hiện bảng logger khi tải trang" : "Đang ẩn bảng logger khi tải trang"}
+                                        aria-label={showMapTooltipsOnLoad ? "Tắt hiện bảng logger khi tải trang" : "Bật hiện bảng logger khi tải trang"}
+                                    >
+                                        {showMapTooltipsOnLoad ? <FaEye /> : <FaEyeSlash />}
+                                    </button>
+                                    <span className="rounded bg-teal-100 px-2 py-1 text-xs font-semibold text-teal-700">
+                                        {selectedGroup || "Tất cả nhóm"}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                         <div className={isPanelOpen ? "block" : "hidden"}>
+                            {tooltipSettingError && (
+                                <div className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                                    {tooltipSettingError}
+                                </div>
+                            )}
                             <div className="mb-3">
                                 <label htmlFor="group" className="mb-1 block text-sm font-semibold text-gray-700">Xem theo nhóm</label>
                                 <select

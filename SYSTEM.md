@@ -452,25 +452,29 @@ khong dinh CORS vi moi request deu same-origin.
 
 Muon ep ve mot domain co dinh thi dat lai cac bien do thanh URL tuyet doi.
 
-### Cloudflare Tunnel cho iotWater (da dung san, chua kich hoat)
+### Cloudflare Tunnel cho iotWater (da dung san, CHO TOKEN)
+
+Domain moi: **`khca.evmeter.vn`**. `evmeter.vn` thuoc nguoi quan tri DNS khac (du an e-meter).
+Ho tu choi ban ghi A vi IP may la IP dong Viettel, se tao tunnel ben ho va **gui token**.
+Da tra loi ho: app nghe o `http://127.0.0.1:8090`.
 
 | Duong dan | Vai tro |
 | --- | --- |
 | `/srv/iotwater/bin/cloudflared` | Binary rieng, khong dung chung voi e-meter |
-| `/srv/iotwater/cloudflared/config.yml` | Ingress `iot.evmeter.vn` -> `http://127.0.0.1:8090` |
-| `/srv/iotwater/setup-tunnel.sh` | Chay mot lan de tao tunnel + ban ghi DNS + bat service |
-| `/etc/systemd/system/iotwater-tunnel.service` | Metrics o `127.0.0.1:20242` (e-meter dung 20241) |
-| `/etc/nginx/sites-available/iotwater-cf` | Server block nghe `127.0.0.1:8090`, chi tunnel vao duoc |
+| `/etc/systemd/system/iotwater-tunnel.service` | Che do token: `EnvironmentFile=/etc/iotwater-tunnel.env`, `run --token ${TUNNEL_TOKEN}`, metrics `127.0.0.1:20242`. Dang **disabled** |
+| `/etc/nginx/sites-available/iotwater-khca` | Da enable. `listen 80` + `127.0.0.1:8090`, `server_name khca.evmeter.vn` |
+| `/srv/iotwater/cloudflared/config.yml`, `/srv/iotwater/setup-tunnel.sh` | Phuong an cu dung API token, KHONG dung nua |
 
-Kich hoat:
+Kich hoat khi co token:
 
 ```bash
-CF_API_TOKEN=<token> /srv/iotwater/setup-tunnel.sh iot.evmeter.vn iotwater
+echo 'TUNNEL_TOKEN=<token>' > /etc/iotwater-tunnel.env && chmod 600 /etc/iotwater-tunnel.env
+systemctl enable --now iotwater-tunnel
+systemctl restart iotWater-server   # CORS_ORIGINS da co san https://khca.evmeter.vn
+curl -I https://khca.evmeter.vn/      # roi test login, ban do, MQTT wss /mqtt
 ```
 
-Token can quyen `Account > Cloudflare Tunnel > Edit` va `Zone > DNS > Edit`.
-
-Tunnel cua e-meter (`/srv/e-meter/shared/`, metrics 20241) hoan toan tach biet, khong bi dung toi.
+Khong dung toi domain cu, logger (1883) va tunnel e-meter (`/srv/e-meter/shared/`, metrics 20241).
 
 ### Bien moi truong lien quan den domain
 
@@ -610,6 +614,14 @@ mat khau thanh vo hai va khong can fail2ban.
 - SSH van cho `root` dang nhap bang mat khau. Log co hon 65.000 luot do mat khau that bai
   (chua ai vao duoc - moi lan dang nhap thanh cong deu tu IP nha mang VN cua chu may).
 
+## Hien thi bang logger tren ban do
+
+`GeneralSetting.showMapTooltipsOnLoad` quyet dinh khi moi vao Trang chu co hien san bang
+thong tin tren tat ca marker logger hay khong; mac dinh la `false`. Nut hinh con mat nam
+trong bang "Trang thai cam bien" luu cai dat nay theo tai khoan qua API general settings.
+Khi dang an, bam marker chi hien bang cua logger do; nut "Xem chi tiet" trong bang moi mo
+modal du lieu. Nguong zoom van dung `mapTooltipMinZoom`.
+
 ## Xac dinh logger online/offline
 
 Quy tac: logger con song neu ban tin cuoi nam trong **`interval` x 2**, san toi thieu
@@ -675,7 +687,8 @@ thoi phong con so. Bao cao ghi ro day la so uoc tinh, khong phai so do thuc te.
 `IncidentType` co unique index `(user, name)`. Lan dau goi API se tu tao bo mac dinh:
 Vo ong, Ro ri moi noi, Ro ri van, Ro ri dong ho, Nut gay cut ren, Khac.
 
-Nguoi dung them loai moi ngay trong form (nut `+` ben canh o chon). Doi ten loai se
+Nguoi dung them loai moi ngay trong form (nut `+` ben canh o chon). API: `POST/PUT/DELETE
+/api/incident-types[/:id]`. Doi ten loai se
 dong bo luon `typeName` cua moi diem dang dung loai do. Khong xoa duoc loai dang co diem su dung.
 
 ### API
@@ -699,7 +712,13 @@ yeu cau van hanh, dung loc bo cho gon.
   sua** de nguoi dung dinh anh ngay.
 - `IncidentReportPanel.jsx`: 2 tab Tra cuu (kem xuat Excel) va Bao cao, loc theo khoang ngay
   + nhieu khu vuc cung luc.
-- Mau cham tren ban do theo **muc do ro ri**, diem da xu ly lam mo di va doi thanh dau tich.
+- Diem tren ban do la **ghim giot nuoc** (`createPointIcon` trong `mapPointMeta.js`), khong
+  dung cham tron vi lan voi icon tron cua nen Google. Chua xu ly: 44x57px, mau theo muc do
+  ro ri, vong nhay o chan. Da xu ly: ghim xanh la co dau tich, KHONG lam mo.
+- O toa do trong form go tay duoc: nhan `lat, lng`, thu tu nguoc (tu dao), link Google Maps
+  (`@lat,lng`, `?q=lat,lng`). Parser o `components/map/coordinate.js`.
+- Nut "Sua / xoa loai" duoi o Loai su co: doi ten + xoa. Xoa loai dang dung -> server tra
+  409 "Loai su co dang duoc dung o N diem, khong xoa duoc".
 
 ## Quy uoc lam tiep
 

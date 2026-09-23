@@ -3,7 +3,7 @@
 ## Mục tiêu
 
 - Khi cài đặt mặc định tắt, Trang chủ không hiện sẵn bảng thông tin trên các marker logger.
-- Bấm marker sẽ hiện bảng của logger đó; bảng có nút mở chi tiết dữ liệu.
+- Bấm marker sẽ hiện bảng của logger đó và mở chi tiết dữ liệu như thao tác cũ.
 - Trong bảng "Trạng thái cảm biến" có công tắc nhỏ để chọn có hiện toàn bộ bảng khi mới tải trang hay không.
 - Lựa chọn được lưu theo tài khoản trong `GeneralSetting`, vì vậy vẫn giữ sau khi tải lại hoặc đăng nhập trên thiết bị khác.
 
@@ -11,7 +11,7 @@
 
 Backend thêm trường boolean `showMapTooltipsOnLoad`, mặc định `false`, vào cài đặt chung. API GET luôn trả giá trị rõ ràng; API PUT chấp nhận và lưu cùng cài đặt zoom hiện có.
 
-Frontend tải cờ này cùng `mapTooltipMinZoom`. Tooltip của logger được render khi cài đặt bật, hoặc khi logger đó vừa được bấm. Marker không mở modal trực tiếp nữa; nút "Xem chi tiết" trong tooltip mở modal để tránh một lần bấm vừa hiện tooltip vừa bật ngay cửa sổ chi tiết. Công tắc trong bảng trạng thái lưu ngay qua API và phản hồi trạng thái đang lưu/lỗi.
+Frontend tải cờ này cùng `mapTooltipMinZoom`. Tooltip của logger được render khi cài đặt bật, hoặc khi logger đó vừa được bấm. Marker tiếp tục mở modal chi tiết trực tiếp như hành vi cũ. Công tắc trong bảng trạng thái lưu ngay qua API và phản hồi trạng thái đang lưu/lỗi.
 
 ## Kiểm thử
 

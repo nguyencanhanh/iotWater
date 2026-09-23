@@ -443,9 +443,6 @@ function AdminSummary() {
 
     const handleMarkerClick = (point) => {
         setSelectedTooltipLoggerId(point.id);
-    };
-
-    const handleOpenLoggerDetail = (point) => {
         setShowModal(true);
         const startDate = new Date();
         const endDate = new Date();
@@ -716,7 +713,7 @@ function AdminSummary() {
                                         }}
                                     >
                                         {shouldShowLoggerTooltip(showMapTooltipsOnLoad, selectedTooltipLoggerId, point.id, showMarkerTooltipAtCurrentZoom) && (
-                                            <Tooltip permanent interactive direction="top" className="w-150">
+                                            <Tooltip permanent direction="top" className="w-150">
                                                 <div className={`rounded-md border-2 p-1 shadow ${tooltipStateClass}`}>
                                                     <h3 className="font-semibold">{point.name}</h3>
                                                     <table className="w-full">
@@ -737,16 +734,6 @@ function AdminSummary() {
                                                             </tr>
                                                         </tbody>
                                                     </table>
-                                                    <button
-                                                        type="button"
-                                                        onClick={(event) => {
-                                                            event.stopPropagation();
-                                                            handleOpenLoggerDetail(point);
-                                                        }}
-                                                        className="mt-1 w-full rounded bg-teal-600 px-2 py-1 text-xs font-bold text-white hover:bg-teal-700"
-                                                    >
-                                                        Xem chi tiết
-                                                    </button>
                                                 </div>
                                             </Tooltip>
                                         )}

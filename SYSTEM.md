@@ -619,8 +619,8 @@ mat khau thanh vo hai va khong can fail2ban.
 `GeneralSetting.showMapTooltipsOnLoad` quyet dinh khi moi vao Trang chu co hien san bang
 thong tin tren tat ca marker logger hay khong; mac dinh la `false`. Nut hinh con mat nam
 trong bang "Trang thai cam bien" luu cai dat nay theo tai khoan qua API general settings.
-Khi dang an, bam marker chi hien bang cua logger do; nut "Xem chi tiet" trong bang moi mo
-modal du lieu. Nguong zoom van dung `mapTooltipMinZoom`.
+Khi dang an, bam marker se hien bang cua logger do va mo modal du lieu nhu thao tac cu.
+Nguong zoom van dung `mapTooltipMinZoom`.
 
 ## Xac dinh logger online/offline
 

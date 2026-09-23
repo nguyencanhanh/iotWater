@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   incidentTypeCreatePost,
+  incidentTypeDelete,
+  incidentTypeUpdatePut,
   incidentTypesGet,
   mapPointCreatePost,
   mapPointDelete,
@@ -81,6 +83,37 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
       return null;
     } finally {
       setCreatingType(false);
+    }
+  }, [canEdit, user]);
+
+  // Hai ham duoi tra ve null neu thanh cong, hoac chuoi loi de form hien ngay canh danh sach.
+  const renameType = useCallback(async (id, name) => {
+    if (!canEdit) return "Tài khoản của bạn không có quyền sửa loại sự cố";
+    try {
+      const res = await incidentTypeUpdatePut(getToken(), id, { user, name });
+      const updated = res.data?.type;
+      if (updated) {
+        setTypes((prev) => prev.map((item) => (String(item._id) === String(id) ? updated : item)));
+        // Server da dong bo typeName cua cac diem, cap nhat luon ban dang hien thi.
+        setPoints((prev) => prev.map((item) => (
+          String(item.typeId) === String(id) ? { ...item, typeName: updated.name } : item
+        )));
+      }
+      return null;
+    } catch (requestError) {
+      return requestError.response?.data?.error || "Không đổi tên được loại sự cố";
+    }
+  }, [canEdit, user]);
+
+  // Server tu choi (409) neu loai dang duoc diem nao dung.
+  const deleteType = useCallback(async (id) => {
+    if (!canEdit) return "Tài khoản của bạn không có quyền xoá loại sự cố";
+    try {
+      await incidentTypeDelete(getToken(), id, user);
+      setTypes((prev) => prev.filter((item) => String(item._id) !== String(id)));
+      return null;
+    } catch (requestError) {
+      return requestError.response?.data?.error || "Không xoá được loại sự cố";
     }
   }, [canEdit, user]);
 
@@ -191,6 +224,8 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
     loadTypes,
     loadHotspots,
     createType,
+    renameType,
+    deleteType,
     savePoint,
     removePoint,
     uploadImages,

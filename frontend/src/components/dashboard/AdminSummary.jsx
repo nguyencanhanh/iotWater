@@ -748,6 +748,8 @@ function AdminSummary() {
                 onSubmit={handleSubmitPoint}
                 onDelete={handleDeletePoint}
                 onCreateType={mapPoints.createType}
+                onRenameType={mapPoints.renameType}
+                onDeleteType={mapPoints.deleteType}
                 onCoordinateChange={handleCoordinateChange}
                 onUploadImages={handleUploadImages}
                 onDeleteImage={handleDeleteImage}

@@ -4,6 +4,8 @@ import {
   FaChevronLeft,
   FaChevronRight,
   FaChevronUp,
+  FaEye,
+  FaEyeSlash,
   FaFire,
   FaPlus,
   FaSyncAlt,
@@ -11,7 +13,7 @@ import {
 } from "react-icons/fa";
 import { FaFileAlt } from "react-icons/fa";
 import { POINT_STATUSES } from "./mapPointMeta";
-import { LEAK_RATE_BUCKETS, getLeakColor } from "./leakRate";
+import { LEAK_COLOR_BANDS } from "./leakRate";
 
 const Toggle = ({ checked, onChange, children }) => (
   <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
@@ -43,10 +45,16 @@ const MapPointControl = ({
   onReload,
   types = [],
   onOpenReport,
+  leakFilter = [],
+  onLeakFilter,
+  visibleCount,
 }) => {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const pending = Number(stats?.open || 0) + Number(stats?.inProgress || 0);
+  const toggleLeakBand = (key) => onLeakFilter(
+    leakFilter.includes(key) ? leakFilter.filter((item) => item !== key) : [...leakFilter, key]
+  );
 
   // Thu gon ve ben phai giong bang "Trang thai cam bien" va "Tin nhan thong bao".
   return (
@@ -71,6 +79,16 @@ const MapPointControl = ({
           <div className={`${open ? "flex" : "hidden"} min-w-0 flex-1 items-center justify-between gap-2`}>
             <h3 className="truncate text-lg font-bold text-gray-800">Điểm sự cố</h3>
             <div className="flex shrink-0 items-center gap-1">
+              {/* Giong nut mat cua bang "Trang thai cam bien". */}
+              <button
+                type="button"
+                onClick={() => onTogglePoints(!showPoints)}
+                title={showPoints ? "Đang hiện điểm sự cố trên bản đồ — bấm để ẩn" : "Đang ẩn điểm sự cố — bấm để hiện"}
+                aria-label={showPoints ? "Ẩn điểm sự cố trên bản đồ" : "Hiện điểm sự cố trên bản đồ"}
+                className={`flex h-8 w-8 items-center justify-center rounded text-white shadow ${showPoints ? "bg-rose-600 hover:bg-rose-700" : "bg-gray-500 hover:bg-gray-600"}`}
+              >
+                {showPoints ? <FaEye /> : <FaEyeSlash />}
+              </button>
               <button
                 type="button"
                 onClick={onReload}
@@ -107,10 +125,52 @@ const MapPointControl = ({
             </div>
           </div>
 
+          <div className="mt-3">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">Lọc theo mức độ rò rỉ</span>
+              {leakFilter.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onLeakFilter([])}
+                  className="text-[11px] font-bold text-teal-700 hover:underline"
+                >
+                  Hiện tất cả
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {LEAK_COLOR_BANDS.map((band) => {
+                const active = leakFilter.includes(band.key);
+                const dimmed = leakFilter.length > 0 && !active;
+                return (
+                  <button
+                    key={band.key}
+                    type="button"
+                    onClick={() => toggleLeakBand(band.key)}
+                    aria-pressed={active}
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-bold transition ${
+                      active
+                        ? "border-slate-800 bg-slate-800 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-400"
+                    } ${dimmed ? "opacity-50" : ""}`}
+                  >
+                    <span className="h-2.5 w-2.5 rounded-full ring-1 ring-white" style={{ backgroundColor: band.color }} />
+                    {band.label}
+                  </button>
+                );
+              })}
+            </div>
+            {leakFilter.length > 0 && (
+              <div className="mt-1.5 text-[11px] font-semibold text-slate-500">
+                Đang hiện {visibleCount}/{stats.total} điểm theo mức đã chọn.
+              </div>
+            )}
+            {!showPoints && (
+              <div className="mt-1.5 text-[11px] font-bold text-slate-500">Điểm sự cố đang ẩn trên bản đồ.</div>
+            )}
+          </div>
+
           <div className="mt-3 space-y-2">
-            <Toggle checked={showPoints} onChange={onTogglePoints}>
-              Hiện điểm trên bản đồ
-            </Toggle>
             <Toggle checked={showHotspots} onChange={onToggleHotspots}>
               <span className="flex items-center gap-1.5">
                 <FaFire className="text-orange-500" /> Khu vực tập trung sự cố
@@ -175,23 +235,6 @@ const MapPointControl = ({
                   ))}
                 </select>
               </label>
-
-              <div className="pt-1">
-                <div className="mb-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
-                  Màu chấm theo mức độ rò rỉ
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {[0, 2, 4, 10, 20].map((index) => LEAK_RATE_BUCKETS[index]).map((item) => (
-                    <span
-                      key={item.key}
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-600"
-                    >
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getLeakColor(item.key) }} />
-                      {item.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
 

@@ -12,6 +12,7 @@ import MapPointLayer from "../map/MapPointLayer";
 import MapPointControl from "../map/MapPointControl";
 import MapPointForm from "../map/MapPointForm";
 import useMapPoints from "../map/useMapPoints";
+import { getLeakBandKey } from "../map/leakRate";
 import { getMqttClient } from "../../pages/AdminDashboard";
 import { shouldShowLoggerTooltip } from "./mapTooltipVisibility";
 
@@ -181,7 +182,15 @@ function AdminSummary() {
     const [dateData, setDateData] = useState([]);
     const [groups, setGroups] = useState([]);
     const [pipeLayer, setPipesLayer] = useState(null);
-    const [showMapPoints, setShowMapPoints] = useState(true);
+    // Nho lua chon an/hien diem su co tren trinh duyet nay.
+    const [showMapPoints, setShowMapPoints] = useState(() => {
+        try {
+            return localStorage.getItem("iot.showMapPoints") !== "0";
+        } catch {
+            return true;
+        }
+    });
+    const [leakFilter, setLeakFilter] = useState([]);
     const [showHotspots, setShowHotspots] = useState(false);
     const [addPointMode, setAddPointMode] = useState(false);
     const [pointFormOpen, setPointFormOpen] = useState(false);
@@ -198,6 +207,18 @@ function AdminSummary() {
 
     const canEditMapPoints = user?.role !== "trial";
     const mapPoints = useMapPoints({ user: user.user, canEdit: canEditMapPoints });
+    const visibleMapPoints = leakFilter.length
+        ? mapPoints.points.filter((point) => leakFilter.includes(getLeakBandKey(point.leakRate)))
+        : mapPoints.points;
+
+    const handleToggleMapPoints = (next) => {
+        setShowMapPoints(next);
+        try {
+            localStorage.setItem("iot.showMapPoints", next ? "1" : "0");
+        } catch {
+            // Trinh duyet chan luu tru thi chi mat phan ghi nho, nut van chay.
+        }
+    };
 
     // Khu vuc cho su co: gop nhom logger co san voi nhom da dung o cac diem truoc do.
     const incidentGroups = useMemo(() => [...new Set([
@@ -742,7 +763,7 @@ function AdminSummary() {
                             );
                         })}
                     <MapPointLayer
-                        points={mapPoints.points}
+                        points={visibleMapPoints}
                         hotspots={mapPoints.hotspots}
                         showPoints={showMapPoints}
                         showHotspots={showHotspots}
@@ -1046,7 +1067,7 @@ function AdminSummary() {
                     error={mapPoints.error}
                     canEdit={canEditMapPoints}
                     showPoints={showMapPoints}
-                    onTogglePoints={setShowMapPoints}
+                    onTogglePoints={handleToggleMapPoints}
                     showHotspots={showHotspots}
                     onToggleHotspots={setShowHotspots}
                     addMode={addPointMode}
@@ -1058,6 +1079,9 @@ function AdminSummary() {
                     onReload={mapPoints.reload}
                     types={mapPoints.types}
                     onOpenReport={() => setReportPanelOpen(true)}
+                    leakFilter={leakFilter}
+                    onLeakFilter={setLeakFilter}
+                    visibleCount={visibleMapPoints.length}
                 />
             </div>
             {showModal ? <ModalData info={weatherData} dateData={dateData} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}

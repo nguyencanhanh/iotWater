@@ -31,3 +31,19 @@ export const getLeakColor = (key) => {
   if (bucket.min >= 50) return "#f59e0b";
   return "#0ea5e9";
 };
+
+// 5 dai mau dung cho chu giai + loc tren ban do. Moi dai gom nhieu bac 50 l/h,
+// phai khop voi nguong trong getLeakColor o tren.
+export const LEAK_COLOR_BANDS = [
+  { key: "0-50", label: "0 – 50 l/h", min: 0, max: 50 },
+  { key: "50-150", label: "50 – 150 l/h", min: 50, max: 150 },
+  { key: "150-250", label: "150 – 250 l/h", min: 150, max: 250 },
+  { key: "250-500", label: "250 – 500 l/h", min: 250, max: 500 },
+  { key: ">=500", label: "≥ 500 l/h", min: 500, max: null },
+].map((band) => ({ ...band, color: getLeakColor(`${band.min}-${band.min + STEP}`) }));
+
+export const getLeakBandKey = (leakKey) => {
+  const bucket = BY_KEY[leakKey];
+  if (!bucket) return null;
+  return LEAK_COLOR_BANDS.find((band) => bucket.min >= band.min && (band.max === null || bucket.min < band.max))?.key || null;
+};

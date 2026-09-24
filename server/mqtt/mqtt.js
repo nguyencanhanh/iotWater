@@ -594,7 +594,8 @@ const connectMqtt = async () => {
               user: user,
               battery: message.b || messageData.b,
               Pressure: message.p,
-              temperature: messageData.t,
+              // Firmware moi gui nhiet do bang "c", ban cu (van dieu ap hien tai) van gui "t".
+              temperature: messageData.c ?? messageData.t,
               sum: isNaN(messageData.s) ? 0 : Number(messageData.s) / 1000,
               flow: message.f,
               createAt: message.t
@@ -628,11 +629,12 @@ const connectMqtt = async () => {
             minute: '2-digit',
             hour12: false // Buộc không dùng định dạng 12 giờ 
           })
-          if (messageData.t && info.temperature > 0) {
+          // Chi doc "c": ban tin canh bao co the mang "t" la thoi gian, doc nham se ra nhiet do vo ly.
+          if (messageData.c && info.temperature > 0) {
             await sendWarningNotification(
               info,
-              `Cảnh báo nhiệt độ cao ${messageData.t}°C tại cảm biến ${getSensorAlertLabel(info)} vào lúc ${currentDate}`,
-              { type: "temperature_high", level: "warning", value: messageData.t }
+              `Cảnh báo nhiệt độ cao ${messageData.c}°C tại cảm biến ${getSensorAlertLabel(info)} vào lúc ${currentDate}`,
+              { type: "temperature_high", level: "warning", value: messageData.c }
             )
           }
           if (messageData.p != null) {
@@ -706,7 +708,7 @@ const connectMqtt = async () => {
             Pressure3: messageData.i,
             battery: messageData.b,
             flow: messageData.f,
-            temperature: messageData.t,
+            temperature: messageData.c ?? messageData.t,
             createAt: now
           });
           await newPrv.save();

@@ -52,7 +52,8 @@ const buildBaseline = (rows, adjust) => {
   });
   const hasFlow = rows.some((row) => Number(row.maxF) > 0);
   return {
-    coverage: rows.length / (BASELINE_DAYS * 24),
+    // Cua so 28 ngay tinh tu gio le cham toi 673 khung gio (2 dau le) -> chan tren 100%.
+    coverage: Math.min(1, rows.length / (BASELINE_DAYS * 24)),
     hasFlow,
     profile: byHour.map((items) => ({
       days: items.length,

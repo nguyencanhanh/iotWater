@@ -3,6 +3,7 @@ import { useAuth } from "../context/authContext";
 import { Outlet, useNavigate } from "react-router-dom";
 import Admin_Sidebar from "../components/dashboard/Admin_Sidebar";
 import Nav from "../components/dashboard/Navbar";
+import MonitorTicker from "../components/monitor/MonitorTicker";
 // import Marquee from "../components/dashboard/Marquee";
 import mqtt from "mqtt";
 import { trafficHeartbeatPost } from "../api";
@@ -148,10 +149,12 @@ const AdminDashboard = () => {
         trafficStats={trafficStats}
       />
       <div
-        className={`min-w-0 flex-1 transition-all duration-300 ${isSidebarOpen ? "md:ml-64" : "ml-0"}`}
+        className={`flex h-screen min-w-0 flex-1 flex-col transition-all duration-300 ${isSidebarOpen ? "md:ml-64" : "ml-0"}`}
       >
         <Nav />
-        <main className="h-[calc(100vh-3rem)] overflow-auto">
+        {user && <MonitorTicker user={user.user} />}
+        {/* flex-1 thay vi 100vh-3rem: dong chu giam sat hien/an khong lam trang bi tran. */}
+        <main className="min-h-0 flex-1 overflow-auto">
           <Outlet />
         </main>
       </div>

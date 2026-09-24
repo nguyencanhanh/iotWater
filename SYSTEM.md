@@ -394,6 +394,38 @@ Moi cau hoi chi tru 1 luot AI (neu buoc hieu cau da goi AI thi dung lai luot do)
 
 Han muc AI/ngay: `AI_DAILY_LIMIT` trong `server/.env` (dang 100, mac dinh code 10).
 
+## Giam sat AI 24/7 (`server/services/monitor/`)
+
+Chay trong backend (node-cron), KHONG can ai mo web. Bat bang `MONITOR_ENABLED=1` trong `server/.env`.
+
+| Lich | Viec |
+| --- | --- |
+| Moi 15 phut | `runCheck`: so 2 cua so 15 phut moi nhat cua tung logger voi muc binh thuong CUNG KHUNG GIO (trung vi 28 ngay) |
+| 5h30 | `runNightFlowCheck`: luu luong dem toi thieu tang dan / cao (dung lai `anomaly.js`, 14 ngay) |
+| 7h | `runDailyReports`: bao cao 24h. Mac dinh tao tai may chu (`provider: local`), Gemini chi khi bat `aiReport` |
+
+Phat hien hoan toan bang thong ke, chay local. Laya da thu (24/09/2026) tren 135 su kien that: doan
+nguyen nhan 22/100 o ca kho, cau "co can cu nguoi ngay khong" luon tra "khong" -> CHUA dung duoc,
+can fine-tune bang du lieu danh gia Dung/Bao nham ma trang giam sat dang thu thap.
+
+Quy tac chong bao nham:
+- Phai lech o CA HAI cua so 15 phut. Logger co du lieu < 20% so gio trong 28 ngay thi bo qua.
+- Cung hien tuong, cung khung gio, co trong >= 2/3 ngay qua -> ha muc "thap" (nghi lich van hanh moi),
+  khong nhan Telegram. So theo ca khoang dien ra, khong chi gio bat dau.
+- Logger dang mat tin hieu thi giu nguyen cac su kien khac (khong coi la da het).
+- >= 5 logger va >= 50% cung mat tin hieu -> "mat du lieu dien rong": 1 tin Telegram duy nhat,
+  dong chu chay gop thanh 1 muc.
+- Chi muc "cao" moi nhan Telegram; logger che do "report" chi ghi bao cao.
+
+Khoa `MonitorState.lockUntil`: nhieu tien trinh (ban test + ban that chung DB) van chi 1 tien trinh chay moi luot.
+
+Cai dat tren trang `/admin-dashboard/monitor` (admin): cong tac tong Bat/Tat giam sat, dong chu chay (mac dinh bat), Telegram (mac dinh tat),
+Gemini viet bao cao (mac dinh tat), che do tung logger (Theo doi / Chi ghi bao cao / Tat).
+
+Chay lai lich su (kiem thu thuat toan) bang `runCheck({ now })` / `runNightFlowCheck({ now })` tren ban sao du lieu.
+Ket qua chay lai 18-24/09/2026: sau 2 ngay hoc lich, 0-1 tin Telegram/ngay; bat dung DN63 11364 tut
+con 0.2 m (24/09 16:09) va luu luong dem tang o 28757 (+350%), 24894 (+42%).
+
 ## Render bao cao AI
 
 `frontend/src/components/ai/`:

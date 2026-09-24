@@ -18,6 +18,7 @@ const Report = lazy(() => import('./pages/Report'))
 const SettingsHub = lazy(() => import('./pages/SettingsHub'))
 const ExternalLoggers = lazy(() => import('./pages/ExternalLoggers'))
 const Chatbot = lazy(() => import('./pages/Chatbot'))
+const Monitor = lazy(() => import('./pages/Monitor'))
 
 const RouteFallback = () => (
   <div className="flex min-h-[60vh] items-center justify-center">
@@ -53,6 +54,7 @@ function App() {
             <Route path='/admin-dashboard/compare' element={<Compare/>}></Route>
             <Route path='/admin-dashboard/report' element={<Report/>}></Route>
             <Route path='/admin-dashboard/chatbot' element={<Chatbot/>}></Route>
+            <Route path='/admin-dashboard/monitor' element={<Monitor/>}></Route>
             <Route path='/admin-dashboard/dnp-setting' element={<SettingsHub defaultTab="dnp"/>}></Route>
             <Route path='/admin-dashboard/dma' element={<DmaLoss/>}></Route>
             <Route path='/admin-dashboard/external-loggers' element={<ExternalLoggers/>}></Route>

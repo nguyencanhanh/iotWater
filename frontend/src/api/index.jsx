@@ -14,6 +14,7 @@ const URL_TRAFFIC = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/tra
 const URL_CHATBOT = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/chatbot')
 const URL_MAP_POINTS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/map-points')
 const URL_INCIDENT_TYPES = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-types')
+const URL_MONITOR = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/monitor')
 
 const axiosConfig = (token) => ({
     headers: {
@@ -650,3 +651,21 @@ export const generalSettingsGet = (token, user) => {
 export const generalSettingsPut = (token, setting) => {
     return axios.put(URL_GENERAL_SETTINGS, setting, axiosConfig(token));
 };
+
+/* ------------------------------ Giam sat AI 24/7 ------------------------------ */
+
+const monitorQuery = (params = {}) => new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== "")
+).toString();
+
+export const monitorOverviewGet = (token, user) => axios.get(`${URL_MONITOR}/overview?${monitorQuery({ user })}`, axiosConfig(token));
+export const monitorTickerGet = (token, user) => axios.get(`${URL_MONITOR}/ticker?${monitorQuery({ user })}`, axiosConfig(token));
+export const monitorEventsGet = (token, params) => axios.get(`${URL_MONITOR}/events?${monitorQuery(params)}`, axiosConfig(token));
+export const monitorFeedbackPost = (token, id, body) => axios.post(`${URL_MONITOR}/events/${id}/feedback`, body, axiosConfig(token));
+export const monitorReportsGet = (token, user) => axios.get(`${URL_MONITOR}/reports?${monitorQuery({ user })}`, axiosConfig(token));
+export const monitorReportPost = (token, body) => axios.post(`${URL_MONITOR}/reports`, body, axiosConfig(token));
+export const monitorRunPost = (token, body) => axios.post(`${URL_MONITOR}/run`, body, axiosConfig(token));
+export const monitorLoggersGet = (token, user) => axios.get(`${URL_MONITOR}/loggers?${monitorQuery({ user })}`, axiosConfig(token));
+export const monitorLoggerModePut = (token, id, body) => axios.put(`${URL_MONITOR}/loggers/${id}`, body, axiosConfig(token));
+export const monitorSettingsPut = (token, body) => axios.put(`${URL_MONITOR}/settings`, body, axiosConfig(token));
+export const monitorTestTelegramPost = (token, body) => axios.post(`${URL_MONITOR}/test-telegram`, body, axiosConfig(token));

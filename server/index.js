@@ -18,6 +18,8 @@ import chatbotRouter from './routes/chatbot.js'
 import aiRouter from './routes/ai.js'
 import mapPointRouter from './routes/mapPoint.js'
 import incidentTypeRouter from './routes/incidentType.js'
+import monitorRouter from './routes/monitor.js'
+import { startMonitor } from './services/monitor/index.js'
 import connectToDatabase from './db/db.js'
 import connectMqtt from './mqtt/mqtt.js'
 import connectRedis from './mqtt/redis.js';
@@ -27,6 +29,7 @@ const disableMqtt = /^(1|true|yes)$/i.test(String(process.env.DISABLE_MQTT || ""
 connectToDatabase()
 if (!disableMqtt) connectMqtt()
 else console.log("MQTT disabled by DISABLE_MQTT")
+startMonitor()
 connectRedis()
 const app = express()
 // Domain duoc phep goi API. Them domain moi bang bien CORS_ORIGINS trong .env
@@ -91,6 +94,7 @@ app.use('/api/chatbot', chatbotRouter)
 app.use('/api/ai', aiRouter)
 app.use('/api/map-points', mapPointRouter)
 app.use('/api/incident-types', incidentTypeRouter)
+app.use('/api/monitor', monitorRouter)
 
 // Chi nghe tren localhost. nginx da proxy /api/ nen web khong anh huong,
 // nhung port 3000 khong con phoi thang ra internet (bo qua HTTPS + rate limit).

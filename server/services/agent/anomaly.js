@@ -93,7 +93,7 @@ export const selectAnalysisSensors = ({ sensors, sensorIds = [], groupQuery = ""
   return { selected: picked.slice(0, MAX_LOGGERS), total: picked.length };
 };
 
-const loadHourly = async ({ user, ids, start, end }) => Sensor.aggregate([
+export const loadHourly = async ({ user, ids, start, end }) => Sensor.aggregate([
   { $match: { user, index: { $in: ids }, createAt: { $gte: start, $lte: end } } },
   { $sort: { createAt: 1 } },
   {
@@ -513,6 +513,16 @@ ${data.incidents.length ? JSON.stringify(data.incidents) : "Không có sự cố
 };
 
 export const writeAnomalyAnalysis = async ({ data, signal }) => {
+  // Lan 1 dung cache; neu AI tu choi/sai khung thi lan 2 bo qua cache (khong dung lai cau tu choi).
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const result = await requestAnomalyAnalysis({ data, signal, skipCache: attempt > 1 });
+    if (result.valid) return result;
+    if (attempt === 2) throw new Error("AI trả lời không đúng khung phân tích");
+  }
+  return null;
+};
+
+const requestAnomalyAnalysis = async ({ data, signal, skipCache }) => {
   const result = await chatComplete({
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
@@ -521,7 +531,7 @@ export const writeAnomalyAnalysis = async ({ data, signal }) => {
     temperature: 0.2,
     longForm: true,
     signal,
-    cacheNamespace: "group-anomaly",
+    cacheNamespace: skipCache ? null : "group-anomaly",
   });
 
   let text = String(result.content || "").trim()
@@ -531,7 +541,7 @@ export const writeAnomalyAnalysis = async ({ data, signal }) => {
   const headingIndex = text.search(/#\s*PHÂN TÍCH BẤT THƯỜNG/i);
   if (headingIndex > 0) text = text.slice(headingIndex).trim();
 
-  return { analysis: text, provider: result.provider, model: result.model, cached: Boolean(result.cached) };
+  return { valid: headingIndex >= 0, analysis: text, provider: result.provider, model: result.model, cached: Boolean(result.cached) };
 };
 
 export const buildAnomalyPayload = ({ data, analysis, aiError, truncatedFrom }) => ({

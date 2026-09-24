@@ -631,7 +631,7 @@ function AdminSummary() {
         : DEFAULT_MAP_CENTER;
 
     return (
-        <div className="relative h-full min-h-[calc(100vh-3.5rem)] w-full overflow-hidden">
+        <div className="relative h-full min-h-[420px] w-full overflow-hidden">
             {/* Bản đồ ở lớp dưới */}
             <div className="absolute inset-0 z-0">
                 <MapContainer center={mapCenter} zoom={15} className="h-full w-full" zoomControl={false}>

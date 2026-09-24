@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { FaChartBar, FaMapMarkedAlt, FaFileContract, FaTools, FaChevronLeft, FaChevronRight, FaExchangeAlt, FaTint, FaClipboardList, FaDatabase, FaDesktop, FaMobileAlt, FaRobot } from "react-icons/fa";
+import { FaChartBar, FaMapMarkedAlt, FaFileContract, FaTools, FaChevronLeft, FaChevronRight, FaExchangeAlt, FaTint, FaClipboardList, FaDatabase, FaDesktop, FaMobileAlt, FaRobot, FaBroadcastTower } from "react-icons/fa";
 import PropTypes from "prop-types";
 
 const Admin_Sidebar = ({ isOpen, toggleSidebar, trafficStats }) => {
@@ -77,6 +77,15 @@ const Admin_Sidebar = ({ isOpen, toggleSidebar, trafficStats }) => {
           >
             <FaRobot />
             <span>Trợ lý AI</span>
+          </NavLink>
+          <NavLink
+            to="/admin-dashboard/monitor"
+            className={({ isActive }) =>
+              `${isActive ? "bg-teal-600" : ""} flex items-center space-x-4 py-2.5 px-4 rounded`
+            }
+          >
+            <FaBroadcastTower />
+            <span>Giám sát AI</span>
           </NavLink>
           <NavLink
             to="/admin-dashboard/external-loggers"

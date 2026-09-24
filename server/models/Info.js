@@ -35,7 +35,9 @@ const infoSchema = new mongoose.Schema({
     },
     createAt: { type: Date, default: Date.now },
     image: { type: String, default: "" },
-    sortOrder: { type: Number, default: 0 }
+    sortOrder: { type: Number, default: 0 },
+    // Giam sat AI 24/7: "on" = theo doi + gui thong bao, "report" = chi ghi vao bao cao, "off" = bo qua.
+    monitorMode: { type: String, enum: ["on", "report", "off"], default: "on" }
 })
 
 infoSchema.index({ user: 1, id: 1 });

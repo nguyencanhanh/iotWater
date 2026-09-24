@@ -42,6 +42,8 @@ export const createPointIcon = (point) => {
     // Mui ghim cham dung vi tri su co.
     iconAnchor: [width / 2, height - 1],
     popupAnchor: [0, -height + 4],
+    // Bang thong tin noi (Tooltip) nam ngay tren dinh ghim.
+    tooltipAnchor: [0, -height + 2],
   });
 };
 

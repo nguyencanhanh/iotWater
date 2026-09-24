@@ -1,4 +1,4 @@
-import { Marker, Popup, useMapEvents } from "react-leaflet";
+import { Marker, Popup, Tooltip, useMapEvents } from "react-leaflet";
 import {
   createHotspotIcon,
   createPointIcon,
@@ -100,11 +100,44 @@ const PointPopup = ({ point, canEdit, onEdit, imageUrl }) => {
   );
 };
 
+// Bang nho noi tren dau diem, cung kieu bang so lieu tren dau logger.
+const PointLabel = ({ point }) => {
+  const status = getStatusMeta(point.status);
+  return (
+    <Tooltip permanent direction="top" className="iot-point-label">
+      <div className="min-w-[150px] rounded-md border-2 bg-white p-1 shadow" style={{ borderColor: status.color }}>
+        <h3 className="max-w-[200px] truncate font-semibold">{point.title}</h3>
+        <table className="w-full">
+          <tbody>
+            <tr>
+              <td className="border border-gray-300 text-left text-gray-600">Mức độ</td>
+              <td className="border border-gray-300 text-center font-bold" style={{ color: getLeakColor(point.leakRate) }}>
+                {getLeakLabel(point.leakRate)}
+              </td>
+            </tr>
+            <tr>
+              <td className="border border-gray-300 text-left text-gray-600">Trạng thái</td>
+              <td className="border border-gray-300 text-center font-bold" style={{ color: status.color }}>{status.label}</td>
+            </tr>
+            {point.typeName && (
+              <tr>
+                <td className="border border-gray-300 text-left text-gray-600">Loại</td>
+                <td className="border border-gray-300 text-center text-gray-600">{point.typeName}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Tooltip>
+  );
+};
+
 const MapPointLayer = ({
   points = [],
   hotspots = [],
   showPoints = true,
   showHotspots = false,
+  showLabels = false,
   addMode = false,
   canEdit = false,
   onPickLocation,
@@ -147,6 +180,7 @@ const MapPointLayer = ({
         interactive={!addMode}
         zIndexOffset={500}
       >
+        {showLabels && <PointLabel point={point} />}
         <PointPopup point={point} canEdit={canEdit} onEdit={onEdit} imageUrl={imageUrl} />
       </Marker>
     ))}

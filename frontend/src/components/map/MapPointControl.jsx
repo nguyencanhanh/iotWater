@@ -45,6 +45,8 @@ const MapPointControl = ({
   onReload,
   types = [],
   onOpenReport,
+  showLabels = false,
+  onToggleLabels,
   leakFilter = [],
   onLeakFilter,
   visibleCount,
@@ -82,12 +84,12 @@ const MapPointControl = ({
               {/* Giong nut mat cua bang "Trang thai cam bien". */}
               <button
                 type="button"
-                onClick={() => onTogglePoints(!showPoints)}
-                title={showPoints ? "Đang hiện điểm sự cố trên bản đồ — bấm để ẩn" : "Đang ẩn điểm sự cố — bấm để hiện"}
-                aria-label={showPoints ? "Ẩn điểm sự cố trên bản đồ" : "Hiện điểm sự cố trên bản đồ"}
-                className={`flex h-8 w-8 items-center justify-center rounded text-white shadow ${showPoints ? "bg-rose-600 hover:bg-rose-700" : "bg-gray-500 hover:bg-gray-600"}`}
+                onClick={() => onToggleLabels(!showLabels)}
+                title={showLabels ? "Đang hiện bảng thông tin trên đầu điểm sự cố — bấm để ẩn" : "Đang ẩn bảng thông tin trên đầu điểm sự cố — bấm để hiện"}
+                aria-label={showLabels ? "Ẩn bảng thông tin điểm sự cố" : "Hiện bảng thông tin điểm sự cố"}
+                className={`flex h-8 w-8 items-center justify-center rounded text-white shadow ${showLabels ? "bg-rose-600 hover:bg-rose-700" : "bg-gray-500 hover:bg-gray-600"}`}
               >
-                {showPoints ? <FaEye /> : <FaEyeSlash />}
+                {showLabels ? <FaEye /> : <FaEyeSlash />}
               </button>
               <button
                 type="button"
@@ -165,12 +167,12 @@ const MapPointControl = ({
                 Đang hiện {visibleCount}/{stats.total} điểm theo mức đã chọn.
               </div>
             )}
-            {!showPoints && (
-              <div className="mt-1.5 text-[11px] font-bold text-slate-500">Điểm sự cố đang ẩn trên bản đồ.</div>
-            )}
           </div>
 
           <div className="mt-3 space-y-2">
+            <Toggle checked={showPoints} onChange={onTogglePoints}>
+              Hiện điểm trên bản đồ
+            </Toggle>
             <Toggle checked={showHotspots} onChange={onToggleHotspots}>
               <span className="flex items-center gap-1.5">
                 <FaFire className="text-orange-500" /> Khu vực tập trung sự cố

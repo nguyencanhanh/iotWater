@@ -191,6 +191,14 @@ function AdminSummary() {
         }
     });
     const [leakFilter, setLeakFilter] = useState([]);
+    // Bang thong tin tren dau diem su co: mac dinh tat, nho theo trinh duyet.
+    const [showPointLabels, setShowPointLabels] = useState(() => {
+        try {
+            return localStorage.getItem("iot.showMapPointLabels") === "1";
+        } catch {
+            return false;
+        }
+    });
     const [showHotspots, setShowHotspots] = useState(false);
     const [addPointMode, setAddPointMode] = useState(false);
     const [pointFormOpen, setPointFormOpen] = useState(false);
@@ -210,6 +218,15 @@ function AdminSummary() {
     const visibleMapPoints = leakFilter.length
         ? mapPoints.points.filter((point) => leakFilter.includes(getLeakBandKey(point.leakRate)))
         : mapPoints.points;
+
+    const handleTogglePointLabels = (next) => {
+        setShowPointLabels(next);
+        try {
+            localStorage.setItem("iot.showMapPointLabels", next ? "1" : "0");
+        } catch {
+            // Khong luu duoc thi van bat/tat binh thuong trong phien nay.
+        }
+    };
 
     const handleToggleMapPoints = (next) => {
         setShowMapPoints(next);
@@ -767,6 +784,7 @@ function AdminSummary() {
                         hotspots={mapPoints.hotspots}
                         showPoints={showMapPoints}
                         showHotspots={showHotspots}
+                        showLabels={showPointLabels && showMarkerTooltipAtCurrentZoom}
                         addMode={addPointMode}
                         canEdit={canEditMapPoints}
                         onPickLocation={handlePickLocation}
@@ -1079,6 +1097,8 @@ function AdminSummary() {
                     onReload={mapPoints.reload}
                     types={mapPoints.types}
                     onOpenReport={() => setReportPanelOpen(true)}
+                    showLabels={showPointLabels}
+                    onToggleLabels={handleTogglePointLabels}
                     leakFilter={leakFilter}
                     onLeakFilter={setLeakFilter}
                     visibleCount={visibleMapPoints.length}

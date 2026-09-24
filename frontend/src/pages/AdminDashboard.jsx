@@ -148,7 +148,7 @@ const AdminDashboard = () => {
         trafficStats={trafficStats}
       />
       <div
-        className={`flex-1 transition-all duration-300 ${isSidebarOpen ? "md:ml-64" : "ml-0"}`}
+        className={`min-w-0 flex-1 transition-all duration-300 ${isSidebarOpen ? "md:ml-64" : "ml-0"}`}
       >
         <Nav />
         <main className="h-[calc(100vh-3rem)] overflow-auto">

@@ -375,6 +375,25 @@ Nhung diem de vap:
 - Nut CSV ghi them dong `sep=,` dau file kem BOM, vi Excel ban tieng Viet hay tach cot
   sai khi dau phan cach danh sach cua may la dau cham phay.
 
+### Phan tich bat thuong nhom (`analyze_anomaly`)
+
+Cau kieu "phan tich bat thuong nhom Bach Viet 1 thang vua qua" -> `services/agent/anomaly.js`:
+
+1. Gom du lieu theo GIO (Mongo `$dateTrunc`, gio VN) cho toi da 12 logger, toi da 92 ngay.
+   Khong noi thoi gian thi lay 30 ngay gan nhat.
+2. Server TU phat hien bat thuong bang thong ke (khong can AI): mat du lieu, tut ap/tang vot,
+   dao dong trong gio, gia tri dung yen, luu luong dem toi thieu (1h-5h) tang dan hoac cao so
+   voi TB ngay, san luong ngay lech, luu luong = 0 ban ngay, chi so dong ho bi giam.
+3. **Ap duoc so voi muc binh thuong cua CUNG KHUNG GIO** (trung vi cac ngay). Van dieu ap ha ap
+   dem theo lich (vd 28429: ~14 m luc 1h, ~37 m luc 19h) khong bi tinh la tut ap. So voi mot
+   nguong chung thi 28429 bao sai 27 lan tut ap.
+4. AI chi viet nhan dinh tu ket qua do + canh bao + su co hien truong. AI loi -> van tra ve
+   danh sach dau hieu, hoan luot.
+
+Moi cau hoi chi tru 1 luot AI (neu buoc hieu cau da goi AI thi dung lai luot do).
+
+Han muc AI/ngay: `AI_DAILY_LIMIT` trong `server/.env` (dang 100, mac dinh code 10).
+
 ## Render bao cao AI
 
 `frontend/src/components/ai/`:

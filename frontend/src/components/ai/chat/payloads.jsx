@@ -12,6 +12,7 @@ import { Chip, CopyButton, CsvButton, DataTable, EmptyNote, ResultCard, StatTile
 import { formatDateTime, formatInt, formatNumber, formatUnit } from "./format";
 
 const SeriesChart = lazy(() => import("./SeriesChart"));
+const AiMarkdown = lazy(() => import("../AiMarkdown"));
 
 const ChartFrame = ({ children }) => (
   <Suspense fallback={<div className="flex h-[260px] items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-400">Đang dựng biểu đồ…</div>}>
@@ -613,6 +614,138 @@ const NeedDateRangePayload = ({ payload, onQuickAsk }) => {
   );
 };
 
+/* ------------------------------- Phan tich bat thuong ------------------------------- */
+
+const FINDING_TONE = { cao: "rose", "trung bình": "amber", "thấp": "blue", "thông tin": "slate" };
+const FINDING_LABEL = { cao: "Cao", "trung bình": "Trung bình", "thấp": "Thấp", "thông tin": "Thông tin" };
+
+const AnomalyAnalysisPayload = ({ payload }) => {
+  const hasAnalysis = Boolean(payload?.analysis);
+  const [view, setView] = useState(hasAnalysis ? "analysis" : "findings");
+  const [metricTab, setMetricTab] = useState("pressure");
+  const loggers = payload?.loggers || [];
+  if (!loggers.length) return null;
+
+  const serious = loggers.reduce(
+    (sum, item) => sum + (item.findings || []).filter((finding) => finding.level === "cao").length,
+    0
+  );
+  const medium = loggers.reduce(
+    (sum, item) => sum + (item.findings || []).filter((finding) => finding.level === "trung bình").length,
+    0
+  );
+  const anyFlow = loggers.some((item) => item.hasFlow);
+
+  return (
+    <ResultCard
+      eyebrow="Phân tích bất thường"
+      title={`Nhóm ${payload.group} · ${loggers.length} logger`}
+      subtitle={`${payload.rangeText} · ${formatNumber(payload.days)} ngày${payload.truncatedFrom ? ` · phân tích ${loggers.length}/${payload.truncatedFrom} logger` : ""}`}
+      actions={hasAnalysis && <CopyButton text={payload.analysis} label="Chép nhận định" />}
+    >
+      <div className="grid gap-2 grid-cols-2 xl:grid-cols-4">
+        <StatTile label="Mức cao" value={formatInt(serious)} tone={serious ? "rose" : "emerald"} />
+        <StatTile label="Mức trung bình" value={formatInt(medium)} tone={medium ? "amber" : "emerald"} />
+        <StatTile label="Cảnh báo trong kỳ" value={formatInt(payload.alarmCount)} tone="slate" />
+        <StatTile label="Sự cố gần logger" value={formatInt(payload.incidentCount)} tone="slate" />
+      </div>
+
+      {payload.aiError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+          {payload.aiError}
+        </div>
+      )}
+
+      <ViewTabs
+        value={view}
+        onChange={setView}
+        options={[
+          ...(hasAnalysis ? [{ value: "analysis", label: "Nhận định", icon: <FaBolt /> }] : []),
+          { value: "findings", label: "Dấu hiệu phát hiện", icon: <FaExclamationTriangle /> },
+          { value: "chart", label: "Biểu đồ", icon: <FaChartArea /> },
+        ]}
+      />
+
+      {view === "analysis" && hasAnalysis && (
+        <Suspense fallback={<div className="text-xs font-bold text-slate-400">Đang hiển thị…</div>}>
+          <AiMarkdown content={payload.analysis} className="text-sm leading-6 text-slate-700" />
+        </Suspense>
+      )}
+
+      {view === "findings" && (
+        <div className="space-y-2">
+          {loggers.map((logger) => (
+            <div key={logger.id} className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-sm font-black text-slate-900">{logger.name}</span>
+                <Chip tone="slate">ID {logger.id}</Chip>
+                <Chip tone={logger.coverage >= 95 ? "emerald" : "amber"}>Dữ liệu {formatNumber(logger.coverage)}%</Chip>
+                {logger.pressure && <Chip tone="teal">Áp TB {formatNumber(logger.pressure.avg)} m</Chip>}
+                {logger.flow && <Chip tone="blue">Lưu lượng TB {formatNumber(logger.flow.avg)} m³/h</Chip>}
+              </div>
+              {(logger.findings || []).length === 0 ? (
+                <div className="mt-2 text-xs font-bold text-emerald-700">Không phát hiện bất thường.</div>
+              ) : (
+                <ul className="mt-2 space-y-1.5">
+                  {logger.findings.map((finding, index) => (
+                    <li key={index} className="flex items-start gap-2 text-xs leading-5 text-slate-700">
+                      <span className="shrink-0 pt-0.5">
+                        <Chip tone={FINDING_TONE[finding.level] || "slate"}>{FINDING_LABEL[finding.level] || finding.level}</Chip>
+                      </span>
+                      <span>{finding.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {view === "chart" && (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-1">
+              {[
+                { value: "pressure", label: "Áp thấp nhất" },
+                ...(anyFlow ? [{ value: "flow", label: "Lưu lượng TB" }] : []),
+              ].map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => setMetricTab(tab.value)}
+                  className={`rounded-md border px-2 py-1 text-[11px] font-bold transition ${
+                    metricTab === tab.value
+                      ? "border-teal-300 bg-teal-50 text-teal-700"
+                      : "border-slate-200 bg-white text-slate-500 hover:border-teal-200"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[11px] font-semibold text-slate-400">
+              Mỗi điểm = {formatInt(payload.reportData?.intervalMinutes / 60)} giờ
+            </span>
+          </div>
+          <ChartFrame>
+            <SeriesChart
+              reportData={{
+                ...payload.reportData,
+                series: metricTab === "flow"
+                  ? payload.reportData.series.filter((item) => item.flowValues?.some((value) => value !== null))
+                  : payload.reportData.series,
+              }}
+              metrics={[metricTab]}
+              height={280}
+            />
+          </ChartFrame>
+        </>
+      )}
+    </ResultCard>
+  );
+};
+
 /* ------------------------------- Bo dinh tuyen ------------------------------- */
 
 const PayloadRenderer = ({ payload, onQuickAsk, onOpen }) => {
@@ -623,6 +756,8 @@ const PayloadRenderer = ({ payload, onQuickAsk, onOpen }) => {
       return <LoggerReportPayload payload={payload} />;
     case "logger_compare":
       return <LoggerComparePayload payload={payload} />;
+    case "anomaly_analysis":
+      return <AnomalyAnalysisPayload payload={payload} />;
     case "open_logger":
       return <OpenLoggerPayload payload={payload} onOpen={onOpen} />;
     case "system_overview":

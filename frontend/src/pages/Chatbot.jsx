@@ -192,6 +192,17 @@ const MessageRow = ({ message, onQuickAsk, onOpen }) => {
   );
 };
 
+// Phan tich ca nhom mat 30-60 giay: bao cho nguoi dung biet van dang chay.
+const TypingText = () => {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds((prev) => prev + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  if (seconds < 6) return "Đang đọc câu lệnh và truy vấn dữ liệu…";
+  return `AI đang phân tích dữ liệu (${seconds} giây) — phân tích cả nhóm có thể mất tới 1 phút…`;
+};
+
 const TypingRow = () => (
   <div className="flex gap-2">
     <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
@@ -207,7 +218,7 @@ const TypingRow = () => (
           />
         ))}
       </span>
-      <span className="text-xs font-bold text-slate-500">Đang đọc câu lệnh và truy vấn dữ liệu…</span>
+      <span className="text-xs font-bold text-slate-500"><TypingText /></span>
     </div>
   </div>
 );
@@ -337,7 +348,7 @@ const Chatbot = () => {
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[264px_1fr]">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[264px_1fr]">
         <aside className="hidden min-h-0 xl:block">
           <CapabilityRail onPick={handleQuickAsk} disabled={loading} />
         </aside>

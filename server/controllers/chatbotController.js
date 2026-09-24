@@ -25,6 +25,12 @@ import {
   listLoggerPayload,
   listSensors,
 } from "../services/agent/tools.js";
+import {
+  buildAnomalyData,
+  buildAnomalyPayload,
+  selectAnalysisSensors,
+  writeAnomalyAnalysis,
+} from "../services/agent/anomaly.js";
 
 // Cac cau hoi theo chu ky ma nguoi dung khong noi ro ngay thi lay moc mac dinh,
 // thay vi hoi lai lam mat mot luot.
@@ -395,6 +401,83 @@ export const chatWithAssistant = async (req, res) => {
           },
         });
       }
+    }
+
+    if (intent.action === "analyze_anomaly") {
+      const { selected: targets, total } = selectAnalysisSensors({
+        sensors,
+        sensorIds: intent.sensorIds,
+        groupQuery: intent.groupQuery,
+      });
+
+      if (!targets.length) {
+        const groups = [...new Set(sensors.map((sensor) => sensor.group).filter(Boolean))];
+        return respond({
+          res,
+          session,
+          user,
+          sessionId,
+          message,
+          body: {
+            success: true,
+            reply: `Bạn muốn phân tích nhóm hay logger nào? Ví dụ: “Phân tích bất thường nhóm ${groups[0] || "Bách Việt"} 30 ngày qua”. Các nhóm hiện có: ${groups.join(", ")}.`,
+            intent,
+            payload: { type: "help" },
+            aiUsage,
+            ...meta,
+          },
+        });
+      }
+
+      // Khong noi thoi gian thi mac dinh 30 ngay gan nhat.
+      const range = intent.fromDate && intent.toDate
+        ? { fromDate: intent.fromDate, toDate: intent.toDate, assumed: false }
+        : { fromDate: new Date(Date.now() - 30 * 86400000).toISOString(), toDate: new Date().toISOString(), assumed: true };
+      const groupLabel = intent.groupQuery
+        ? (targets[0]?.group || intent.groupQuery)
+        : targets.map((sensor) => sensor.id).join(", ");
+      rememberSlots(session, { groupQuery: intent.groupQuery, fromDate: range.fromDate, toDate: range.toDate });
+
+      const data = await buildAnomalyData({ user, sensors: targets, ...range, groupLabel });
+
+      // Moi cau hoi chi tinh 1 luot: neu buoc hieu cau da goi AI (da tru luot) thi dung lai luot do.
+      let analysis = null;
+      let aiError = "";
+      let chargedHere = null;
+      try {
+        if (!aiUsage) chargedHere = aiUsage = await acquireAiUsage(req);
+        analysis = await writeAnomalyAnalysis({ data, signal });
+        if (!analysis.analysis) throw new Error("AI không trả về nội dung");
+        if (analysis.cached && chargedHere) aiUsage = await releaseAiUsage(chargedHere).catch(() => aiUsage);
+      } catch (analysisError) {
+        if (analysisError?.statusCode === 429) {
+          aiError = analysisError.message;
+        } else {
+          if (analysisError?.statusCode === 499 || res.writableEnded) return undefined;
+          console.error("[agent] anomaly analysis:", analysisError.message);
+          aiError = "AI đang bận nên chưa viết được nhận định; dưới đây là các bất thường hệ thống tự phát hiện.";
+          if (chargedHere) aiUsage = await releaseAiUsage(chargedHere).catch(() => null);
+        }
+        analysis = null;
+      }
+
+      const findingCount = data.results.reduce((sum, item) => sum + item.findings.filter((f) => f.level === "cao" || f.level === "trung bình").length, 0);
+      return respond({
+        res,
+        session,
+        user,
+        sessionId,
+        message,
+        body: {
+          success: true,
+          reply: `Mình đã phân tích ${targets.length} logger${intent.groupQuery ? ` nhóm ${groupLabel}` : ""} trong ${data.days} ngày (${data.rangeText}): ${findingCount ? `phát hiện ${findingCount} dấu hiệu bất thường cần chú ý.` : "chưa thấy bất thường đáng kể."}${total > targets.length ? ` (Nhóm có ${total} logger, mình phân tích ${targets.length} logger đầu.)` : ""}${range.assumed ? " Bạn không nói khoảng thời gian nên mình lấy 30 ngày gần nhất." : ""}`,
+          intent,
+          payload: buildAnomalyPayload({ data, analysis, aiError, truncatedFrom: total > targets.length ? total : 0 }),
+          aiUsage,
+          ...meta,
+          provider: analysis?.provider || meta.provider,
+        },
+      });
     }
 
     const { selected, candidates } = findSensorCandidates({

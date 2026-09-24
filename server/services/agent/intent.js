@@ -10,6 +10,7 @@ export const REPORT_METRICS = {
 export const ALLOWED_ACTIONS = new Set([
   "logger_report",
   "compare_loggers",
+  "analyze_anomaly",
   "open_logger",
   "list_loggers",
   "system_overview",
@@ -92,7 +93,18 @@ export const extractDateRange = (message) => {
     return { fromDate: startOfDay(from).toISOString(), toDate: endOfDay(to).toISOString() };
   }
 
-  const relativeDays = normalized.match(/(\d{1,3})\s*(?:ngay|ngày)\s*(?:qua|gan day|gần đây|truoc|trước)/);
+  // "1 thang vua qua", "2 tuan gan day": tinh lui tu hom nay, khong phai thang/tuan lich.
+  const relativeUnits = normalized.match(/(\d{1,2})\s*(thang|tuan)\s*(?:vua\s*)?(?:qua|gan day|truoc|nay)/);
+  if (relativeUnits) {
+    const days = Math.min(Number(relativeUnits[1]) * (relativeUnits[2] === "thang" ? 30 : 7), 92);
+    return { fromDate: startOfDay(addDays(today, -(days - 1))).toISOString(), toDate: endOfDay(today).toISOString() };
+  }
+  if (/(thang|tuan) vua qua/.test(normalized)) {
+    const days = /thang vua qua/.test(normalized) ? 30 : 7;
+    return { fromDate: startOfDay(addDays(today, -(days - 1))).toISOString(), toDate: endOfDay(today).toISOString() };
+  }
+
+  const relativeDays = normalized.match(/(\d{1,3})\s*(?:ngay|ngày)\s*(?:vua\s*)?(?:qua|gan day|gần đây|truoc|trước)/);
   if (relativeDays) {
     const days = Math.min(Math.max(Number(relativeDays[1]), 1), 92);
     return { fromDate: startOfDay(addDays(today, -(days - 1))).toISOString(), toDate: endOfDay(today).toISOString() };
@@ -213,6 +225,24 @@ const INCIDENT_PATTERN = /(su co|ro ri|vo ong|diem su co|incident|dang sua chua)
 const ALERT_PATTERN = /(canh bao|bao dong|\balarm\b|\balert\b)/;
 const DMA_PATTERN = /(that thoat|\bnrw\b|\bdma\b|nuoc khong doanh thu)/;
 const COMPARE_PATTERN = /(so sanh|doi chieu|compare|so voi)/;
+const ANALYZE_PATTERN = /(phan tich|bat thuong|danh gia|chan doan|co van de|co gi la|nhan dinh|nhan xet|dau hieu)/;
+
+// Nhom duoc nhac dich danh trong cau (so voi danh sach nhom that) - chinh xac hon
+// regex "nhom ..." vi cau dai thuong co them chu phia sau ten nhom.
+const findKnownGroup = (message, sensors) => {
+  const normalized = normalizeText(message);
+  return [...new Set(sensors.map((sensor) => sensor.group).filter(Boolean))]
+    .filter((group) => normalizeText(group) !== "khong co")
+    .sort((a, b) => b.length - a.length)
+    .find((group) => normalized.includes(normalizeText(group))) || "";
+};
+
+const analyzeIntent = (message, sensors, sensorIds, dateRange) => sanitizeIntent({
+  action: "analyze_anomaly",
+  sensorIds: findMentionedSensorIds(message, sensorIds),
+  groupQuery: findKnownGroup(message, sensors) || extractGroupQuery(message),
+  ...dateRange,
+});
 
 // Router rẻ tiền: xử lý các mẫu câu phổ biến mà không cần gọi AI.
 export const routeDeterministic = (message, sensors) => {
@@ -233,6 +263,12 @@ export const routeDeterministic = (message, sensors) => {
 
   if (OVERVIEW_PATTERN.test(normalized)) {
     return sanitizeIntent({ action: "system_overview", groupQuery: extractGroupQuery(message) });
+  }
+
+  // Dat truoc su co/canh bao: "phan tich xem co ro ri khong" la yeu cau phan tich,
+  // khong phai liet ke diem su co. Rieng that thoat DMA da co cong cu rieng.
+  if (ANALYZE_PATTERN.test(normalized) && !DMA_PATTERN.test(normalized)) {
+    return analyzeIntent(message, sensors, sensorIds, dateRange);
   }
 
   if (INCIDENT_PATTERN.test(normalized)) {
@@ -307,7 +343,11 @@ export const heuristicIntent = (message, sensors) => {
   const mentionedId = findMentionedSensorId(message, sensorIds);
   const dateRange = extractDateRange(message);
   const sensorQuery = extractSensorQuery(message);
-  const groupQuery = extractGroupQuery(message);
+  const groupQuery = findKnownGroup(message, sensors) || extractGroupQuery(message);
+
+  if (ANALYZE_PATTERN.test(normalized) && !DMA_PATTERN.test(normalized)) {
+    return analyzeIntent(message, sensors, sensorIds, dateRange);
+  }
 
   if (/(bao cao|xuat|export|lay du lieu|du lieu tu|tu ngay|den ngay)/.test(normalized)) {
     return sanitizeIntent({
@@ -400,6 +440,8 @@ QUY TẮC:
 - "hôm nay" = ${today}. Ngày không kèm giờ: fromDate 00:00:00+07:00, toDate 23:59:59+07:00.
 - Hỏi báo cáo/xuất/lấy dữ liệu MỘT logger theo khoảng ngày => action "logger_report".
 - Hỏi so sánh/đối chiếu NHIỀU logger với nhau => action "compare_loggers", điền toàn bộ id vào "sensorIds" (tối đa 5).
+- Yêu cầu PHÂN TÍCH, đánh giá, tìm bất thường, chẩn đoán rò rỉ/tụt áp của một nhóm hoặc các logger => action "analyze_anomaly",
+  tên nhóm vào "groupQuery" (đúng tên trong danh sách), id logger (nếu có) vào "sensorIds". Ưu tiên action này hơn "logger_report" khi câu có ý phân tích.
 - Hỏi mở/xem/chi tiết/trạng thái một logger => action "open_logger".
 - Hỏi danh sách logger hoặc logger trong một nhóm => action "list_loggers".
 - Hỏi tổng quan hệ thống, bao nhiêu logger online/offline, logger nào mất tín hiệu => action "system_overview".
@@ -415,7 +457,7 @@ QUY TẮC:
 
 SCHEMA:
 {
-  "action": "logger_report" | "compare_loggers" | "open_logger" | "list_loggers" | "system_overview" | "list_incidents" | "list_alerts" | "dma_loss" | "help" | "refuse",
+  "action": "logger_report" | "compare_loggers" | "analyze_anomaly" | "open_logger" | "list_loggers" | "system_overview" | "list_incidents" | "list_alerts" | "dma_loss" | "help" | "refuse",
   "sensorId": number | null,
   "sensorIds": number[],
   "sensorQuery": string,
@@ -486,6 +528,11 @@ export const applySessionSlots = (intent, session) => {
   }
   if (!merged.groupQuery && slots.groupQuery && merged.action === "list_loggers") {
     merged.groupQuery = slots.groupQuery;
+  }
+  // "Phan tich tiep nhom do thang truoc" -> dung lai nhom vua hoi.
+  if (merged.action === "analyze_anomaly" && !merged.groupQuery && !merged.sensorIds.length) {
+    if (slots.groupQuery) merged.groupQuery = slots.groupQuery;
+    else if (slots.sensorId) merged.sensorIds = [slots.sensorId];
   }
   if (merged.action === "dma_loss" && !merged.dmaQuery && slots.dmaQuery) {
     merged.dmaQuery = slots.dmaQuery;

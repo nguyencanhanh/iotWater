@@ -1,6 +1,7 @@
 import InfoSen from "../models/Info.js";
 import MapPoint from "../models/MapPoint.js";
 import { getTypeLabel, getSeverityLabel, getStatusLabel } from "./incidentLabels.js";
+import { getLeakBucketLabel } from "./leakRate.js";
 
 const EARTH_RADIUS_M = 6371000;
 const DEFAULT_RADIUS_M = 500;
@@ -86,7 +87,7 @@ export const findIncidentsNearLoggers = async ({
       { status: { $ne: "resolved" } },
     ],
   })
-    .select("title type severity status lat lng address note group occurredAt resolvedAt")
+    .select("title type typeName severity leakRate status unresolvedReason lat lng address note group occurredAt resolvedAt")
     .sort({ occurredAt: -1 })
     .limit(300)
     .lean();
@@ -112,8 +113,9 @@ export const findIncidentsNearLoggers = async ({
 
   return withDistance.map(({ incident, nearest, distance }) => ({
     title: incident.title,
-    type: getTypeLabel(incident.type),
-    severity: getSeverityLabel(incident.severity),
+    // Diem moi luu typeName + leakRate; diem cu con type + severity.
+    type: incident.typeName || getTypeLabel(incident.type),
+    severity: incident.leakRate ? `rò ${getLeakBucketLabel(incident.leakRate)}` : getSeverityLabel(incident.severity),
     status: getStatusLabel(incident.status),
     nearestLoggerId: nearest.id,
     nearestLoggerName: nearest.name,

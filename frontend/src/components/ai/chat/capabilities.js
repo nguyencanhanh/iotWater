@@ -39,6 +39,17 @@ export const CAPABILITY_GROUPS = [
     ],
   },
   {
+    key: "anomaly",
+    title: "Phân tích bất thường",
+    icon: "alert",
+    tone: "rose",
+    description: "AI đọc áp lực, lưu lượng cả nhóm để tìm tụt áp, rò rỉ, mất dữ liệu",
+    samples: [
+      "Phân tích bất thường nhóm Bách Việt 30 ngày qua",
+      "Dựa vào lưu lượng, áp lực nhóm Song Mai 1 tháng vừa qua có gì bất thường không?",
+    ],
+  },
+  {
     key: "dma",
     title: "Thất thoát DMA",
     icon: "water",
@@ -69,4 +80,5 @@ export const QUICK_PROMPTS = [
   "Có sự cố nào chưa xử lý không?",
   "Cảnh báo hôm nay",
   "Thất thoát DMA tháng này",
+  "Phân tích bất thường nhóm Bách Việt 30 ngày qua",
 ];

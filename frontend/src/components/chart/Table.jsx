@@ -173,10 +173,19 @@ export const TableModal = (props) => {
   );
 }
 
+// Bang co toi 1.440 dong/ngay (moi phut 1 dong) nhung khung chi hien ~8 dong: chi dung
+// cac dong dang nhin thay, phan con lai thay bang khoang trong dung chieu cao de thanh
+// cuon van dung do dai. Truoc day dung du 1.440 dong -> 7.000-10.000 phan tu moi logger.
+const ROW_HEIGHT = 37; // h-9 (36px) + 1px vien duoi
+const VISIBLE_HEIGHT = 8 * 40;
+const OVERSCAN = 10;
+
 const ScrollableTable = (device) => {
   const [tableData, setTableData] = useState(listDataTable[device.step]);
+  const [scrollTop, setScrollTop] = useState(0);
   const tableContainerRef = useRef(null);
   const headerRef = useRef(null);
+  const frameRef = useRef(0);
   const visibleColumns = device.visibleColumns || ["time", "pressure", "pressureCompare", "flow", "flowCompare", "battery"];
   const columns = [
     {
@@ -252,10 +261,26 @@ const ScrollableTable = (device) => {
         const scrollWidth = container.offsetWidth - container.clientWidth;
         headerRef.current.style.paddingRight = `${scrollWidth}px`;
         container.scrollTop = (container.scrollHeight - container.clientHeight) * device.currentTimeDate;
+        setScrollTop(container.scrollTop);
       }
     };
     syncScrollBar();
   }, [device.currentTimeDate, rows.length]);
+
+  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
+
+  // Gom cac su kien cuon trong 1 khung hinh de khong render lai qua nhieu lan.
+  const handleScroll = (event) => {
+    const next = event.currentTarget.scrollTop;
+    cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(() => setScrollTop(next));
+  };
+
+  const firstRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const lastRow = Math.min(rows.length, Math.ceil((scrollTop + VISIBLE_HEIGHT) / ROW_HEIGHT) + OVERSCAN);
+  const visibleRows = rows.slice(firstRow, lastRow);
+  const topSpace = firstRow * ROW_HEIGHT;
+  const bottomSpace = (rows.length - lastRow) * ROW_HEIGHT;
 
   return (
     <div className="relative mt-3 w-full overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.08)]">
@@ -289,17 +314,25 @@ const ScrollableTable = (device) => {
         ref={tableContainerRef}
         id={device.dataModal ? "M" + device.step : "" + device.step}
         className="overflow-y-auto bg-white"
-        style={{ maxHeight: "calc(8 * 40px)" }}
+        style={{ maxHeight: `${VISIBLE_HEIGHT}px` }}
+        onScroll={handleScroll}
       >
         {!tableData && !rows.length ? (
           <h1 className="p-4 text-center text-sm font-bold text-slate-400">Loading...</h1>
         ) : (
           <table className="w-full table-fixed border-separate border-spacing-0">
             <tbody>
-              {rows.map(({ row, sourceIndex, label }, displayIndex) => (
+              {topSpace > 0 && (
+                <tr aria-hidden="true" style={{ height: topSpace }}><td colSpan={columns.length} className="p-0" /></tr>
+              )}
+              {visibleRows.map(({ row, sourceIndex, label }, offset) => {
+                const displayIndex = firstRow + offset;
+                return (
                 <tr
                   key={`${sourceIndex}-${displayIndex}`}
-                  className="h-9 text-sm font-semibold text-slate-700 odd:bg-white even:bg-slate-50/70 hover:bg-teal-50/70 sm:text-base"
+                  style={{ height: ROW_HEIGHT }}
+                  // Xen mau theo vi tri that trong bang (khong dung odd/even vi chi dung 1 phan).
+                  className={`text-sm font-semibold text-slate-700 hover:bg-teal-50/70 sm:text-base ${displayIndex % 2 ? "bg-slate-50/70" : "bg-white"}`}
                 >
                   {columns.map((column) => (
                     <td
@@ -310,7 +343,11 @@ const ScrollableTable = (device) => {
                     </td>
                   ))}
                 </tr>
-              ))}
+                );
+              })}
+              {bottomSpace > 0 && (
+                <tr aria-hidden="true" style={{ height: bottomSpace }}><td colSpan={columns.length} className="p-0" /></tr>
+              )}
             </tbody>
           </table>
         )}

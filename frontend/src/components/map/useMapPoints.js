@@ -12,6 +12,7 @@ import {
   mapPointUpdatePut,
   mapPointsGet,
 } from "../../api/index";
+import { DEFAULT_TIME_FILTER, currentMonthKey, resolveTimeRange } from "./mapPointMeta";
 
 const getToken = () => localStorage.getItem("token");
 
@@ -25,20 +26,37 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
   const [error, setError] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [timeFilter, setTimeFilter] = useState(DEFAULT_TIME_FILTER);
+  // Doi sang thang moi khi trang dang mo (qua nua dem cuoi thang) -> tu tai lai.
+  const [monthKey, setMonthKey] = useState(currentMonthKey);
+
+  useEffect(() => {
+    const timer = setInterval(() => setMonthKey(currentMonthKey()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // monthKey trong deps de "Thang nay" duoc tinh lai khi sang thang.
+  const timeRange = useMemo(() => resolveTimeRange(timeFilter), [timeFilter, monthKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadPoints = useCallback(async () => {
     if (!enabled) return;
     setLoading(true);
     setError("");
     try {
-      const res = await mapPointsGet(getToken(), { user, typeId: typeFilter, status: statusFilter });
+      const res = await mapPointsGet(getToken(), {
+        user,
+        typeId: typeFilter,
+        status: statusFilter,
+        fromDate: timeRange.fromDate,
+        toDate: timeRange.toDate,
+      });
       setPoints(res.data?.points || []);
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Không tải được danh sách sự cố");
     } finally {
       setLoading(false);
     }
-  }, [enabled, user, typeFilter, statusFilter]);
+  }, [enabled, user, typeFilter, statusFilter, timeRange]);
 
   const loadTypes = useCallback(async () => {
     try {
@@ -51,12 +69,17 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
 
   const loadHotspots = useCallback(async () => {
     try {
-      const res = await mapPointHotspotsGet(getToken(), { user, typeId: typeFilter });
+      const res = await mapPointHotspotsGet(getToken(), {
+        user,
+        typeId: typeFilter,
+        fromDate: timeRange.fromDate,
+        toDate: timeRange.toDate,
+      });
       setHotspots(res.data?.hotspots || []);
     } catch {
       setHotspots([]);
     }
-  }, [user, typeFilter]);
+  }, [user, typeFilter, timeRange]);
 
   useEffect(() => { loadPoints(); }, [loadPoints]);
   useEffect(() => { loadTypes(); }, [loadTypes]);
@@ -220,6 +243,9 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
     setTypeFilter,
     statusFilter,
     setStatusFilter,
+    timeFilter,
+    setTimeFilter,
+    timeLabel: timeRange.label,
     reload: loadPoints,
     loadTypes,
     loadHotspots,

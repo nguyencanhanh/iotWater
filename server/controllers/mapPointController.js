@@ -279,6 +279,17 @@ export const getMapPointImage = (req, res) => {
   return res.sendFile(filePath);
 };
 
+const EXPORT_COLUMNS = [
+  { header: "Thời gian phát hiện", key: "occurredAt", width: 20 },
+  { header: "Trạng thái", key: "status", width: 26 },
+  { header: "Loại sự cố", key: "typeName", width: 22 },
+  { header: "Mức độ", key: "leakRate", width: 16 },
+  { header: "Khu vực", key: "group", width: 22 },
+  { header: "Toạ độ", key: "coordinate", width: 26 },
+  { header: "Ghi chú", key: "note", width: 48 },
+  { header: "Người tạo", key: "createdByName", width: 18 },
+];
+
 export const exportMapPoints = async (req, res) => {
   try {
     const filter = buildFilter(req, req.body || {});
@@ -287,29 +298,35 @@ export const exportMapPoints = async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Su co");
 
+    // Nguoi dung tick chon cot can bao cao; "Ten su co" luon co. Khong gui columns = du cot nhu truoc.
+    const requested = Array.isArray(req.body?.columns) ? req.body.columns.map(String) : null;
     sheet.columns = [
       { header: "Tên sự cố", key: "title", width: 38 },
-      { header: "Thời gian phát hiện", key: "occurredAt", width: 20 },
-      { header: "Trạng thái", key: "status", width: 14 },
-      { header: "Loại sự cố", key: "typeName", width: 22 },
-      { header: "Mức độ", key: "leakRate", width: 16 },
-      { header: "Khu vực", key: "group", width: 22 },
-      { header: "Toạ độ", key: "coordinate", width: 26 },
+      ...EXPORT_COLUMNS.filter((column) => !requested || requested.includes(column.key)),
     ];
     sheet.getRow(1).font = { bold: true };
     sheet.getRow(1).alignment = { vertical: "middle" };
 
     points.forEach((point) => {
+      const statusText = point.status === "resolved"
+        ? `${STATUS_LABELS.resolved}${point.resolvedAt ? ` (${formatVn(point.resolvedAt)})` : ""}`
+        : `${STATUS_LABELS.open}${point.unresolvedReason ? ` (${point.unresolvedReason})` : ""}`;
       sheet.addRow({
         title: point.title,
         occurredAt: formatVn(point.occurredAt),
-        status: STATUS_LABELS[point.status] || point.status,
+        status: statusText,
         typeName: point.typeName || "Chưa phân loại",
         leakRate: getLeakBucketLabel(point.leakRate),
         group: point.group || "Không có",
         coordinate: `${Number(point.lat).toFixed(6)}, ${Number(point.lng).toFixed(6)}`,
+        note: point.note || "",
+        createdByName: point.createdByName || "",
       });
     });
+    sheet.getColumn("title").alignment = { wrapText: true, vertical: "top" };
+    if (sheet.columns.some((column) => column.key === "note")) {
+      sheet.getColumn("note").alignment = { wrapText: true, vertical: "top" };
+    }
 
     const fileName = `su-co-${new Date().toISOString().slice(0, 10)}.xlsx`;
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -348,6 +365,9 @@ export const getMapPointReport = async (req, res) => {
       occurredAtText: formatVn(point.occurredAt),
       resolvedAtText: formatVn(point.resolvedAt),
       unresolvedReason: point.unresolvedReason || "",
+      typeName: point.typeName || "Chưa phân loại",
+      note: point.note || "",
+      createdByName: point.createdByName || "",
     });
 
     // Moi loai deu phai xuat hien trong bao cao, ke ca loai khong co su co nao.

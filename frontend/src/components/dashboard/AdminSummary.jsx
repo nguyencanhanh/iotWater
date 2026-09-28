@@ -245,7 +245,7 @@ function AdminSummary() {
 
     useEffect(() => {
         if (showHotspots) mapPoints.loadHotspots();
-    }, [showHotspots, mapPoints.points.length]);
+    }, [showHotspots, mapPoints.points.length, mapPoints.timeFilter]);
 
     const handlePickLocation = (location) => {
         setDraftLocation(location);
@@ -1102,6 +1102,9 @@ function AdminSummary() {
                     leakFilter={leakFilter}
                     onLeakFilter={setLeakFilter}
                     visibleCount={visibleMapPoints.length}
+                    timeFilter={mapPoints.timeFilter}
+                    onTimeFilter={mapPoints.setTimeFilter}
+                    timeLabel={mapPoints.timeLabel}
                 />
             </div>
             {showModal ? <ModalData info={weatherData} dateData={dateData} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}

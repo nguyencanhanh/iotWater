@@ -90,3 +90,44 @@ export const toDateInput = (value) => {
   const offset = date.getTimezoneOffset();
   return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
 };
+
+/* ------------------------------ Loc theo thoi gian ------------------------------ */
+
+// Ban do mac dinh chi hien su co trong THANG HIEN TAI (theo thoi gian phat hien);
+// sang thang moi tu an diem thang truoc. Cac lua chon khac chon trong bo loc.
+export const TIME_FILTERS = [
+  { value: "thisMonth", label: "Tháng này" },
+  { value: "lastMonth", label: "Tháng trước" },
+  { value: "month", label: "Chọn tháng…" },
+  { value: "7d", label: "7 ngày qua" },
+  { value: "all", label: "Tất cả thời gian" },
+];
+
+export const DEFAULT_TIME_FILTER = { mode: "thisMonth", month: "" };
+
+export const currentMonthKey = (date = new Date()) => (
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+);
+
+const monthRange = (year, monthIndex) => ({
+  from: new Date(year, monthIndex, 1, 0, 0, 0, 0),
+  to: new Date(year, monthIndex + 1, 0, 23, 59, 59, 999),
+});
+
+const monthLabel = (date) => `tháng ${date.getMonth() + 1}/${date.getFullYear()}`;
+
+// Tra ve { fromDate, toDate } (ISO, rong = khong gioi han) va nhan hien thi.
+export const resolveTimeRange = (filter = DEFAULT_TIME_FILTER, now = new Date()) => {
+  const mode = filter?.mode || "thisMonth";
+  if (mode === "all") return { fromDate: "", toDate: "", label: "Tất cả thời gian" };
+  if (mode === "7d") {
+    return { fromDate: new Date(now.getTime() - 7 * 86400000).toISOString(), toDate: "", label: "7 ngày qua" };
+  }
+  let range;
+  if (mode === "lastMonth") range = monthRange(now.getFullYear(), now.getMonth() - 1);
+  else if (mode === "month" && /^\d{4}-\d{2}$/.test(filter.month || "")) {
+    const [year, month] = filter.month.split("-").map(Number);
+    range = monthRange(year, month - 1);
+  } else range = monthRange(now.getFullYear(), now.getMonth());
+  return { fromDate: range.from.toISOString(), toDate: range.to.toISOString(), label: `Sự cố ${monthLabel(range.from)}` };
+};

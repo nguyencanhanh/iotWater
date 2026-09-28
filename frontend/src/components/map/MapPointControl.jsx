@@ -12,7 +12,7 @@ import {
   FaTimes,
 } from "react-icons/fa";
 import { FaFileAlt } from "react-icons/fa";
-import { POINT_STATUSES } from "./mapPointMeta";
+import { POINT_STATUSES, TIME_FILTERS, currentMonthKey } from "./mapPointMeta";
 import { LEAK_COLOR_BANDS } from "./leakRate";
 
 const Toggle = ({ checked, onChange, children }) => (
@@ -50,10 +50,14 @@ const MapPointControl = ({
   leakFilter = [],
   onLeakFilter,
   visibleCount,
+  timeFilter = { mode: "thisMonth", month: "" },
+  onTimeFilter = () => {},
+  timeLabel = "",
 }) => {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const pending = Number(stats?.open || 0) + Number(stats?.inProgress || 0);
+  const leakSelectValue = leakFilter.length === 0 ? "all" : leakFilter.length === 1 ? leakFilter[0] : "multi";
   const toggleLeakBand = (key) => onLeakFilter(
     leakFilter.includes(key) ? leakFilter.filter((item) => item !== key) : [...leakFilter, key]
   );
@@ -79,7 +83,11 @@ const MapPointControl = ({
           </button>
 
           <div className={`${open ? "flex" : "hidden"} min-w-0 flex-1 items-center justify-between gap-2`}>
-            <h3 className="truncate text-lg font-bold text-gray-800">Điểm sự cố</h3>
+            <div className="min-w-0">
+              <h3 className="truncate text-lg font-bold leading-tight text-gray-800">Điểm sự cố</h3>
+              {/* Mac dinh chi hien thang nay - ghi ro de khong tuong mat diem cu. */}
+              {timeLabel && <div className="truncate text-[11px] font-bold text-teal-700">{timeLabel}</div>}
+            </div>
             <div className="flex shrink-0 items-center gap-1">
               {/* Giong nut mat cua bang "Trang thai cam bien". */}
               <button
@@ -210,6 +218,51 @@ const MapPointControl = ({
 
           {expanded && (
             <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">Thời gian</span>
+                <select
+                  value={timeFilter.mode}
+                  onChange={(event) => onTimeFilter({
+                    mode: event.target.value,
+                    month: event.target.value === "month" ? (timeFilter.month || currentMonthKey()) : "",
+                  })}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold outline-none focus:border-teal-500"
+                >
+                  {TIME_FILTERS.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+                {timeFilter.mode === "month" && (
+                  <input
+                    type="month"
+                    value={timeFilter.month}
+                    max={currentMonthKey()}
+                    onChange={(event) => event.target.value && onTimeFilter({ mode: "month", month: event.target.value })}
+                    aria-label="Chọn tháng"
+                    className="mt-1.5 h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold outline-none focus:border-teal-500"
+                  />
+                )}
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">Mức độ</span>
+                {/* Cung trang thai voi cac nut mau "Loc theo muc do" o tren. */}
+                <select
+                  value={leakSelectValue}
+                  onChange={(event) => {
+                    if (event.target.value === "all") onLeakFilter([]);
+                    else if (event.target.value !== "multi") onLeakFilter([event.target.value]);
+                  }}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold outline-none focus:border-teal-500"
+                >
+                  <option value="all">Tất cả</option>
+                  {LEAK_COLOR_BANDS.map((band) => (
+                    <option key={band.key} value={band.key}>{band.label}</option>
+                  ))}
+                  {leakSelectValue === "multi" && <option value="multi" disabled>Nhiều mức (chọn ở trên)</option>}
+                </select>
+              </label>
+
               <label className="block">
                 <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">Loại</span>
                 <select

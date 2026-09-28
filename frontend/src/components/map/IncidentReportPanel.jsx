@@ -15,6 +15,68 @@ const inputClass = "h-10 w-full rounded-xl border border-slate-200 bg-slate-50 p
 
 const formatNumber = (value) => Number(value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 1 });
 
+// Cac cot nguoi dung tick chon de dua vao bao cao (bang + file Excel). "Ten su co" luon co.
+// Key phai khop EXPORT_COLUMNS trong server/controllers/mapPointController.js.
+const REPORT_COLUMNS = [
+  { key: "occurredAt", label: "Thời gian phát hiện" },
+  { key: "status", label: "Trạng thái" },
+  { key: "typeName", label: "Loại sự cố" },
+  { key: "leakRate", label: "Mức độ" },
+  { key: "group", label: "Khu vực" },
+  { key: "coordinate", label: "Toạ độ" },
+  { key: "note", label: "Ghi chú" },
+  { key: "createdByName", label: "Người tạo" },
+];
+const DEFAULT_COLUMNS = REPORT_COLUMNS.map((column) => column.key).filter((key) => key !== "createdByName");
+const COLUMNS_KEY = "iot.incidentReportColumns";
+
+const loadColumns = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COLUMNS_KEY) || "null");
+    if (Array.isArray(saved)) return saved.filter((key) => REPORT_COLUMNS.some((column) => column.key === key));
+  } catch {
+    // Du lieu hong thi dung mac dinh.
+  }
+  return DEFAULT_COLUMNS;
+};
+
+// Dong du lieu tu tra cuu (diem goc) hoac bao cao (da dinh dang san) -> noi dung tung o.
+const renderCell = (key, row) => {
+  switch (key) {
+    case "occurredAt":
+      return <span className="whitespace-nowrap text-slate-600">{row.occurredAtText || formatPointDateTime(row.occurredAt)}</span>;
+    case "status": {
+      const statusMeta = getStatusMeta(row.status);
+      const resolvedText = row.resolvedAtText || (row.resolvedAt ? formatPointDateTime(row.resolvedAt) : "");
+      return (
+        <>
+          <span className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-black ${statusMeta.badge}`}>{statusMeta.label}</span>
+          {row.status === "resolved" && resolvedText && <span className="ml-1 text-[11px] text-slate-400">({resolvedText})</span>}
+          {row.status === "open" && row.unresolvedReason && <span className="ml-1 text-[11px] text-rose-500">({row.unresolvedReason})</span>}
+        </>
+      );
+    }
+    case "typeName":
+      return <span className="text-slate-700">{row.typeName || "Chưa phân loại"}</span>;
+    case "leakRate":
+      return (
+        <span className="whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-black text-white" style={{ backgroundColor: getLeakColor(row.leakRate) }}>
+          {row.leakRateLabel || getLeakLabel(row.leakRate)}
+        </span>
+      );
+    case "group":
+      return <span className="text-slate-700">{row.group || "Không có"}</span>;
+    case "coordinate":
+      return <span className="whitespace-nowrap font-mono text-xs text-slate-500">{Number(row.lat).toFixed(6)}, {Number(row.lng).toFixed(6)}</span>;
+    case "note":
+      return <span className="block min-w-[12rem] max-w-md whitespace-pre-line text-slate-700">{row.note || <span className="text-slate-300">—</span>}</span>;
+    case "createdByName":
+      return <span className="text-slate-600">{row.createdByName || "—"}</span>;
+    default:
+      return null;
+  }
+};
+
 const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) => {
   const [tab, setTab] = useState("search");
   const [fromDate, setFromDate] = useState(startOfMonth());
@@ -22,6 +84,7 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [status, setStatus] = useState("all");
   const [typeId, setTypeId] = useState("all");
+  const [columns, setColumns] = useState(loadColumns);
 
   const [rows, setRows] = useState([]);
   const [report, setReport] = useState(null);
@@ -63,6 +126,21 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
 
   if (!open) return null;
 
+  const toggleColumn = (key) => setColumns((prev) => {
+    const next = prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key];
+    // Giu dung thu tu cot nhu danh sach goc.
+    const ordered = REPORT_COLUMNS.map((column) => column.key).filter((item) => next.includes(item));
+    try {
+      localStorage.setItem(COLUMNS_KEY, JSON.stringify(ordered));
+    } catch {
+      // Khong luu duoc thi chi ap dung trong lan nay.
+    }
+    return ordered;
+  });
+  const shownColumns = REPORT_COLUMNS.filter((column) => columns.includes(column.key));
+  // Bao cao da chia muc theo loai su co nen bo cot "Loai su co".
+  const reportColumns = shownColumns.filter((column) => column.key !== "typeName");
+
   const toggleGroup = (name) => setSelectedGroups((prev) => (
     prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]
   ));
@@ -71,7 +149,7 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
     setExporting(true);
     setError("");
     try {
-      const res = await mapPointExportPost(getToken(), params);
+      const res = await mapPointExportPost(getToken(), { ...params, columns });
       const url = URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement("a");
       link.href = url;
@@ -174,6 +252,26 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
             </div>
           </div>
 
+          <div>
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase text-slate-500">Nội dung cần báo cáo</span>
+              <span className="text-[10px] font-semibold text-slate-400">(áp dụng cho bảng và file Excel)</span>
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+              {REPORT_COLUMNS.map((column) => (
+                <label key={column.key} className="flex cursor-pointer items-center gap-1.5 text-xs font-bold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={columns.includes(column.key)}
+                    onChange={() => toggleColumn(column.key)}
+                    className="h-4 w-4 accent-teal-600"
+                  />
+                  {column.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -183,11 +281,11 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
             >
               <FaSearch /> {loading ? "Đang tra cứu…" : "Tra cứu"}
             </button>
-            {tab === "search" && (
+            {(tab === "search" ? rows.length > 0 : Boolean(report?.summary?.total)) && (
               <button
                 type="button"
                 onClick={exportExcel}
-                disabled={exporting || !rows.length}
+                disabled={exporting}
                 className="flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 <FaFileExcel /> {exporting ? "Đang xuất…" : "Xuất Excel"}
@@ -210,38 +308,22 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-slate-900 text-white">
                     <tr>
-                      {["Tên sự cố", "Thời gian phát hiện", "Trạng thái", "Loại sự cố", "Mức độ", "Khu vực", "Toạ độ"].map((head) => (
+                      {["Tên sự cố", ...shownColumns.map((column) => column.label)].map((head) => (
                         <th key={head} className="whitespace-nowrap px-3 py-2 font-bold">{head}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row) => {
-                      const statusMeta = getStatusMeta(row.status);
-                      return (
-                        <tr key={row._id} className="border-t border-slate-100">
-                          <td className="px-3 py-2 font-bold text-slate-900">{row.title}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-slate-600">{formatPointDateTime(row.occurredAt)}</td>
-                          <td className="px-3 py-2">
-                            <span className={`rounded-md border px-2 py-0.5 text-[11px] font-black ${statusMeta.badge}`}>
-                              {statusMeta.label}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-slate-700">{row.typeName || "Chưa phân loại"}</td>
-                          <td className="whitespace-nowrap px-3 py-2">
-                            <span className="rounded-md px-2 py-0.5 text-[11px] font-black text-white" style={{ backgroundColor: getLeakColor(row.leakRate) }}>
-                              {getLeakLabel(row.leakRate)}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-slate-700">{row.group || "Không có"}</td>
-                          <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-500">
-                            {Number(row.lat).toFixed(6)}, {Number(row.lng).toFixed(6)}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {rows.map((row) => (
+                      <tr key={row._id} className="border-t border-slate-100 align-top">
+                        <td className="px-3 py-2 font-bold text-slate-900">{row.title}</td>
+                        {shownColumns.map((column) => (
+                          <td key={column.key} className="px-3 py-2">{renderCell(column.key, row)}</td>
+                        ))}
+                      </tr>
+                    ))}
                     {!rows.length && (
-                      <tr><td colSpan={7} className="px-3 py-6 text-center font-semibold text-slate-400">Không có sự cố nào trong khoảng này</td></tr>
+                      <tr><td colSpan={shownColumns.length + 1} className="px-3 py-6 text-center font-semibold text-slate-400">Không có sự cố nào trong khoảng này</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -298,35 +380,18 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
                         <thead className="bg-white text-xs uppercase tracking-wide text-slate-500">
                           <tr>
                             <th className="px-4 py-2">Tên</th>
-                            <th className="px-4 py-2">Vị trí</th>
-                            <th className="px-4 py-2">Mức độ</th>
-                            <th className="px-4 py-2">Trạng thái</th>
+                            {reportColumns.map((column) => (
+                              <th key={column.key} className="whitespace-nowrap px-4 py-2">{column.label}</th>
+                            ))}
                           </tr>
                         </thead>
                         <tbody>
                           {group.points.map((row) => (
-                            <tr key={row._id} className="border-t border-slate-100">
+                            <tr key={row._id} className="border-t border-slate-100 align-top">
                               <td className="px-4 py-2 font-bold text-slate-900">{row.title}</td>
-                              <td className="px-4 py-2 text-slate-600">
-                                {row.group}
-                                <span className="ml-2 font-mono text-[11px] text-slate-400">
-                                  {Number(row.lat).toFixed(5)}, {Number(row.lng).toFixed(5)}
-                                </span>
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-2">
-                                <span className="rounded-md px-2 py-0.5 text-[11px] font-black text-white" style={{ backgroundColor: getLeakColor(row.leakRate) }}>
-                                  {row.leakRateLabel}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2 text-slate-600">
-                                {row.statusLabel}
-                                {row.status === "resolved" && row.resolvedAtText && (
-                                  <span className="ml-1 text-[11px] text-slate-400">({row.resolvedAtText})</span>
-                                )}
-                                {row.status === "open" && row.unresolvedReason && (
-                                  <span className="ml-1 text-[11px] text-rose-500">({row.unresolvedReason})</span>
-                                )}
-                              </td>
+                              {reportColumns.map((column) => (
+                                <td key={column.key} className="px-4 py-2">{renderCell(column.key, row)}</td>
+                              ))}
                             </tr>
                           ))}
                         </tbody>

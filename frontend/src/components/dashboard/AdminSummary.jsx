@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useEffect, useMemo, useState, useRef } from "react";
+import { LABEL_TILE_URL, SATELLITE_TILE_URL, TILE_SUBDOMAINS } from "../map/tileUrls";
 import { MapContainer, TileLayer, Marker, Tooltip, GeoJSON, CircleMarker, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "../map/leafletIconFix";
@@ -638,12 +639,12 @@ function AdminSummary() {
                 <MapContainer center={mapCenter} zoom={15} className="h-full w-full" zoomControl={false}>
                     <MapZoomTracker onZoomChange={setMapZoom} />
                     <TileLayer
-                        url="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-                        subdomains={["mt1", "mt2", "mt3"]}
+                        url={SATELLITE_TILE_URL}
+                        subdomains={TILE_SUBDOMAINS}
                     />
                     <TileLayer
-                        url="https://{s}.google.com/vt/lyrs=h&x={x}&y={y}&z={z}"
-                        subdomains={["mt1", "mt2", "mt3"]}
+                        url={LABEL_TILE_URL}
+                        subdomains={TILE_SUBDOMAINS}
                     />
                     {/* ✅ HIỂN THỊ ĐƯỜNG ỐNG */}
                     {pipeLayer && (

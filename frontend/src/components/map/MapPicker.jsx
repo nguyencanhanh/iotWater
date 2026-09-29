@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { LABEL_TILE_URL, SATELLITE_TILE_URL, TILE_SUBDOMAINS } from "./tileUrls";
 import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "./leafletIconFix";
@@ -160,12 +161,12 @@ const MapPicker = ({
             className="h-full w-full"
           >
             <TileLayer
-              url="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-              subdomains={["mt1", "mt2", "mt3"]}
+              url={SATELLITE_TILE_URL}
+              subdomains={TILE_SUBDOMAINS}
             />
             <TileLayer
-              url="https://{s}.google.com/vt/lyrs=h&x={x}&y={y}&z={z}"
-              subdomains={["mt1", "mt2", "mt3"]}
+              url={LABEL_TILE_URL}
+              subdomains={TILE_SUBDOMAINS}
             />
             <ClickCatcher onPick={setPosition} />
             <Recenter position={recenterTo} />

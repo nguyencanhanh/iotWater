@@ -19,25 +19,28 @@ const RESOLVED_WIDTH = 34;
 
 // Chua xu ly: hinh GHIM mau theo muc do ro ri + vong nhay o chan ghim (nen ban do ve tinh
 // co rat nhieu icon tron cua dia diem, cham tron bi lan vao va rat kho thay).
-// Da xu ly: TAM GIAC UP NGUOC xanh la, cham tron ben trong van mang mau theo muc do ro ri.
+// Da xu ly: ghim xanh la co dau tich.
 export const createPointIcon = (point) => {
   const leakColor = getLeakColor(point?.leakRate);
 
   if (point?.status === "resolved") {
+    // Ghim xanh la co dau tich (giu nhu truoc), khong co vong nhay.
+    const color = "#16a34a";
     const width = RESOLVED_WIDTH;
-    const height = Math.round(width * 0.9);
+    const height = Math.round(width * 1.3);
     return L.divIcon({
       className: "iot-map-point",
       html: `
         <div class="iot-map-point__wrap" style="width:${width}px;height:${height}px;">
-          <svg viewBox="0 0 40 36" width="${width}" height="${height}" style="display:block;overflow:visible;filter:drop-shadow(0 2px 3px rgba(0,0,0,.55));">
-            <path d="M2 2.5 L38 2.5 L20 33.5 Z" fill="#16a34a" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
-            <circle cx="20" cy="13" r="7.2" fill="#ffffff"/>
-            <circle cx="20" cy="13" r="5" fill="${leakColor}"/>
+          <svg viewBox="0 0 40 52" width="${width}" height="${height}" style="display:block;overflow:visible;filter:drop-shadow(0 3px 4px rgba(0,0,0,.55));">
+            <path d="M20 1.5C10 1.5 2 9.3 2 19.2c0 12.6 15.6 29 17 30.5a1.4 1.4 0 0 0 2 0C22.4 48.2 38 31.8 38 19.2 38 9.3 30 1.5 20 1.5z"
+                  fill="${color}" stroke="#ffffff" stroke-width="3"/>
+            <circle cx="20" cy="19.5" r="10.5" fill="#ffffff"/>
+            <path d="M14.5 21.5l4 4 8-9" fill="none" stroke="${color}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>`,
       iconSize: [width, height],
-      // Tam giac up nguoc: dinh nhon o duoi cham dung vi tri su co, giong mui ghim.
+      // Mui ghim cham dung vi tri su co.
       iconAnchor: [width / 2, height - 1],
       popupAnchor: [0, -height + 4],
       tooltipAnchor: [0, -height + 2],

@@ -238,10 +238,11 @@ function AdminSummary() {
     };
 
     // Khu vuc cho su co: gop nhom logger co san voi nhom da dung o cac diem truoc do.
-    const incidentGroups = useMemo(() => [...new Set([
-        ...groups.map((item) => item?.name).filter(Boolean),
+    // Danh sach nhom su co luu tren server (them / sua / xoa trong form diem su co).
+    const incidentGroupNames = useMemo(() => [...new Set([
+        ...mapPoints.incidentGroups.map((item) => item.name),
         ...mapPoints.groups,
-    ])].sort((a, b) => a.localeCompare(b, "vi")), [groups, mapPoints.groups]);
+    ])].sort((a, b) => a.localeCompare(b, "vi")), [mapPoints.incidentGroups, mapPoints.groups]);
 
     useEffect(() => {
         if (showHotspots) mapPoints.loadHotspots();
@@ -804,10 +805,14 @@ function AdminSummary() {
                 point={editingPoint}
                 lat={draftLocation?.lat}
                 lng={draftLocation?.lng}
-                groups={incidentGroups}
+                groups={mapPoints.incidentGroups}
                 types={mapPoints.types}
                 saving={mapPoints.saving}
                 creatingType={mapPoints.creatingType}
+                creatingGroup={mapPoints.creatingGroup}
+                onCreateGroup={mapPoints.createGroup}
+                onRenameGroup={mapPoints.renameGroup}
+                onDeleteGroup={mapPoints.deleteGroup}
                 onClose={() => {
                     setPointFormOpen(false);
                     setEditingPoint(null);
@@ -828,7 +833,7 @@ function AdminSummary() {
                 <IncidentReportPanel
                     open={reportPanelOpen}
                     user={user.user}
-                    groups={incidentGroups}
+                    groups={incidentGroupNames}
                     types={mapPoints.types}
                     onClose={() => setReportPanelOpen(false)}
                 />

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  incidentGroupCreatePost,
+  incidentGroupDelete,
+  incidentGroupUpdatePut,
+  incidentGroupsGet,
   incidentTypeCreatePost,
   incidentTypeDelete,
   incidentTypeUpdatePut,
@@ -20,6 +24,8 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
   const [points, setPoints] = useState([]);
   const [hotspots, setHotspots] = useState([]);
   const [types, setTypes] = useState([]);
+  const [incidentGroups, setIncidentGroups] = useState([]);
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creatingType, setCreatingType] = useState(false);
@@ -83,6 +89,70 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
 
   useEffect(() => { loadPoints(); }, [loadPoints]);
   useEffect(() => { loadTypes(); }, [loadTypes]);
+
+  const loadIncidentGroups = useCallback(async () => {
+    try {
+      const res = await incidentGroupsGet(getToken(), user);
+      setIncidentGroups(res.data?.groups || []);
+    } catch {
+      setIncidentGroups([]);
+    }
+  }, [user]);
+
+  useEffect(() => { loadIncidentGroups(); }, [loadIncidentGroups]);
+
+  // Nhom luu tren server (truoc day chi gan vao diem nen khong hien trong danh sach).
+  // Tra ve ten nhom de form chon luon nhom vua tao.
+  const createGroup = useCallback(async (name) => {
+    if (!canEdit) {
+      setError("Tài khoản của bạn không có quyền thêm nhóm");
+      return null;
+    }
+    setCreatingGroup(true);
+    try {
+      const res = await incidentGroupCreatePost(getToken(), { user, name });
+      const created = res.data?.group;
+      if (!created) return null;
+      setIncidentGroups((prev) => (prev.some((item) => String(item._id) === String(created._id)) ? prev : [...prev, created]));
+      return created.name;
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || "Không thêm được nhóm");
+      return null;
+    } finally {
+      setCreatingGroup(false);
+    }
+  }, [canEdit, user]);
+
+  const renameGroup = useCallback(async (id, name) => {
+    if (!canEdit) return "Tài khoản của bạn không có quyền sửa nhóm";
+    try {
+      const res = await incidentGroupUpdatePut(getToken(), id, { user, name });
+      const updated = res.data?.group;
+      const oldName = res.data?.oldName;
+      if (updated) {
+        setIncidentGroups((prev) => prev.map((item) => (String(item._id) === String(id) ? updated : item)));
+        // Server da doi ten nhom o cac diem, cap nhat luon ban dang hien thi.
+        if (oldName) {
+          setPoints((prev) => prev.map((item) => (item.group === oldName ? { ...item, group: updated.name } : item)));
+        }
+      }
+      return null;
+    } catch (requestError) {
+      return requestError.response?.data?.error || "Không đổi tên được nhóm";
+    }
+  }, [canEdit, user]);
+
+  // Server tu choi (409) neu nhom dang duoc diem nao dung.
+  const deleteGroup = useCallback(async (id) => {
+    if (!canEdit) return "Tài khoản của bạn không có quyền xoá nhóm";
+    try {
+      await incidentGroupDelete(getToken(), id, user);
+      setIncidentGroups((prev) => prev.filter((item) => String(item._id) !== String(id)));
+      return null;
+    } catch (requestError) {
+      return requestError.response?.data?.error || "Không xoá được nhóm";
+    }
+  }, [canEdit, user]);
 
   // Tra ve _id de form chon luon loai vua tao.
   const createType = useCallback(async (name) => {
@@ -233,6 +303,11 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
     hotspots,
     types,
     groups,
+    incidentGroups,
+    creatingGroup,
+    createGroup,
+    renameGroup,
+    deleteGroup,
     stats,
     loading,
     saving,

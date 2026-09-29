@@ -14,6 +14,7 @@ const URL_TRAFFIC = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/tra
 const URL_CHATBOT = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/chatbot')
 const URL_MAP_POINTS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/map-points')
 const URL_INCIDENT_TYPES = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-types')
+const URL_INCIDENT_GROUPS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-groups')
 const URL_MONITOR = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/monitor')
 
 const axiosConfig = (token) => ({
@@ -462,6 +463,21 @@ export const incidentTypeUpdatePut = (token, id, body) => axios.put(
 
 export const incidentTypeDelete = (token, id, user) => axios.delete(
     `${URL_INCIDENT_TYPES}/${id}?user=${encodeURIComponent(user)}`,
+    axiosConfig(token)
+);
+
+// Nhom (khu vuc) cua diem su co - danh sach rieng, them / sua / xoa giong loai su co.
+export const incidentGroupsGet = (token, user) => axios.get(
+    `${URL_INCIDENT_GROUPS}?user=${encodeURIComponent(user)}`,
+    axiosConfig(token)
+);
+
+export const incidentGroupCreatePost = (token, body) => axios.post(URL_INCIDENT_GROUPS, body, axiosConfig(token));
+
+export const incidentGroupUpdatePut = (token, id, body) => axios.put(`${URL_INCIDENT_GROUPS}/${id}`, body, axiosConfig(token));
+
+export const incidentGroupDelete = (token, id, user) => axios.delete(
+    `${URL_INCIDENT_GROUPS}/${id}?user=${encodeURIComponent(user)}`,
     axiosConfig(token)
 );
 

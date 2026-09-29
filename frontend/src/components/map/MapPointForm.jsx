@@ -98,7 +98,14 @@ const PickOrAdd = ({ value, options, onChange, onCreate, placeholder, addPlaceho
 
 // Danh sach loai su co de doi ten / xoa. Loai dang duoc diem nao dung thi server
 // tu choi xoa, loi hien ngay ben duoi danh sach.
-const TypeManager = ({ types, onRename, onDelete, onClose }) => {
+const TypeManager = ({
+  types,
+  onRename,
+  onDelete,
+  onClose,
+  title = "Quản lý loại sự cố",
+  itemLabel = "loại sự cố",
+}) => {
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
   const [busyId, setBusyId] = useState(null);
@@ -124,7 +131,7 @@ const TypeManager = ({ types, onRename, onDelete, onClose }) => {
   };
 
   const remove = async (type) => {
-    if (!window.confirm(`Xoá loại sự cố "${type.name}"?`)) return;
+    if (!window.confirm(`Xoá ${itemLabel} "${type.name}"?`)) return;
     setBusyId(String(type._id));
     setMessage("");
     const error = await onDelete(type._id);
@@ -135,7 +142,7 @@ const TypeManager = ({ types, onRename, onDelete, onClose }) => {
   return (
     <div className="mt-2 rounded-xl border border-slate-200 bg-white p-2">
       <div className="mb-1.5 flex items-center justify-between px-1">
-        <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">Quản lý loại sự cố</span>
+        <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">{title}</span>
         <button type="button" onClick={onClose} className="text-xs font-bold text-teal-700 hover:underline">
           Xong
         </button>
@@ -187,7 +194,7 @@ const TypeManager = ({ types, onRename, onDelete, onClose }) => {
                 type="button"
                 onClick={() => remove(type)}
                 disabled={busy}
-                title="Xoá loại"
+                title={`Xoá ${itemLabel}`}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 disabled:opacity-50"
               >
                 <FaTrashAlt className="text-xs" />
@@ -196,7 +203,7 @@ const TypeManager = ({ types, onRename, onDelete, onClose }) => {
           );
         })}
         {!types.length && (
-          <div className="px-1 py-2 text-xs font-semibold text-slate-400">Chưa có loại nào</div>
+          <div className="px-1 py-2 text-xs font-semibold text-slate-400">Chưa có {itemLabel} nào</div>
         )}
       </div>
 
@@ -218,6 +225,10 @@ const MapPointForm = ({
   types = [],
   saving,
   creatingType,
+  creatingGroup,
+  onCreateGroup,
+  onRenameGroup,
+  onDeleteGroup,
   onClose,
   onSubmit,
   onDelete,
@@ -235,6 +246,7 @@ const MapPointForm = ({
   const [error, setError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [manageTypes, setManageTypes] = useState(false);
+  const [manageGroups, setManageGroups] = useState(false);
   const [coordText, setCoordText] = useState("");
   const [coordError, setCoordError] = useState("");
   const [locating, setLocating] = useState(false);
@@ -251,6 +263,7 @@ const MapPointForm = ({
     setError("");
     setPickerOpen(false);
     setManageTypes(false);
+    setManageGroups(false);
     setForm({
       ...emptyPoint,
       ...(point || {}),
@@ -440,16 +453,56 @@ const MapPointForm = ({
             </select>
           </Field>
 
-          <Field label="Khu vực / nhóm">
-            <PickOrAdd
-              value={form.group}
-              options={groups.map((name) => ({ value: name, label: name }))}
-              onChange={(value) => setForm((prev) => ({ ...prev, group: value }))}
-              onCreate={async (name) => name}
-              placeholder="— Chọn khu vực —"
-              addPlaceholder="VD: Bách Việt"
-            />
-          </Field>
+          <div>
+            <Field label="Khu vực / nhóm">
+              <PickOrAdd
+                value={form.group}
+                options={[
+                  ...groups.map((group) => ({ value: group.name, label: group.name })),
+                  // Diem cu co nhom khong con trong danh sach van phai hien dung ten.
+                  ...(form.group && !groups.some((group) => group.name === form.group)
+                    ? [{ value: form.group, label: form.group }]
+                    : []),
+                ]}
+                onChange={(value) => setForm((prev) => ({ ...prev, group: value }))}
+                onCreate={onCreateGroup}
+                creating={creatingGroup}
+                placeholder="— Chọn khu vực —"
+                addPlaceholder="VD: Bách Việt"
+              />
+            </Field>
+            {manageGroups ? (
+              <TypeManager
+                types={groups}
+                title="Quản lý nhóm / khu vực"
+                itemLabel="nhóm"
+                onRename={async (id, name) => {
+                  const old = groups.find((group) => String(group._id) === String(id))?.name;
+                  const failure = await onRenameGroup(id, name);
+                  if (!failure && old && form.group === old) setForm((prev) => ({ ...prev, group: name }));
+                  return failure;
+                }}
+                onDelete={async (id) => {
+                  const old = groups.find((group) => String(group._id) === String(id))?.name;
+                  const failure = await onDeleteGroup(id);
+                  if (!failure && old && form.group === old) setForm((prev) => ({ ...prev, group: "" }));
+                  return failure;
+                }}
+                onClose={() => setManageGroups(false)}
+              />
+            ) : (
+              <div className="mt-1 flex items-center justify-between text-[11px] font-semibold text-slate-400">
+                <span>Bấm + để thêm nhóm mới</span>
+                <button
+                  type="button"
+                  onClick={() => setManageGroups(true)}
+                  className="flex items-center gap-1 font-bold text-teal-700 hover:underline"
+                >
+                  <FaCog /> Sửa / xoá nhóm
+                </button>
+              </div>
+            )}
+          </div>
 
           <Field label="Thời điểm phát hiện">
             <input

@@ -93,6 +93,13 @@ function GroupSensor() {
     return number.toFixed(1);
   };
 
+  // Logger khong gui nhiet do (hoac dang mat ket noi) thi hien "-"; 0°C van la so hop le.
+  const formatTemperature = (value) => {
+    if (value === null || value === undefined || value === "") return "-";
+    const number = Number(value);
+    return Number.isFinite(number) ? `${Number(number.toFixed(1))}°C` : "-";
+  };
+
   // -----------------------------------------------------
   // SWAP FUNCTION
   // -----------------------------------------------------
@@ -166,7 +173,7 @@ function GroupSensor() {
             <th className="border border-gray-300 p-2">Áp suất</th>
             <th className="border border-gray-300 p-2">Lưu lượng</th>
             <th className="border border-gray-300 p-2 w-44">Số tổng đồng hồ</th>
-            {/* <th className="border border-gray-300 p-2">Nhiệt Độ</th> */}
+            <th className="border border-gray-300 p-2">Nhiệt độ</th>
             <th className="border border-gray-300 p-2">
               <div>
                 <button
@@ -205,7 +212,7 @@ function GroupSensor() {
                   </td>
                 )}
 
-                <td className="border border-gray-300 p-2 font-bold" colSpan={6}>
+                <td className="border border-gray-300 p-2 font-bold" colSpan={7}>
                   {group}
                 </td>
               </tr>
@@ -237,9 +244,9 @@ function GroupSensor() {
                   <td className="border border-gray-300 text-center p-2 w-44">
                     {formatMeterSum(currentData[sensor.id]?.sum)}
                   </td>
-                  {/* <td className="border border-gray-300 text-center p-2">
-                    {currentData[sensor.id]?.temperature || ""}
-                  </td> */}
+                  <td className="border border-gray-300 text-center p-2">
+                    {formatTemperature(currentData[sensor.id]?.temperature)}
+                  </td>
                   <td className="border border-gray-300 text-center p-2">
                     {currentData[sensor.id]?.battery}%
                   </td>

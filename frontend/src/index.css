@@ -139,3 +139,11 @@
     padding-left: 0;
   }
 }
+
+/* So DN viet doc theo duong ong ve tay (xem components/map/MapShapeLayer.jsx) */
+.iot-pipe-label {
+  white-space: nowrap;
+  font: 700 11px/1 system-ui, sans-serif;
+  color: #fff;
+  text-shadow: 0 0 3px #000, 0 0 2px #000;
+}

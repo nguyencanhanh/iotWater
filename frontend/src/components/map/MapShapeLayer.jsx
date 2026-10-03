@@ -1,8 +1,14 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import L from "leaflet";
-import { Marker, Pane, Polygon, Polyline, Popup, useMap, useMapEvents } from "react-leaflet";
-import { describeShape, pipeWeight } from "./shapeMeta";
+import { CircleMarker, Marker, Pane, Polygon, Polyline, useMap, useMapEvents } from "react-leaflet";
+import { layerOf, pipeWeight, projectOnSegment, symbolMarkup } from "./shapeMeta";
+
+// Ve / hien vung va duong ong nguoi dung tu ve, theo kieu CityWork: mau theo lop, so DN doc
+// theo ong, bam chon ong (to do) de xem thuoc tinh, ve co bat diem + duong ke theo con tro.
+
+const SELECTED_COLOR = "#ef4444";
+const LABEL_MIN_ZOOM = 16;
 
 const vertexIcon = (color, first) => L.divIcon({
   className: "",
@@ -11,22 +17,73 @@ const vertexIcon = (color, first) => L.divIcon({
   iconAnchor: [7, 7],
 });
 
-// Khi dang ve: bam ban do them diem, tat phong to khi bam dup de khong nham.
-const DrawCatcher = ({ active, onAdd }) => {
+// Thiet bi: ky hieu theo lop; dang chon thi them vong do.
+const deviceIcon = (shape, selected) => L.divIcon({
+  className: "",
+  html: `<div style="position:relative;width:22px;height:22px">${selected ? '<div style="position:absolute;inset:-6px;border:3px solid #ef4444;border-radius:9999px"></div>' : ""}${symbolMarkup(layerOf(shape).key, 22)}</div>`,
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
+
+const shapeColor = (shape) => shape.color || layerOf(shape).color;
+const round7 = (value) => Number(value.toFixed(7));
+
+// Tim diem bat gan con tro nhat (toa do man hinh) trong cac hinh da ve.
+const findSnap = (map, latlng, targets, snap) => {
+  if (!snap.enabled) return null;
+  const p = map.latLngToContainerPoint(latlng);
+  // Dinh / dau mut trong tam bat luon duoc uu tien; chi khi khong co moi bat vao than ong.
+  let bestPoint = null;
+  let bestLine = null;
+  const consider = (point, kind) => {
+    const d = Math.hypot(point.x - p.x, point.y - p.y);
+    if (d > snap.tolerance) return;
+    if (kind === "line") {
+      if (!bestLine || d < bestLine.d) bestLine = { point, d, kind };
+    } else if (!bestPoint || d < bestPoint.d) bestPoint = { point, d, kind, source: point.source };
+  };
+  targets.forEach((coords) => {
+    const pts = coords.map(([lat, lng]) => map.latLngToContainerPoint([lat, lng]));
+    pts.forEach((point, index) => {
+      const isEnd = index === 0 || index === pts.length - 1;
+      const vertex = Object.assign(point.clone(), { source: coords[index] });
+      if (isEnd && snap.ends) consider(vertex, "end");
+      else if (!isEnd && snap.vertex) consider(vertex, "vertex");
+      if (snap.line && index > 0) consider(projectOnSegment(p, pts[index - 1], point), "line");
+    });
+  });
+  const best = bestPoint || bestLine;
+  if (!best) return null;
+  // Bat vao dinh: dung nguyen toa do cua dinh (khong doi qua toa do man hinh) de noi khit.
+  const ll = map.containerPointToLatLng([best.point.x, best.point.y]);
+  return { latlng: best.source || [round7(ll.lat), round7(ll.lng)], kind: best.kind };
+};
+
+// Bat su kien khi dang ve: bam them diem (co bat diem), di chuot ve duong ke, bam dup de xong.
+const DrawCatcher = ({ drawing, targets, snap, onAdd, onFinish, onCursor }) => {
   const map = useMap();
   useEffect(() => {
-    if (!active) return undefined;
+    if (!drawing) return undefined;
     map.doubleClickZoom.disable();
     map.getContainer().style.cursor = "crosshair";
     return () => {
       map.doubleClickZoom.enable();
       map.getContainer().style.cursor = "";
     };
-  }, [active, map]);
+  }, [drawing, map]);
   useMapEvents({
     click: (event) => {
-      if (active) onAdd([Number(event.latlng.lat.toFixed(7)), Number(event.latlng.lng.toFixed(7))]);
+      if (!drawing) return;
+      const hit = findSnap(map, event.latlng, targets, snap);
+      onAdd(hit ? hit.latlng : [round7(event.latlng.lat), round7(event.latlng.lng)]);
     },
+    mousemove: (event) => {
+      if (!drawing) return;
+      const hit = findSnap(map, event.latlng, targets, snap);
+      onCursor(hit ? { latlng: hit.latlng, snapped: hit.kind } : { latlng: [event.latlng.lat, event.latlng.lng], snapped: null });
+    },
+    mouseout: () => drawing && onCursor(null),
+    dblclick: () => drawing && onFinish(),
   });
   return null;
 };
@@ -41,104 +98,165 @@ const FocusShape = ({ shape }) => {
   return null;
 };
 
-// Popup luon o tang popup mac dinh: neu de theo tang cua vung (350) thi bi chinh vung de len.
-const ShapePopup = ({ shape, canEdit, onEdit, onDelete }) => (
-  <Popup pane="popupPane">
-    <div className="min-w-[200px]">
-      <div className="flex items-center gap-2">
-        <span className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: shape.color }} />
-        <h4 className="!m-0 text-sm font-black text-slate-900">
-          {shape.name || (shape.kind === "pipe" ? "Đường ống" : "Vùng")}
-        </h4>
-      </div>
-      <div className="mt-1 text-xs font-semibold text-slate-600">
-        {shape.kind === "pipe" ? "Đường ống nước sạch" : "Phân vùng"} · {describeShape(shape)}
-      </div>
-      {shape.note && <p className="!mb-0 mt-1 whitespace-pre-line text-xs text-slate-700">{shape.note}</p>}
-      {canEdit && (
-        <div className="mt-2 flex gap-1.5">
-          <button type="button" onClick={() => onEdit(shape)} className="rounded-lg bg-teal-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-teal-700">
-            Sửa
-          </button>
-          <button type="button" onClick={() => onDelete(shape)} className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50">
-            Xoá
-          </button>
-        </div>
-      )}
-    </div>
-  </Popup>
-);
+// So DN viet doc theo ong (nhu ban do CityWork), chi khi phong to.
+const PipeLabels = ({ pipes }) => {
+  const map = useMap();
+  const [tick, setTick] = useState(0);
+  useMapEvents({ zoomend: () => setTick((value) => value + 1), moveend: () => setTick((value) => value + 1) });
+  const zoom = map.getZoom();
+  const labels = useMemo(() => {
+    if (zoom < LABEL_MIN_ZOOM) return [];
+    const bounds = map.getBounds().pad(0.2);
+    return pipes.filter((pipe) => pipe.diameter > 0).flatMap((pipe) => {
+      const pts = pipe.coordinates.map(([lat, lng]) => map.latLngToContainerPoint([lat, lng]));
+      // Moi doan du dai (>= 70px) co 1 nhan o giua, xoay theo huong doan.
+      return pts.slice(1).map((b, index) => {
+        const a = pts[index];
+        if (Math.hypot(b.x - a.x, b.y - a.y) < 70) return null;
+        const mid = map.containerPointToLatLng([(a.x + b.x) / 2, (a.y + b.y) / 2]);
+        if (!bounds.contains(mid)) return null;
+        let angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+        if (angle > 90) angle -= 180;
+        if (angle < -90) angle += 180;
+        return { key: `${pipe._id}-${index}`, position: mid, angle, text: pipe.diameter };
+      }).filter(Boolean);
+    });
+  }, [map, pipes, zoom, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return labels.map((label) => (
+    <Marker
+      key={label.key}
+      position={label.position}
+      interactive={false}
+      pane="userPipeLabels"
+      icon={L.divIcon({
+        className: "",
+        html: `<div class="iot-pipe-label" style="transform:translate(-50%,-50%) rotate(${label.angle}deg) translateY(-9px)">${label.text}</div>`,
+        iconSize: [0, 0],
+      })}
+    />
+  ));
+};
 
 const MapShapeLayer = ({
   shapes,
-  showZones,
-  showPipes,
+  hiddenLayers = [],
   drawing,
   editingId,
   busy,
-  canEdit,
   focus,
   preview,
+  selectedId,
+  snap,
   onAddVertex,
   onMoveVertex,
   onRemoveVertex,
-  onEdit,
-  onDelete,
+  onFinish,
+  onSelect,
 }) => {
+  const [cursor, setCursor] = useState(null);
   const visible = useMemo(
-    () => shapes.filter((shape) => shape._id !== editingId && (shape.kind === "pipe" ? showPipes : showZones)),
-    [shapes, editingId, showPipes, showZones]
+    () => shapes.filter((shape) => shape._id !== editingId && !hiddenLayers.includes(layerOf(shape).key)),
+    [shapes, editingId, hiddenLayers]
   );
+  const zones = visible.filter((shape) => shape.kind === "zone");
+  const pipes = visible.filter((shape) => shape.kind === "pipe");
+  const devices = visible.filter((shape) => shape.kind === "point");
   const interactive = !busy && !drawing;
+  // Diem bat duoc: moi hinh dang hien (tru hinh dang sua).
+  const targets = useMemo(() => visible.map((shape) => shape.coordinates), [visible]);
+
+  useEffect(() => {
+    if (!drawing) setCursor(null);
+  }, [drawing]);
+
+  const drawColor = drawing ? (drawing.color || layerOf(drawing).color) : "#000";
+  const last = drawing?.points?.[drawing.points.length - 1];
 
   return (
     <>
-      <DrawCatcher active={Boolean(drawing)} onAdd={onAddVertex} />
+      <DrawCatcher drawing={Boolean(drawing)} targets={targets} snap={snap} onAdd={onAddVertex} onFinish={onFinish} onCursor={setCursor} />
       <FocusShape shape={focus} />
 
-      {/* Tang ve: vung (350) nam DUOI lop ong / dong ho co san (overlayPane 400) de khong che
-          cho bam cua chung; duong ong ve tay (450) nam TREN de bam trung ong cua minh. */}
+      {/* Vung (350) nam duoi lop ong / dong ho co san (400); ong ve tay (450) nam tren; nhan DN (460). */}
       <Pane name="userZones" style={{ zIndex: 350 }}>
-      {visible.filter((shape) => shape.kind === "zone").map((shape) => (
-        <Polygon
-          key={`${shape._id}-${interactive}`}
-          positions={shape.coordinates}
-          pathOptions={{ color: shape.color, weight: 2, fillColor: shape.color, fillOpacity: shape.opacity ?? 0.25, interactive }}
-        >
-          {interactive && <ShapePopup shape={shape} canEdit={canEdit} onEdit={onEdit} onDelete={onDelete} />}
-        </Polygon>
-      ))}
+        {zones.map((shape) => (
+          <Polygon
+            key={`${shape._id}-${interactive}-${selectedId === shape._id}`}
+            positions={shape.coordinates}
+            eventHandlers={{ click: () => interactive && onSelect(shape) }}
+            pathOptions={{
+              color: selectedId === shape._id ? SELECTED_COLOR : shapeColor(shape),
+              weight: selectedId === shape._id ? 3 : 2,
+              fillColor: shapeColor(shape),
+              fillOpacity: shape.opacity ?? 0.25,
+              interactive,
+            }}
+          />
+        ))}
       </Pane>
       <Pane name="userPipes" style={{ zIndex: 450 }}>
-      {visible.filter((shape) => shape.kind === "pipe").map((shape) => (
-        <Polyline
-          key={`${shape._id}-${interactive}`}
-          positions={shape.coordinates}
-          pathOptions={{ color: shape.color, weight: pipeWeight(shape.diameter), opacity: 0.95, lineCap: "round", interactive }}
-        >
-          {interactive && <ShapePopup shape={shape} canEdit={canEdit} onEdit={onEdit} onDelete={onDelete} />}
-        </Polyline>
-      ))}
+        {pipes.map((shape) => (
+          <Polyline
+            key={`${shape._id}-${interactive}-${selectedId === shape._id}`}
+            positions={shape.coordinates}
+            eventHandlers={{ click: () => interactive && onSelect(shape) }}
+            pathOptions={{
+              color: selectedId === shape._id ? SELECTED_COLOR : shapeColor(shape),
+              weight: pipeWeight(shape.diameter) + (selectedId === shape._id ? 2 : 0),
+              opacity: 0.95,
+              lineCap: "round",
+              lineJoin: "round",
+              interactive,
+            }}
+          />
+        ))}
       </Pane>
-
-      {/* Hinh dang cho luu / sua trong form (khong nhan bam). */}
-      {preview && !drawing && (preview.kind === "zone" ? (
-        <Polygon positions={preview.coordinates} pathOptions={{ color: preview.color, weight: 2, fillColor: preview.color, fillOpacity: preview.opacity ?? 0.25, interactive: false }} />
-      ) : (
-        <Polyline positions={preview.coordinates} pathOptions={{ color: preview.color, weight: pipeWeight(preview.diameter), opacity: 0.95, interactive: false }} />
+      <Pane name="userPipeLabels" style={{ zIndex: 460, pointerEvents: "none" }}>
+        <PipeLabels pipes={pipes} />
+      </Pane>
+      {devices.map((shape) => (
+        <Marker
+          key={`${shape._id}-${interactive}-${selectedId === shape._id}`}
+          position={shape.coordinates[0]}
+          icon={deviceIcon(shape, selectedId === shape._id)}
+          interactive={interactive}
+          title={`${layerOf(shape).label}${shape.name ? `: ${shape.name}` : ""}`}
+          zIndexOffset={-200}
+          eventHandlers={{ click: () => interactive && onSelect(shape) }}
+        />
       ))}
+
+      {/* Hinh dang mo trong form (khong nhan bam). */}
+      {preview && !drawing && preview.kind === "point" && (
+        <Marker position={preview.coordinates[0]} icon={deviceIcon(preview, true)} interactive={false} />
+      )}
+      {preview && !drawing && preview.kind !== "point" && (preview.kind === "zone" ? (
+        <Polygon positions={preview.coordinates} pathOptions={{ color: SELECTED_COLOR, weight: 3, fillColor: shapeColor(preview), fillOpacity: preview.opacity ?? 0.25, interactive: false }} />
+      ) : (
+        <Polyline positions={preview.coordinates} pathOptions={{ color: SELECTED_COLOR, weight: pipeWeight(preview.diameter) + 2, opacity: 0.95, interactive: false }} />
+      ))}
+
       {drawing && drawing.points.length > 0 && (
         drawing.kind === "zone" ? (
-          <Polygon
-            positions={drawing.points}
-            pathOptions={{ color: drawing.color, weight: 2, dashArray: "6 4", fillColor: drawing.color, fillOpacity: drawing.opacity ?? 0.25, interactive: false }}
-          />
+          <Polygon positions={drawing.points} pathOptions={{ color: drawColor, weight: 2, dashArray: "6 4", fillColor: drawColor, fillOpacity: drawing.opacity ?? 0.25, interactive: false }} />
         ) : (
-          <Polyline
-            positions={drawing.points}
-            pathOptions={{ color: drawing.color, weight: pipeWeight(drawing.diameter), opacity: 0.85, dashArray: "8 6", interactive: false }}
-          />
+          <Polyline positions={drawing.points} pathOptions={{ color: drawColor, weight: pipeWeight(drawing.diameter), opacity: 0.9, interactive: false }} />
         )
+      )}
+      {/* Duong ke tu diem cuoi toi con tro (vung: ve them canh ve diem dau). */}
+      {drawing && last && cursor && (
+        <Polyline
+          positions={drawing.kind === "zone" && drawing.points.length > 1 ? [last, cursor.latlng, drawing.points[0]] : [last, cursor.latlng]}
+          pathOptions={{ color: drawColor, weight: 2, dashArray: "4 6", opacity: 0.9, interactive: false }}
+        />
+      )}
+      {drawing && cursor?.snapped && (
+        <CircleMarker
+          center={cursor.latlng}
+          radius={7}
+          pathOptions={{ color: "#facc15", weight: 3, fillColor: "#fff", fillOpacity: 0.9, interactive: false }}
+        />
       )}
       {drawing && drawing.points.map((point, index) => (
         <Marker
@@ -146,12 +264,12 @@ const MapShapeLayer = ({
           key={`vertex-${index}`}
           position={point}
           draggable
-          icon={vertexIcon(drawing.color, index === 0)}
+          icon={vertexIcon(drawColor, index === 0)}
           title="Kéo để chỉnh vị trí · bấm để xoá điểm này"
           eventHandlers={{
             dragend: (event) => {
               const { lat, lng } = event.target.getLatLng();
-              onMoveVertex(index, [Number(lat.toFixed(7)), Number(lng.toFixed(7))]);
+              onMoveVertex(index, [round7(lat), round7(lng)]);
             },
             // Marker khong lan su kien click xuong ban do nen khong bi them diem moi.
             click: () => onRemoveVertex(index),
@@ -164,19 +282,19 @@ const MapShapeLayer = ({
 
 MapShapeLayer.propTypes = {
   shapes: PropTypes.array.isRequired,
-  showZones: PropTypes.bool,
-  showPipes: PropTypes.bool,
+  hiddenLayers: PropTypes.array,
   drawing: PropTypes.object,
   editingId: PropTypes.string,
   busy: PropTypes.bool,
-  canEdit: PropTypes.bool,
   focus: PropTypes.object,
   preview: PropTypes.object,
+  selectedId: PropTypes.string,
+  snap: PropTypes.object.isRequired,
   onAddVertex: PropTypes.func.isRequired,
   onMoveVertex: PropTypes.func.isRequired,
   onRemoveVertex: PropTypes.func.isRequired,
-  onEdit: PropTypes.func.isRequired,
-  onDelete: PropTypes.func.isRequired,
+  onFinish: PropTypes.func.isRequired,
+  onSelect: PropTypes.func.isRequired,
 };
 
 export default MapShapeLayer;

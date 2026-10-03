@@ -418,6 +418,14 @@ Ban tin (`services/incidentBulletin.js`, GET /api/map-points/bulletin), theo khu
 
 ## Vung / duong ong ve tay tren ban do (10/2026)
 
+Lam lai theo kieu CityWork (app.citywork.vn, ban do mang luoi cap nuoc): phan lop `layer`
+(raw = ong nuoc tho, ttpp, service = ong dich vu, branch = nhanh dich vu, zone), mau theo lop
+(`SHAPE_LAYERS` trong shapeMeta.js, mau rieng de trong = theo lop); thuoc tinh ong: route,
+material, manager, contractor, supplyZone; chieu dai tu tinh. Bam ong -> to do + bang thuoc
+tinh ben trai (ShapeInfoPanel). So DN viet doc theo ong khi zoom >= 16. Ve: bat diem vao dinh /
+dau mut (uu tien, dung nguyen toa do dinh) hoac than ong; Ctrl+Z / Ctrl+Y, Enter / bam dup xong,
+Esc huy; duong ke theo con tro.
+
 `MapShape` (server/models/MapShape.js, API /api/map-shapes): kind "zone" (da giac, to mo theo
 `opacity`) hoac "pipe" (duong gap khuc, `diameter` DN -> do day net, xem `shapeMeta.js`).
 Ve bang `MapShapeLayer.jsx` (tu viet, khong dung leaflet-draw): bam ban do them diem, keo cham

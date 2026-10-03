@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useState, useRef } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useState, useRef } from "react";
 import { LABEL_TILE_URL, SATELLITE_TILE_URL, TILE_SUBDOMAINS } from "../map/tileUrls";
 import { MapContainer, TileLayer, Marker, Tooltip, GeoJSON, CircleMarker, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -12,7 +12,8 @@ import ModalData from "../chart/Modal";
 import MapPointLayer from "../map/MapPointLayer";
 import MapPointControl from "../map/MapPointControl";
 import MapShapeLayer from "../map/MapShapeLayer";
-import MapDrawControl, { DrawToolbar, ShapeForm } from "../map/MapDrawControl";
+import MapDrawControl, { DrawToolbar, ShapeForm, ShapeInfoPanel } from "../map/MapDrawControl";
+import { DEFAULT_SNAP } from "../map/shapeMeta";
 import useMapShapes from "../map/useMapShapes";
 import MapPointForm from "../map/MapPointForm";
 import useMapPoints from "../map/useMapPoints";
@@ -219,50 +220,68 @@ function AdminSummary() {
 
     const canEditMapPoints = user?.role !== "trial";
 
-    // Vung / duong ong nguoi dung tu ve.
+    // Vung / duong ong nguoi dung tu ve (kieu CityWork: phan lop, bat diem, bang thuoc tinh).
     const mapShapes = useMapShapes({ user: user.user, canEdit: canEditMapPoints });
-    const readFlag = (key) => {
+    const readJson = (key, fallback) => {
         try {
-            return localStorage.getItem(key) !== "0";
+            const value = JSON.parse(localStorage.getItem(key) || "null");
+            return value ?? fallback;
         } catch {
-            return true;
+            return fallback;
         }
     };
-    const [showZones, setShowZones] = useState(() => readFlag("iot.showZones"));
-    const [showPipes, setShowPipes] = useState(() => readFlag("iot.showDrawnPipes"));
+    const writeJson = (key, value) => {
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch {
+            // Khong luu duoc thi chi ap dung trong phien nay.
+        }
+    };
+    const [hiddenLayers, setHiddenLayers] = useState(() => readJson("iot.hiddenShapeLayers", []));
+    const [snap, setSnap] = useState(() => ({ ...DEFAULT_SNAP, ...readJson("iot.shapeSnap", {}) }));
     const [drawing, setDrawing] = useState(null);
     const [shapeDraft, setShapeDraft] = useState(null);
     const [focusShape, setFocusShape] = useState(null);
+    const [selectedShape, setSelectedShape] = useState(null);
     // Dang them diem su co hoac dang ve: cac lop khac tam khong nhan bam.
     const mapBusy = addPointMode || Boolean(drawing);
 
-    const saveFlag = (key, setter) => (next) => {
-        setter(next);
-        try {
-            localStorage.setItem(key, next ? "1" : "0");
-        } catch {
-            // Khong luu duoc thi van bat/tat trong phien nay.
-        }
+    const toggleShapeLayer = (key) => setHiddenLayers((prev) => {
+        const next = prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key];
+        writeJson("iot.hiddenShapeLayers", next);
+        return next;
+    });
+    const changeSnap = (next) => {
+        setSnap(next);
+        writeJson("iot.shapeSnap", next);
     };
+    // Goi y khi nhap thuoc tinh ong: tuyen / vung / don vi da dung.
+    const shapeSuggestions = useMemo(() => {
+        const collect = (key) => [...new Set(mapShapes.shapes.map((shape) => shape[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi"));
+        return { routes: collect("route"), zones: [...new Set([...collect("supplyZone"), ...mapShapes.shapes.filter((shape) => shape.kind === "zone").map((shape) => shape.name).filter(Boolean)])], managers: [...new Set([...collect("manager"), ...collect("contractor")])] };
+    }, [mapShapes.shapes]);
 
-    const startDraw = (kind) => {
+    const startDraw = (kind, layerKey, extra = {}) => {
         setAddPointMode(false);
         setShapeDraft(null);
-        if (kind === "pipe") setShowPipes(true); else setShowZones(true);
-        setDrawing({
-            kind,
-            points: [],
-            name: "",
-            note: "",
-            color: kind === "pipe" ? "#0ea5e9" : "#2563eb",
-            diameter: kind === "pipe" ? 110 : 0,
-            opacity: 0.25,
-        });
+        setSelectedShape(null);
+        const layer = layerKey || { pipe: "ttpp", point: "gateValve" }[kind] || "zone";
+        setHiddenLayers((prev) => prev.filter((item) => item !== layer));
+        setDrawing({ kind, layer, points: [], future: [], name: "", note: "", color: "", diameter: kind === "pipe" ? 110 : 0, opacity: 0.25, ...extra });
     };
-    const updateDrawingPoints = (update) => setDrawing((prev) => (prev ? { ...prev, points: update(prev.points) } : prev));
+    // Them diem thi xoa danh sach "lam lai"; keo / xoa diem cung vay.
+    const updateDrawingPoints = (update) => setDrawing((prev) => (prev ? { ...prev, points: update(prev.points), future: [] } : prev));
+    const undoDrawing = () => setDrawing((prev) => (prev && prev.points.length
+        ? { ...prev, points: prev.points.slice(0, -1), future: [prev.points[prev.points.length - 1], ...(prev.future || [])] }
+        : prev));
+    const redoDrawing = () => setDrawing((prev) => (prev && prev.future?.length
+        ? { ...prev, points: [...prev.points, prev.future[0]], future: prev.future.slice(1) }
+        : prev));
     const finishDrawing = () => {
-        const { points, editing, base, ...rest } = drawing;
-        setShapeDraft({ ...(base || rest), ...rest, coordinates: points });
+        if (!drawing || drawing.points.length < ({ zone: 3, pipe: 2, point: 1 }[drawing.kind])) return;
+        // Bo cac truong chi dung luc ve (points, future, editing, base).
+        const { points, base, kind, layer, name, note, color, diameter, opacity, _id } = drawing;
+        setShapeDraft({ ...(base || {}), _id, kind, layer, name, note, color, diameter, opacity, coordinates: points });
         setDrawing(null);
         mapShapes.setError("");
     };
@@ -271,18 +290,30 @@ function AdminSummary() {
         if (drawing?.base) setShapeDraft(drawing.base);
         setDrawing(null);
     };
-    const redrawShape = () => {
-        setDrawing({ ...shapeDraft, points: shapeDraft.coordinates, editing: true, base: shapeDraft });
+    const redrawShape = (shape = shapeDraft) => {
+        setSelectedShape(null);
+        setDrawing({ ...shape, points: shape.coordinates, future: [], editing: true, base: shape });
         setShapeDraft(null);
     };
     const saveShape = async () => {
-        const { _id, kind, name, note, color, diameter, opacity, coordinates } = shapeDraft;
-        const saved = await mapShapes.save({ kind, name, note, color, diameter, opacity, coordinates }, _id ? { _id } : null);
-        if (saved) setShapeDraft(null);
+        const { _id, kind, layer, name, note, color, diameter, opacity, coordinates, route, material, manager, contractor, supplyZone } = shapeDraft;
+        const saved = await mapShapes.save(
+            { kind, layer, name, note, color: color || undefined, diameter, opacity, coordinates, route, material, manager, contractor, supplyZone },
+            _id ? { _id } : null
+        );
+        if (saved) {
+            setShapeDraft(null);
+            // "Dat lien tiep": luu xong quay lai che do dat thiet bi cung loai.
+            if (shapeDraft.repeat && !_id) startDraw(kind, layer, { repeat: true });
+            else setSelectedShape(saved);
+        }
     };
     const deleteShape = async (shape) => {
         if (!window.confirm(`Xoá ${shape.kind === "pipe" ? "đường ống" : "vùng"} "${shape.name || ""}"?`)) return;
-        if (await mapShapes.remove(shape)) setShapeDraft(null);
+        if (await mapShapes.remove(shape)) {
+            setShapeDraft(null);
+            setSelectedShape(null);
+        }
     };
     const mapPoints = useMapPoints({ user: user.user, canEdit: canEditMapPoints });
     // Chi diem tren ban do (bo luot "da nghe nhung khong tim thay diem").
@@ -874,19 +905,29 @@ function AdminSummary() {
                     />
                     <MapShapeLayer
                         shapes={mapShapes.shapes}
-                        showZones={showZones}
-                        showPipes={showPipes}
+                        hiddenLayers={hiddenLayers}
                         drawing={drawing}
                         editingId={drawing?._id || shapeDraft?._id || null}
                         preview={shapeDraft}
                         busy={addPointMode}
-                        canEdit={canEditMapPoints}
                         focus={focusShape}
-                        onAddVertex={(point) => updateDrawingPoints((points) => [...points, point])}
+                        selectedId={selectedShape?._id || null}
+                        snap={snap}
+                        onAddVertex={(point) => {
+                            // Thiet bi: 1 lan bam la xong, mo form thuoc tinh ngay.
+                            if (drawing?.kind === "point") {
+                                const { base, kind, layer, name, note, color, diameter, opacity, _id, repeat } = drawing;
+                                setShapeDraft({ ...(base || {}), _id, kind, layer, name, note, color, diameter, opacity, coordinates: [point], repeat });
+                                setDrawing(null);
+                                mapShapes.setError("");
+                                return;
+                            }
+                            updateDrawingPoints((points) => [...points, point]);
+                        }}
                         onMoveVertex={(index, point) => updateDrawingPoints((points) => points.map((item, i) => (i === index ? point : item)))}
                         onRemoveVertex={(index) => updateDrawingPoints((points) => points.filter((_, i) => i !== index))}
-                        onEdit={(shape) => { setShapeDraft({ ...shape }); mapShapes.setError(""); }}
-                        onDelete={deleteShape}
+                        onFinish={finishDrawing}
+                        onSelect={setSelectedShape}
                     />
                 </MapContainer>
             </div>
@@ -899,20 +940,39 @@ function AdminSummary() {
                     <div className="pointer-events-none absolute inset-0 z-[5] ring-4 ring-inset ring-indigo-400/70" />
                     <DrawToolbar
                         drawing={drawing}
-                        onUndo={() => updateDrawingPoints((points) => points.slice(0, -1))}
+                        snap={snap}
+                        onSnapChange={changeSnap}
+                        onLayerChange={(layer) => {
+                            setDrawing((prev) => ({ ...prev, layer }));
+                            setHiddenLayers((prev) => prev.filter((item) => item !== layer));
+                        }}
+                        onRepeatChange={(repeat) => setDrawing((prev) => ({ ...prev, repeat }))}
+                        onUndo={undoDrawing}
+                        onRedo={redoDrawing}
                         onFinish={finishDrawing}
                         onCancel={cancelDrawing}
                     />
                 </>
+            )}
+            {selectedShape && !drawing && !shapeDraft && (
+                <ShapeInfoPanel
+                    shape={mapShapes.shapes.find((item) => item._id === selectedShape._id) || selectedShape}
+                    canEdit={canEditMapPoints}
+                    onEdit={() => { setShapeDraft({ ...(mapShapes.shapes.find((item) => item._id === selectedShape._id) || selectedShape) }); mapShapes.setError(""); }}
+                    onRedraw={() => redrawShape(mapShapes.shapes.find((item) => item._id === selectedShape._id) || selectedShape)}
+                    onDelete={() => deleteShape(selectedShape)}
+                    onClose={() => setSelectedShape(null)}
+                />
             )}
             {shapeDraft && (
                 <ShapeForm
                     draft={shapeDraft}
                     saving={mapShapes.saving}
                     error={mapShapes.error}
+                    suggestions={shapeSuggestions}
                     onChange={(patch) => setShapeDraft((prev) => ({ ...prev, ...patch }))}
                     onSave={saveShape}
-                    onRedraw={redrawShape}
+                    onRedraw={() => redrawShape()}
                     onDelete={() => deleteShape(shapeDraft)}
                     onCancel={() => setShapeDraft(null)}
                 />
@@ -1232,12 +1292,10 @@ function AdminSummary() {
                 <MapDrawControl
                     shapes={mapShapes.shapes}
                     canEdit={canEditMapPoints}
-                    showZones={showZones}
-                    showPipes={showPipes}
-                    onToggleZones={saveFlag("iot.showZones", setShowZones)}
-                    onTogglePipes={saveFlag("iot.showDrawnPipes", setShowPipes)}
+                    hiddenLayers={hiddenLayers}
+                    onToggleLayer={toggleShapeLayer}
                     onStartDraw={startDraw}
-                    onFocus={(shape) => setFocusShape({ ...shape })}
+                    onFocus={(shape) => { setFocusShape({ ...shape }); setSelectedShape(shape); }}
                     drawingKind={drawing?.kind || ""}
                 />
             </div>

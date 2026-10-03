@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FaFileExcel, FaSearch, FaTimes } from "react-icons/fa";
-import { mapPointExportPost, mapPointReportGet, mapPointsGet } from "../../api/index";
+import { mapPointBulletinGet, mapPointExportPost, mapPointReportGet, mapPointsGet } from "../../api/index";
+import BulletinView from "./BulletinView";
 import { getLeakColor, getLeakLabel } from "./leakRate";
 import { formatPointDateTime, getStatusMeta, toDateInput } from "./mapPointMeta";
 
@@ -20,9 +21,13 @@ const formatNumber = (value) => Number(value || 0).toLocaleString("vi-VN", { max
 const REPORT_COLUMNS = [
   { key: "occurredAt", label: "Thời gian phát hiện" },
   { key: "status", label: "Trạng thái" },
+  { key: "typeGroupName", label: "Nhóm loại sự cố" },
   { key: "typeName", label: "Loại sự cố" },
   { key: "leakRate", label: "Mức độ" },
   { key: "group", label: "Khu vực" },
+  { key: "routeName", label: "Tuyến" },
+  { key: "methodName", label: "Loại hình phát hiện" },
+  { key: "customers", label: "Khách hàng đã nghe" },
   { key: "coordinate", label: "Toạ độ" },
   { key: "note", label: "Ghi chú" },
   { key: "createdByName", label: "Người tạo" },
@@ -41,11 +46,24 @@ const loadColumns = () => {
 };
 
 // Dong du lieu tu tra cuu (diem goc) hoac bao cao (da dinh dang san) -> noi dung tung o.
+const dash = <span className="text-slate-300">—</span>;
+const isNoFind = (row) => row.kind === "no_find";
+// So khach hang cua mot lan nghe: so da nghe nguoi tong hop nhap, 0 = lay so cua tuyen.
+const rowCustomers = (row) => {
+  if (row.customers !== undefined && row.customers !== null) return row.customers;
+  if (!row.routeId) return null;
+  return Number(row.heardCustomers) > 0 ? Number(row.heardCustomers) : Number(row.routeCustomers || 0);
+};
+
 const renderCell = (key, row) => {
+  if (isNoFind(row) && ["typeGroupName", "typeName", "leakRate", "coordinate"].includes(key)) return dash;
   switch (key) {
     case "occurredAt":
       return <span className="whitespace-nowrap text-slate-600">{row.occurredAtText || formatPointDateTime(row.occurredAt)}</span>;
     case "status": {
+      if (isNoFind(row)) {
+        return <span className="whitespace-nowrap rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-black text-amber-800">Đã nghe, không thấy điểm</span>;
+      }
       const statusMeta = getStatusMeta(row.status);
       const resolvedText = row.resolvedAtText || (row.resolvedAt ? formatPointDateTime(row.resolvedAt) : "");
       return (
@@ -65,7 +83,17 @@ const renderCell = (key, row) => {
         </span>
       );
     case "group":
-      return <span className="text-slate-700">{row.group || "Không có"}</span>;
+      return <span className="text-slate-700">{row.areaName || row.group || "Không có"}</span>;
+    case "typeGroupName":
+      return <span className="text-slate-700">{row.typeGroupName || dash}</span>;
+    case "routeName":
+      return <span className="text-slate-700">{row.routeName || dash}</span>;
+    case "methodName":
+      return <span className="text-slate-700">{row.methodName || dash}</span>;
+    case "customers": {
+      const value = rowCustomers(row);
+      return value === null ? dash : <span className="font-bold text-slate-700">{Number(value).toLocaleString("vi-VN")}</span>;
+    }
     case "coordinate":
       return <span className="whitespace-nowrap font-mono text-xs text-slate-500">{Number(row.lat).toFixed(6)}, {Number(row.lng).toFixed(6)}</span>;
     case "note":
@@ -88,6 +116,7 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
 
   const [rows, setRows] = useState([]);
   const [report, setReport] = useState(null);
+  const [bulletin, setBulletin] = useState(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
@@ -109,6 +138,9 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
       if (tab === "search") {
         const res = await mapPointsGet(getToken(), params);
         setRows(res.data?.points || []);
+      } else if (tab === "bulletin") {
+        const res = await mapPointBulletinGet(getToken(), params);
+        setBulletin(res.data || null);
       } else {
         const res = await mapPointReportGet(getToken(), params);
         setReport(res.data || null);
@@ -169,7 +201,7 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
       <div className="fixed left-1/2 top-1/2 z-[86] flex h-[min(92vh,52rem)] w-[min(96vw,72rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
           <div className="flex gap-1">
-            {[["search", "Tra cứu sự cố"], ["report", "Báo cáo"]].map(([key, label]) => (
+            {[["search", "Tra cứu sự cố"], ["report", "Báo cáo theo loại"], ["bulletin", "Bản tin"]].map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -214,8 +246,13 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
               <span className="mb-1 block text-[10px] font-black uppercase text-slate-500">Loại sự cố</span>
               <select value={typeId} onChange={(e) => setTypeId(e.target.value)} className={inputClass}>
                 <option value="all">Tất cả</option>
-                {types.map((item) => (
-                  <option key={item._id} value={item._id}>{item.name}</option>
+                {types.filter((item) => !item.parentId).map((group) => (
+                  <optgroup key={group._id} label={group.name}>
+                    <option value={group._id}>Cả nhóm: {group.name}</option>
+                    {types.filter((item) => String(item.parentId) === String(group._id)).map((item) => (
+                      <option key={item._id} value={item._id}>{item.name}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </label>
@@ -252,7 +289,7 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
             </div>
           </div>
 
-          <div>
+          <div className={tab === "bulletin" ? "hidden" : ""}>
             <div className="mb-1 flex items-center gap-2">
               <span className="text-[10px] font-black uppercase text-slate-500">Nội dung cần báo cáo</span>
               <span className="text-[10px] font-semibold text-slate-400">(áp dụng cho bảng và file Excel)</span>
@@ -281,7 +318,7 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
             >
               <FaSearch /> {loading ? "Đang tra cứu…" : "Tra cứu"}
             </button>
-            {(tab === "search" ? rows.length > 0 : Boolean(report?.summary?.total)) && (
+            {(tab === "search" ? rows.length > 0 : tab === "bulletin" ? Boolean(bulletin?.totals?.visits || bulletin?.totals?.points) : Boolean(report?.summary?.total)) && (
               <button
                 type="button"
                 onClick={exportExcel}
@@ -301,7 +338,12 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          {tab === "search" ? (
+          {tab === "bulletin" ? (
+            <BulletinView
+              data={bulletin}
+              periodText={`(${fromDate.split("-").reverse().join("/")} – ${toDate.split("-").reverse().join("/")})`}
+            />
+          ) : tab === "search" ? (
             <>
               <div className="mb-2 text-sm font-bold text-slate-600">Tìm thấy {rows.length} sự cố</div>
               <div className="overflow-x-auto rounded-2xl border border-slate-200">
@@ -363,6 +405,7 @@ const IncidentReportPanel = ({ open, user, groups = [], types = [], onClose }) =
                 <section key={String(group.typeId) + group.typeName} className="overflow-hidden rounded-2xl border border-slate-200">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
                     <h4 className="text-base font-black text-slate-900">
+                      {group.typeGroupName && <span className="text-slate-500">{group.typeGroupName} › </span>}
                       {group.typeName}: <span className="text-teal-700">{group.count}</span>
                     </h4>
                     {group.count > 0 && (

@@ -394,6 +394,27 @@ Moi cau hoi chi tru 1 luot AI (neu buoc hieu cau da goi AI thi dung lai luot do)
 
 Han muc AI/ngay: `AI_DAILY_LIMIT` trong `server/.env` (dang 100, mac dinh code 10).
 
+## Diem su co ro ri (lam lai 10/2026)
+
+Form diem (`frontend/src/components/map/MapPointForm.jsx`) theo yeu cau van hanh:
+- Khu vuc 2 bac (`IncidentGroup`, parentId = null la bac 1): bac 1 = phan vung (vd "TQL HVT"),
+  bac 2 = tuyen (vd "SN 620 Le Loi") luu `customers` (so khach hang gan nhat, sua ngay trong form).
+  Moi diem luu `routeCustomers` (snapshot) + `heardCustomers` (so KH da nghe, 0 = ca tuyen).
+- Loai su co 2 bac (`IncidentType`): bac 1 = nhom (vd "Phu kien PN 10"), bac 2 = loai co `icon`
+  (bieu tuong tren ban do, `pointIcons.js`, to mau theo muc do). Diem luu typeId/typeName (bac 2)
+  + typeGroupId/typeGroupName (bac 1).
+- Loai hinh phat hien (`IncidentMethod`, phang): "Nghe", "Nghe dem"...
+- `kind = "no_find"`: tuyen da nghe nhung khong tim thay diem - khong toa do, khong len ban do,
+  chi tinh vao ban tin.
+- Doi ten / chuyen nhom danh muc thi `services/incidentCatalog.js` dong bo ten tren cac diem.
+  Loai cu de phang tu dong vao nhom bac 1 "Chua phan nhom".
+
+Ban tin (`services/incidentBulletin.js`, GET /api/map-points/bulletin), theo khu vuc bac 1:
+- luot = cap (tuyen, ngay theo gio VN), gom ca luot no_find; tuyen = so tuyen khac nhau.
+- tong khach hang = cong THEO TUNG LUOT (moi luot lay max so KH da nghe trong ngay do).
+- nguyen nhan ro ri: so diem + % theo loai bac 1; luu luong = tong uoc tinh tu bac muc do
+  (l/h -> m3/h, x24 = m3/ngay), so voi thang truoc (hoac ky truoc cung do dai).
+
 ## Giam sat AI 24/7 (`server/services/monitor/`)
 
 Chay trong backend (node-cron), KHONG can ai mo web. Bat bang `MONITOR_ENABLED=1` trong `server/.env`.

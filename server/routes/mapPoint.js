@@ -9,6 +9,7 @@ import {
   deleteMapPoint,
   deleteMapPointImage,
   exportMapPoints,
+  getMapPointBulletin,
   getMapPointHotspots,
   getMapPointImage,
   getMapPointReport,
@@ -35,6 +36,7 @@ const upload = multer({
 router.get("/", verifyUser, listMapPoints);
 router.get("/hotspots", verifyUser, getMapPointHotspots);
 router.get("/report", verifyUser, getMapPointReport);
+router.get("/bulletin", verifyUser, getMapPointBulletin);
 router.post("/export", verifyUser, exportMapPoints);
 router.post("/", verifyUser, createMapPoint);
 router.put("/:id", verifyUser, updateMapPoint);

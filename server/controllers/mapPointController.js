@@ -1,8 +1,11 @@
 import ExcelJS from "exceljs";
+import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
+import IncidentGroup from "../models/IncidentGroup.js";
+import IncidentMethod from "../models/IncidentMethod.js";
 import IncidentType from "../models/IncidentType.js";
-import MapPoint, { MAP_POINT_STATUSES } from "../models/MapPoint.js";
+import MapPoint, { MAP_POINT_KINDS, MAP_POINT_STATUSES } from "../models/MapPoint.js";
 import {
   LEAK_RATE_BUCKETS,
   estimateLeakRate,
@@ -10,6 +13,7 @@ import {
   normalizeLeakRateKey,
 } from "../services/leakRate.js";
 import { ensureDefaultTypes } from "./incidentTypeController.js";
+import { buildBulletin } from "../services/incidentBulletin.js";
 
 const MAX_LIST_LIMIT = 5000;
 const TZ = "Asia/Ho_Chi_Minh";
@@ -68,8 +72,15 @@ const buildFilter = (req, source) => {
     if (list.length) filter.status = { $in: list };
   }
 
-  const typeIds = String(source.typeId || "").split(",").map((item) => item.trim()).filter(Boolean);
-  if (typeIds.length && !typeIds.includes("all")) filter.typeId = { $in: typeIds };
+  // typeId co the la loai bac 2 hoac nhom bac 1 (loc ca nhom).
+  const typeIds = String(source.typeId || "").split(",").map((item) => item.trim()).filter((item) => mongoose.isValidObjectId(item));
+  if (typeIds.length && !String(source.typeId).includes("all")) {
+    filter.$or = [{ typeId: { $in: typeIds } }, { typeGroupId: { $in: typeIds } }];
+  }
+
+  // "point" = chi diem tren ban do (bo luot nghe khong thay diem); "no_find" = nguoc lai.
+  if (source.kind === "point") filter.kind = { $ne: "no_find" };
+  else if (source.kind === "no_find") filter.kind = "no_find";
 
   const groups = parseGroups(source.group);
   if (groups.length) filter.group = { $in: groups };
@@ -86,47 +97,99 @@ const buildFilter = (req, source) => {
   return filter;
 };
 
+const toCount = (value) => {
+  const number = Math.round(Number(value));
+  return Number.isFinite(number) && number >= 0 ? Math.min(number, 10000000) : 0;
+};
+
+const findOwned = async (Model, id, user) => (
+  id && mongoose.isValidObjectId(id) ? Model.findOne({ _id: id, user }).lean() : null
+);
+
 const buildPayload = async (req, { isUpdate = false } = {}) => {
   const body = req.body || {};
+  const user = getUserNumber(req, body);
+  const kind = MAP_POINT_KINDS.includes(body.kind) ? body.kind : "point";
+  const noFind = kind === "no_find";
   const lat = toNumberOrNull(body.lat);
   const lng = toNumberOrNull(body.lng);
 
-  if (!isUpdate || body.lat !== undefined || body.lng !== undefined) {
+  if (!noFind && (!isUpdate || body.lat !== undefined || body.lng !== undefined)) {
     if (lat === null || lng === null) throw new Error("Toạ độ không hợp lệ");
     if (Math.abs(lat) > 90 || Math.abs(lng) > 180) throw new Error("Toạ độ ngoài phạm vi cho phép");
   }
 
-  const title = String(body.title || "").trim();
+  // Khu vuc bac 1 / tuyen bac 2. Chon tuyen thi khu vuc lay theo tuyen.
+  const route = await findOwned(IncidentGroup, body.routeId, user);
+  if (body.routeId && !route?.parentId) throw new Error("Tuyến không hợp lệ");
+  const area = route
+    ? await IncidentGroup.findOne({ _id: route.parentId, user }).lean()
+    : await findOwned(IncidentGroup, body.areaId, user);
+  if (body.areaId && !route && (!area || area.parentId)) throw new Error("Khu vực không hợp lệ");
+  if (noFind && !route) throw new Error("Vui lòng chọn tuyến đã nghe");
+
+  // Nguoi dung sua so khach hang cua tuyen ngay trong form -> luu lai cho lan sau.
+  let routeCustomers = Number(route?.customers || 0);
+  if (route && body.routeCustomers !== undefined && body.routeCustomers !== "") {
+    routeCustomers = toCount(body.routeCustomers);
+    if (routeCustomers !== Number(route.customers || 0)) {
+      await IncidentGroup.updateOne({ _id: route._id }, { $set: { customers: routeCustomers } });
+    }
+  }
+
+  const title = String(body.title || "").trim() || (noFind && route ? route.name : "");
   if (!isUpdate && !title) throw new Error("Vui lòng nhập tên sự cố");
 
-  const status = MAP_POINT_STATUSES.includes(body.status) ? body.status : "open";
-  const user = getUserNumber(req, body);
-
-  // Snapshot ten loai de xuat Excel/bao cao khong phai join.
-  let typeId = body.typeId || null;
-  let typeName = String(body.typeName || "").trim();
-  if (typeId) {
-    const type = await IncidentType.findOne({ _id: typeId, user }).select("name").lean();
-    if (!type) throw new Error("Loại sự cố không hợp lệ");
+  // Snapshot ten loai (bac 2) + nhom loai (bac 1) de bao cao khong phai join.
+  let typeId = null;
+  let typeName = "";
+  let typeGroupId = null;
+  let typeGroupName = "";
+  if (!noFind && body.typeId) {
+    const type = await findOwned(IncidentType, body.typeId, user);
+    if (!type || !type.parentId) throw new Error("Loại sự cố không hợp lệ");
+    const group = await IncidentType.findOne({ _id: type.parentId, user }).select("name").lean();
+    typeId = type._id;
     typeName = type.name;
-  } else {
-    typeId = null;
+    typeGroupId = type.parentId;
+    typeGroupName = group?.name || "";
   }
+
+  const method = await findOwned(IncidentMethod, body.methodId, user);
+  if (body.methodId && !method) throw new Error("Loại hình phát hiện không hợp lệ");
+
+  const status = noFind ? "resolved" : (MAP_POINT_STATUSES.includes(body.status) ? body.status : "open");
 
   const payload = {
     ...(title ? { title: title.slice(0, 200) } : {}),
+    kind,
     typeId,
     typeName,
-    leakRate: normalizeLeakRateKey(body.leakRate),
+    typeGroupId,
+    typeGroupName,
+    areaId: area?._id || null,
+    areaName: area?.name || "",
+    // Truong cu: ten khu vuc bac 1 (bo loc khu vuc, AI, bao cao cu dang dung).
+    group: area?.name || "",
+    routeId: route?._id || null,
+    routeName: route?.name || "",
+    routeCustomers,
+    heardCustomers: toCount(body.heardCustomers),
+    methodId: method?._id || null,
+    methodName: method?.name || "",
+    leakRate: noFind ? normalizeLeakRateKey("") : normalizeLeakRateKey(body.leakRate),
     status,
     note: String(body.note || "").trim().slice(0, 2000),
-    group: String(body.group || "").trim().slice(0, 120),
     occurredAt: parseDate(body.occurredAt, new Date()),
-    resolvedAt: status === "resolved" ? parseDate(body.resolvedAt, new Date()) : null,
-    unresolvedReason: status === "open" ? String(body.unresolvedReason || "").trim().slice(0, 500) : "",
+    resolvedAt: !noFind && status === "resolved" ? parseDate(body.resolvedAt, new Date()) : null,
+    unresolvedReason: !noFind && status === "open" ? String(body.unresolvedReason || "").trim().slice(0, 500) : "",
   };
 
-  if (lat !== null && lng !== null) {
+  if (noFind) {
+    payload.lat = undefined;
+    payload.lng = undefined;
+    payload.location = undefined;
+  } else if (lat !== null && lng !== null) {
     payload.lat = lat;
     payload.lng = lng;
     payload.location = { type: "Point", coordinates: [lng, lat] };
@@ -154,7 +217,7 @@ export const createMapPoint = async (req, res) => {
   }
 
   try {
-    const payload = await buildPayload(req);
+    const payload = Object.fromEntries(Object.entries(await buildPayload(req)).filter(([, value]) => value !== undefined));
     const point = await MapPoint.create({
       ...payload,
       user: getUserNumber(req, req.body),
@@ -164,7 +227,7 @@ export const createMapPoint = async (req, res) => {
 
     return res.status(201).json({ success: true, point });
   } catch (error) {
-    const isValidation = /Toạ độ|tên sự cố|Loại sự cố/i.test(error.message);
+    const isValidation = /Toạ độ|tên sự cố|Loại sự cố|Tuyến|tuyến|Khu vực|Loại hình/i.test(error.message);
     return res.status(isValidation ? 400 : 500).json({
       success: false,
       error: isValidation ? error.message : "Không tạo được điểm",
@@ -180,17 +243,31 @@ export const updateMapPoint = async (req, res) => {
   try {
     const user = getUserNumber(req, req.body);
     const payload = await buildPayload(req, { isUpdate: true });
+    // Diem tren ban do bat buoc co toa do (vd doi luot "khong thay diem" thanh diem ma chua chon vi tri).
+    if (payload.kind === "point" && payload.lat === undefined) {
+      const existing = await MapPoint.findOne({ _id: req.params.id, user }).select("lat lng").lean();
+      if (!Number.isFinite(existing?.lat) || !Number.isFinite(existing?.lng)) throw new Error("Toạ độ không hợp lệ");
+    }
 
+    // Chuyen sang "luot nghe khong thay diem" thi bo han toa do (khong de lai location rong).
+    const unset = {};
+    ["lat", "lng", "location"].forEach((key) => {
+      if (payload[key] === undefined && key in payload) {
+        unset[key] = "";
+        delete payload[key];
+      }
+    });
     const point = await MapPoint.findOneAndUpdate(
       { _id: req.params.id, user },
-      { $set: { ...payload, updatedAt: new Date() } },
+      { $set: { ...payload, updatedAt: new Date() }, ...(Object.keys(unset).length ? { $unset: unset } : {}) },
       { new: true, runValidators: true }
     ).lean();
 
     if (!point) return res.status(404).json({ success: false, error: "Không tìm thấy điểm" });
     return res.status(200).json({ success: true, point });
   } catch (error) {
-    const isValidation = /Toạ độ|tên sự cố|Loại sự cố/i.test(error.message);
+    console.error("Không cập nhật được điểm:", error.message);
+    const isValidation = /Toạ độ|tên sự cố|Loại sự cố|Tuyến|tuyến|Khu vực|Loại hình/i.test(error.message);
     return res.status(isValidation ? 400 : 500).json({
       success: false,
       error: isValidation ? error.message : "Không cập nhật được điểm",
@@ -279,12 +356,21 @@ export const getMapPointImage = (req, res) => {
   return res.sendFile(filePath);
 };
 
+// So khach hang cua mot lan nghe: nguoi tong hop nhap so da nghe; de 0 thi lay so khach hang cua tuyen.
+const effectiveCustomers = (point) => (
+  Number(point.heardCustomers) > 0 ? Number(point.heardCustomers) : Number(point.routeCustomers || 0)
+);
+
 const EXPORT_COLUMNS = [
   { header: "Thời gian phát hiện", key: "occurredAt", width: 20 },
   { header: "Trạng thái", key: "status", width: 26 },
+  { header: "Nhóm loại sự cố", key: "typeGroupName", width: 24 },
   { header: "Loại sự cố", key: "typeName", width: 22 },
   { header: "Mức độ", key: "leakRate", width: 16 },
   { header: "Khu vực", key: "group", width: 22 },
+  { header: "Tuyến", key: "routeName", width: 26 },
+  { header: "Loại hình phát hiện", key: "methodName", width: 20 },
+  { header: "Khách hàng đã nghe", key: "customers", width: 12 },
   { header: "Toạ độ", key: "coordinate", width: 26 },
   { header: "Ghi chú", key: "note", width: 48 },
   { header: "Người tạo", key: "createdByName", width: 18 },
@@ -308,17 +394,24 @@ export const exportMapPoints = async (req, res) => {
     sheet.getRow(1).alignment = { vertical: "middle" };
 
     points.forEach((point) => {
-      const statusText = point.status === "resolved"
-        ? `${STATUS_LABELS.resolved}${point.resolvedAt ? ` (${formatVn(point.resolvedAt)})` : ""}`
-        : `${STATUS_LABELS.open}${point.unresolvedReason ? ` (${point.unresolvedReason})` : ""}`;
+      const noFind = point.kind === "no_find";
+      const statusText = noFind
+        ? "Đã nghe, không tìm thấy điểm"
+        : point.status === "resolved"
+          ? `${STATUS_LABELS.resolved}${point.resolvedAt ? ` (${formatVn(point.resolvedAt)})` : ""}`
+          : `${STATUS_LABELS.open}${point.unresolvedReason ? ` (${point.unresolvedReason})` : ""}`;
       sheet.addRow({
         title: point.title,
         occurredAt: formatVn(point.occurredAt),
         status: statusText,
-        typeName: point.typeName || "Chưa phân loại",
-        leakRate: getLeakBucketLabel(point.leakRate),
-        group: point.group || "Không có",
-        coordinate: `${Number(point.lat).toFixed(6)}, ${Number(point.lng).toFixed(6)}`,
+        typeGroupName: noFind ? "" : point.typeGroupName || "",
+        typeName: noFind ? "" : point.typeName || "Chưa phân loại",
+        leakRate: noFind ? "" : getLeakBucketLabel(point.leakRate),
+        group: point.areaName || point.group || "Không có",
+        routeName: point.routeName || "",
+        methodName: point.methodName || "",
+        customers: point.routeId ? effectiveCustomers(point) : "",
+        coordinate: noFind ? "" : `${Number(point.lat).toFixed(6)}, ${Number(point.lng).toFixed(6)}`,
         note: point.note || "",
         createdByName: point.createdByName || "",
       });
@@ -342,18 +435,28 @@ export const exportMapPoints = async (req, res) => {
 export const getMapPointReport = async (req, res) => {
   try {
     const user = getUserNumber(req, req.query);
-    const filter = buildFilter(req, req.query);
+    // Bao cao theo loai chi tinh diem ro ri that (bo luot nghe khong thay diem).
+    const filter = buildFilter(req, { ...req.query, kind: "point" });
     await ensureDefaultTypes(user);
 
-    const [points, types] = await Promise.all([
+    const [points, allTypes] = await Promise.all([
       MapPoint.find(filter).sort({ occurredAt: -1 }).limit(MAX_LIST_LIMIT).lean(),
       IncidentType.find({ user }).sort({ sortOrder: 1, name: 1 }).lean(),
     ]);
+    const groupNames = Object.fromEntries(allTypes.filter((type) => !type.parentId).map((type) => [String(type._id), type.name]));
+    // Diem chon loai bac 2: lap theo nhom bac 1 roi den loai bac 2.
+    const types = allTypes
+      .filter((type) => type.parentId)
+      .sort((a, b) => Object.keys(groupNames).indexOf(String(a.parentId)) - Object.keys(groupNames).indexOf(String(b.parentId)));
 
     const toRow = (point) => ({
       _id: point._id,
       title: point.title,
-      group: point.group || "Không có",
+      group: point.areaName || point.group || "Không có",
+      routeName: point.routeName || "",
+      methodName: point.methodName || "",
+      typeGroupName: point.typeGroupName || "",
+      customers: point.routeId ? effectiveCustomers(point) : null,
       lat: point.lat,
       lng: point.lng,
       leakRate: point.leakRate,
@@ -378,6 +481,7 @@ export const getMapPointReport = async (req, res) => {
       return {
         typeId: type._id,
         typeName: type.name,
+        typeGroupName: groupNames[String(type.parentId)] || "",
         count: rows.length,
         estimatedLeak: rows.reduce((sum, row) => sum + row.estimatedLeak, 0),
         resolved: rows.filter((row) => row.status === "resolved").length,
@@ -428,7 +532,7 @@ export const getMapPointReport = async (req, res) => {
 // Gom nhom su co theo o luoi de biet khu vuc nao tap trung nhieu su co nhat.
 export const getMapPointHotspots = async (req, res) => {
   try {
-    const filter = buildFilter(req, req.query);
+    const filter = buildFilter(req, { ...req.query, kind: "point" });
     const gridSize = Math.min(Math.max(Number(req.query.gridSize) || 0.002, 0.0005), 0.05);
 
     const hotspots = await MapPoint.aggregate([
@@ -461,5 +565,22 @@ export const getMapPointHotspots = async (req, res) => {
   } catch (error) {
     console.error("Không tính được điểm nóng sự cố:", error.message);
     return res.status(500).json({ success: false, error: "Không tính được điểm nóng sự cố" });
+  }
+};
+
+// Ban tin tong hop theo khu vuc (luot/tuyen, khach hang, nguyen nhan, luu luong) cho ky da chon.
+export const getMapPointBulletin = async (req, res) => {
+  try {
+    const user = getUserNumber(req, req.query);
+    const to = parseDate(req.query.toDate, new Date());
+    const from = parseDate(req.query.fromDate, new Date(to.getTime() - 30 * 86400000));
+    if (from > to) return res.status(400).json({ success: false, error: "Khoảng thời gian không hợp lệ" });
+    // Ban tin can ca diem va luot "khong thay diem"; trang thai / loai loc theo yeu cau.
+    const filter = buildFilter(req, { ...req.query, fromDate: from.toISOString(), toDate: to.toISOString(), kind: "" });
+    const bulletin = await buildBulletin({ user, filter, from, to });
+    return res.status(200).json({ success: true, ...bulletin });
+  } catch (error) {
+    console.error("Không tạo được bản tin sự cố:", error.message);
+    return res.status(500).json({ success: false, error: "Không tạo được bản tin sự cố" });
   }
 };

@@ -1,5 +1,6 @@
 import L from "leaflet";
 import { getLeakColor, getLeakLabel } from "./leakRate";
+import { getPointIconSvg } from "./pointIcons";
 
 // Chi con 2 trang thai theo yeu cau van hanh.
 export const POINT_STATUSES = [
@@ -17,7 +18,8 @@ export { getLeakColor, getLeakLabel };
 const OPEN_PIN_WIDTH = 32;
 const RESOLVED_WIDTH = 34;
 
-// Chua xu ly: hinh GHIM mau theo muc do ro ri + vong nhay o chan ghim (nen ban do ve tinh
+// Chua xu ly: hinh GHIM mau theo muc do ro ri, ben trong la bieu tuong cua loai su co
+// (point.typeIcon, mac dinh giot nuoc) cung mau, + vong nhay o chan ghim (nen ban do ve tinh
 // co rat nhieu icon tron cua dia diem, cham tron bi lan vao va rat kho thay).
 // Da xu ly: ghim xanh la co dau tich.
 export const createPointIcon = (point) => {
@@ -58,7 +60,7 @@ export const createPointIcon = (point) => {
           <path d="M20 1.5C10 1.5 2 9.3 2 19.2c0 12.6 15.6 29 17 30.5a1.4 1.4 0 0 0 2 0C22.4 48.2 38 31.8 38 19.2 38 9.3 30 1.5 20 1.5z"
                 fill="${leakColor}" stroke="#ffffff" stroke-width="3"/>
           <circle cx="20" cy="19.5" r="10.5" fill="#ffffff"/>
-          <path d="M20 11.5c2.6 3.4 5 6.6 5 9.4a5 5 0 0 1-10 0c0-2.8 2.4-6 5-9.4z" fill="${leakColor}"/>
+          ${getPointIconSvg(point?.typeIcon, leakColor)}
         </svg>
       </div>`,
     iconSize: [width, height],

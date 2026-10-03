@@ -4,6 +4,10 @@ import {
   incidentGroupDelete,
   incidentGroupUpdatePut,
   incidentGroupsGet,
+  incidentMethodCreatePost,
+  incidentMethodDelete,
+  incidentMethodUpdatePut,
+  incidentMethodsGet,
   incidentTypeCreatePost,
   incidentTypeDelete,
   incidentTypeUpdatePut,
@@ -19,16 +23,77 @@ import {
 import { DEFAULT_TIME_FILTER, currentMonthKey, resolveTimeRange } from "./mapPointMeta";
 
 const getToken = () => localStorage.getItem("token");
+const errorText = (requestError, fallback) => requestError.response?.data?.error || fallback;
+
+// Danh muc cua diem su co (loai su co 2 bac, khu vuc / tuyen 2 bac, loai hinh phat hien).
+// create tra ve muc vua tao (hoac null); update / remove tra ve null neu thanh cong, hoac chuoi loi.
+const useCatalog = ({ user, canEdit, api, label, onChanged }) => {
+  const [items, setItems] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.list(getToken(), user);
+      setItems(res.data?.items || []);
+    } catch {
+      setItems([]);
+    }
+  }, [api, user]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const create = useCallback(async (name, parentId = null, extra = {}) => {
+    if (!canEdit) return { error: `Tài khoản của bạn không có quyền thêm ${label}` };
+    setBusy(true);
+    try {
+      const res = await api.create(getToken(), { user, name, parentId, ...extra });
+      const item = res.data?.item;
+      if (item) setItems((prev) => (prev.some((row) => String(row._id) === String(item._id)) ? prev : [...prev, item]));
+      return { item };
+    } catch (requestError) {
+      return { error: errorText(requestError, `Không thêm được ${label}`) };
+    } finally {
+      setBusy(false);
+    }
+  }, [api, canEdit, label, user]);
+
+  const update = useCallback(async (id, patch) => {
+    if (!canEdit) return `Tài khoản của bạn không có quyền sửa ${label}`;
+    try {
+      const res = await api.update(getToken(), id, { user, ...patch });
+      const item = res.data?.item;
+      if (item) setItems((prev) => prev.map((row) => (String(row._id) === String(id) ? item : row)));
+      // Doi ten / chuyen nhom thi server da dong bo ten tren cac diem -> tai lai diem.
+      if (patch.name !== undefined || patch.parentId !== undefined) onChanged?.();
+      return null;
+    } catch (requestError) {
+      return errorText(requestError, `Không sửa được ${label}`);
+    }
+  }, [api, canEdit, label, onChanged, user]);
+
+  const remove = useCallback(async (id) => {
+    if (!canEdit) return `Tài khoản của bạn không có quyền xoá ${label}`;
+    try {
+      await api.remove(getToken(), id, user);
+      setItems((prev) => prev.filter((row) => String(row._id) !== String(id)));
+      return null;
+    } catch (requestError) {
+      return errorText(requestError, `Không xoá được ${label}`);
+    }
+  }, [api, canEdit, label, user]);
+
+  return { items, busy, load, create, update, remove };
+};
+
+const TYPE_API = { list: incidentTypesGet, create: incidentTypeCreatePost, update: incidentTypeUpdatePut, remove: incidentTypeDelete };
+const GROUP_API = { list: incidentGroupsGet, create: incidentGroupCreatePost, update: incidentGroupUpdatePut, remove: incidentGroupDelete };
+const METHOD_API = { list: incidentMethodsGet, create: incidentMethodCreatePost, update: incidentMethodUpdatePut, remove: incidentMethodDelete };
 
 const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
   const [points, setPoints] = useState([]);
   const [hotspots, setHotspots] = useState([]);
-  const [types, setTypes] = useState([]);
-  const [incidentGroups, setIncidentGroups] = useState([]);
-  const [creatingGroup, setCreatingGroup] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [creatingType, setCreatingType] = useState(false);
   const [error, setError] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -49,6 +114,7 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
     setLoading(true);
     setError("");
     try {
+      // Lay ca luot "khong thay diem" (bang tra cuu can); ban do tu loc kind.
       const res = await mapPointsGet(getToken(), {
         user,
         typeId: typeFilter,
@@ -58,20 +124,17 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
       });
       setPoints(res.data?.points || []);
     } catch (requestError) {
-      setError(requestError.response?.data?.error || "Không tải được danh sách sự cố");
+      setError(errorText(requestError, "Không tải được danh sách sự cố"));
     } finally {
       setLoading(false);
     }
   }, [enabled, user, typeFilter, statusFilter, timeRange]);
 
-  const loadTypes = useCallback(async () => {
-    try {
-      const res = await incidentTypesGet(getToken(), user);
-      setTypes(res.data?.types || []);
-    } catch {
-      setTypes([]);
-    }
-  }, [user]);
+  useEffect(() => { loadPoints(); }, [loadPoints]);
+
+  const typeCatalog = useCatalog({ user, canEdit, api: TYPE_API, label: "loại sự cố", onChanged: loadPoints });
+  const groupCatalog = useCatalog({ user, canEdit, api: GROUP_API, label: "khu vực / tuyến", onChanged: loadPoints });
+  const methodCatalog = useCatalog({ user, canEdit, api: METHOD_API, label: "loại hình phát hiện", onChanged: loadPoints });
 
   const loadHotspots = useCallback(async () => {
     try {
@@ -87,129 +150,6 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
     }
   }, [user, typeFilter, timeRange]);
 
-  useEffect(() => { loadPoints(); }, [loadPoints]);
-  useEffect(() => { loadTypes(); }, [loadTypes]);
-
-  const loadIncidentGroups = useCallback(async () => {
-    try {
-      const res = await incidentGroupsGet(getToken(), user);
-      setIncidentGroups(res.data?.groups || []);
-    } catch {
-      setIncidentGroups([]);
-    }
-  }, [user]);
-
-  useEffect(() => { loadIncidentGroups(); }, [loadIncidentGroups]);
-
-  // Nhom luu tren server (truoc day chi gan vao diem nen khong hien trong danh sach).
-  // Tra ve ten nhom de form chon luon nhom vua tao.
-  const createGroup = useCallback(async (name) => {
-    if (!canEdit) {
-      setError("Tài khoản của bạn không có quyền thêm nhóm");
-      return null;
-    }
-    setCreatingGroup(true);
-    try {
-      const res = await incidentGroupCreatePost(getToken(), { user, name });
-      const created = res.data?.group;
-      if (!created) return null;
-      setIncidentGroups((prev) => (prev.some((item) => String(item._id) === String(created._id)) ? prev : [...prev, created]));
-      return created.name;
-    } catch (requestError) {
-      setError(requestError.response?.data?.error || "Không thêm được nhóm");
-      return null;
-    } finally {
-      setCreatingGroup(false);
-    }
-  }, [canEdit, user]);
-
-  const renameGroup = useCallback(async (id, name) => {
-    if (!canEdit) return "Tài khoản của bạn không có quyền sửa nhóm";
-    try {
-      const res = await incidentGroupUpdatePut(getToken(), id, { user, name });
-      const updated = res.data?.group;
-      const oldName = res.data?.oldName;
-      if (updated) {
-        setIncidentGroups((prev) => prev.map((item) => (String(item._id) === String(id) ? updated : item)));
-        // Server da doi ten nhom o cac diem, cap nhat luon ban dang hien thi.
-        if (oldName) {
-          setPoints((prev) => prev.map((item) => (item.group === oldName ? { ...item, group: updated.name } : item)));
-        }
-      }
-      return null;
-    } catch (requestError) {
-      return requestError.response?.data?.error || "Không đổi tên được nhóm";
-    }
-  }, [canEdit, user]);
-
-  // Server tu choi (409) neu nhom dang duoc diem nao dung.
-  const deleteGroup = useCallback(async (id) => {
-    if (!canEdit) return "Tài khoản của bạn không có quyền xoá nhóm";
-    try {
-      await incidentGroupDelete(getToken(), id, user);
-      setIncidentGroups((prev) => prev.filter((item) => String(item._id) !== String(id)));
-      return null;
-    } catch (requestError) {
-      return requestError.response?.data?.error || "Không xoá được nhóm";
-    }
-  }, [canEdit, user]);
-
-  // Tra ve _id de form chon luon loai vua tao.
-  const createType = useCallback(async (name) => {
-    if (!canEdit) {
-      setError("Tài khoản của bạn không có quyền thêm loại sự cố");
-      return null;
-    }
-    setCreatingType(true);
-    try {
-      const res = await incidentTypeCreatePost(getToken(), { user, name });
-      const created = res.data?.type;
-      if (created) {
-        setTypes((prev) => (prev.some((item) => String(item._id) === String(created._id))
-          ? prev
-          : [...prev, created]));
-        return String(created._id);
-      }
-      return null;
-    } catch (requestError) {
-      setError(requestError.response?.data?.error || "Không thêm được loại sự cố");
-      return null;
-    } finally {
-      setCreatingType(false);
-    }
-  }, [canEdit, user]);
-
-  // Hai ham duoi tra ve null neu thanh cong, hoac chuoi loi de form hien ngay canh danh sach.
-  const renameType = useCallback(async (id, name) => {
-    if (!canEdit) return "Tài khoản của bạn không có quyền sửa loại sự cố";
-    try {
-      const res = await incidentTypeUpdatePut(getToken(), id, { user, name });
-      const updated = res.data?.type;
-      if (updated) {
-        setTypes((prev) => prev.map((item) => (String(item._id) === String(id) ? updated : item)));
-        // Server da dong bo typeName cua cac diem, cap nhat luon ban dang hien thi.
-        setPoints((prev) => prev.map((item) => (
-          String(item.typeId) === String(id) ? { ...item, typeName: updated.name } : item
-        )));
-      }
-      return null;
-    } catch (requestError) {
-      return requestError.response?.data?.error || "Không đổi tên được loại sự cố";
-    }
-  }, [canEdit, user]);
-
-  // Server tu choi (409) neu loai dang duoc diem nao dung.
-  const deleteType = useCallback(async (id) => {
-    if (!canEdit) return "Tài khoản của bạn không có quyền xoá loại sự cố";
-    try {
-      await incidentTypeDelete(getToken(), id, user);
-      setTypes((prev) => prev.filter((item) => String(item._id) !== String(id)));
-      return null;
-    } catch (requestError) {
-      return requestError.response?.data?.error || "Không xoá được loại sự cố";
-    }
-  }, [canEdit, user]);
-
   const savePoint = useCallback(async (payload, existing) => {
     if (!canEdit) {
       setError("Tài khoản của bạn không có quyền chỉnh sửa sự cố");
@@ -220,23 +160,26 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
     setError("");
     try {
       const body = { ...payload, user };
+      let saved;
       if (existing?._id) {
         const res = await mapPointUpdatePut(getToken(), existing._id, body);
-        const updated = res.data?.point;
-        setPoints((prev) => prev.map((item) => (item._id === updated._id ? updated : item)));
-        return updated;
+        saved = res.data?.point;
+        setPoints((prev) => prev.map((item) => (item._id === saved._id ? saved : item)));
+      } else {
+        const res = await mapPointCreatePost(getToken(), body);
+        saved = res.data?.point;
+        if (saved) setPoints((prev) => [saved, ...prev]);
       }
-      const res = await mapPointCreatePost(getToken(), body);
-      const created = res.data?.point;
-      if (created) setPoints((prev) => [created, ...prev]);
-      return created;
+      // So khach hang cua tuyen co the vua doi trong form -> tai lai danh muc.
+      if (payload.routeId) groupCatalog.load();
+      return saved;
     } catch (requestError) {
-      setError(requestError.response?.data?.error || "Không lưu được sự cố");
+      setError(errorText(requestError, "Không lưu được sự cố"));
       return null;
     } finally {
       setSaving(false);
     }
-  }, [canEdit, user]);
+  }, [canEdit, groupCatalog, user]);
 
   const removePoint = useCallback(async (point) => {
     if (!canEdit || !point?._id) return false;
@@ -247,7 +190,7 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
       setPoints((prev) => prev.filter((item) => item._id !== point._id));
       return true;
     } catch (requestError) {
-      setError(requestError.response?.data?.error || "Không xoá được sự cố");
+      setError(errorText(requestError, "Không xoá được sự cố"));
       return false;
     } finally {
       setSaving(false);
@@ -264,7 +207,7 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
       if (updated) setPoints((prev) => prev.map((item) => (item._id === updated._id ? updated : item)));
       return updated;
     } catch (requestError) {
-      setError(requestError.response?.data?.error || "Không tải được ảnh lên");
+      setError(errorText(requestError, "Không tải được ảnh lên"));
       return null;
     } finally {
       setSaving(false);
@@ -280,38 +223,50 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
       if (updated) setPoints((prev) => prev.map((item) => (item._id === updated._id ? updated : item)));
       return updated;
     } catch (requestError) {
-      setError(requestError.response?.data?.error || "Không xoá được ảnh");
+      setError(errorText(requestError, "Không xoá được ảnh"));
       return null;
     } finally {
       setSaving(false);
     }
   }, [canEdit, user]);
 
-  const stats = useMemo(() => ({
-    total: points.length,
-    open: points.filter((point) => point.status === "open").length,
-    resolved: points.filter((point) => point.status === "resolved").length,
-  }), [points]);
+  // Diem tren ban do (bo luot "da nghe nhung khong tim thay diem"), kem bieu tuong cua loai.
+  const iconByType = useMemo(
+    () => Object.fromEntries(typeCatalog.items.map((type) => [String(type._id), type.icon || "drop"])),
+    [typeCatalog.items]
+  );
+  const mapPoints = useMemo(
+    () => points
+      .filter((point) => point.kind !== "no_find")
+      .map((point) => ({ ...point, typeIcon: iconByType[String(point.typeId)] || "drop" })),
+    [points, iconByType]
+  );
 
-  const groups = useMemo(
-    () => [...new Set(points.map((point) => point.group).filter(Boolean))].sort(),
-    [points]
+  const stats = useMemo(() => ({
+    total: mapPoints.length,
+    open: mapPoints.filter((point) => point.status === "open").length,
+    resolved: mapPoints.filter((point) => point.status === "resolved").length,
+    noFind: points.length - mapPoints.length,
+  }), [mapPoints, points.length]);
+
+  // Ten khu vuc bac 1 (bo loc khu vuc o phan bao cao).
+  const areaNames = useMemo(
+    () => groupCatalog.items.filter((item) => !item.parentId).map((item) => item.name),
+    [groupCatalog.items]
   );
 
   return {
     points,
+    mapPoints,
     hotspots,
-    types,
-    groups,
-    incidentGroups,
-    creatingGroup,
-    createGroup,
-    renameGroup,
-    deleteGroup,
+    types: typeCatalog.items,
+    typeCatalog,
+    groupCatalog,
+    methodCatalog,
+    areaNames,
     stats,
     loading,
     saving,
-    creatingType,
     error,
     setError,
     typeFilter,
@@ -322,11 +277,7 @@ const useMapPoints = ({ user, enabled = true, canEdit = true }) => {
     setTimeFilter,
     timeLabel: timeRange.label,
     reload: loadPoints,
-    loadTypes,
     loadHotspots,
-    createType,
-    renameType,
-    deleteType,
     savePoint,
     removePoint,
     uploadImages,

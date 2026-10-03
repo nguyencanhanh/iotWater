@@ -15,6 +15,7 @@ const URL_CHATBOT = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/cha
 const URL_MAP_POINTS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/map-points')
 const URL_INCIDENT_TYPES = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-types')
 const URL_INCIDENT_GROUPS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-groups')
+const URL_INCIDENT_METHODS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-methods')
 const URL_MONITOR = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/monitor')
 
 const axiosConfig = (token) => ({
@@ -480,6 +481,29 @@ export const incidentGroupDelete = (token, id, user) => axios.delete(
     `${URL_INCIDENT_GROUPS}/${id}?user=${encodeURIComponent(user)}`,
     axiosConfig(token)
 );
+
+// Loai hinh phat hien ("Nghe", "Nghe dem"...): danh sach phang, them / sua / xoa.
+export const incidentMethodsGet = (token, user) => axios.get(
+    `${URL_INCIDENT_METHODS}?user=${encodeURIComponent(user)}`,
+    axiosConfig(token)
+);
+
+export const incidentMethodCreatePost = (token, body) => axios.post(URL_INCIDENT_METHODS, body, axiosConfig(token));
+
+export const incidentMethodUpdatePut = (token, id, body) => axios.put(`${URL_INCIDENT_METHODS}/${id}`, body, axiosConfig(token));
+
+export const incidentMethodDelete = (token, id, user) => axios.delete(
+    `${URL_INCIDENT_METHODS}/${id}?user=${encodeURIComponent(user)}`,
+    axiosConfig(token)
+);
+
+// Ban tin tong hop theo khu vuc (luot/tuyen, khach hang, nguyen nhan, luu luong).
+export const mapPointBulletinGet = (token, params = {}) => {
+    const query = new URLSearchParams(
+        Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== "")
+    ).toString();
+    return axios.get(`${URL_MAP_POINTS}/bulletin${query ? `?${query}` : ""}`, axiosConfig(token));
+};
 
 export const mapPointReportGet = (token, params = {}) => {
     const query = new URLSearchParams(

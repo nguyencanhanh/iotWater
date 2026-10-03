@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo, useState, useRef } from "react";
+import React, { lazy, Suspense, useEffect, useState, useRef } from "react";
 import { LABEL_TILE_URL, SATELLITE_TILE_URL, TILE_SUBDOMAINS } from "../map/tileUrls";
 import { MapContainer, TileLayer, Marker, Tooltip, GeoJSON, CircleMarker, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -216,9 +216,10 @@ function AdminSummary() {
 
     const canEditMapPoints = user?.role !== "trial";
     const mapPoints = useMapPoints({ user: user.user, canEdit: canEditMapPoints });
+    // Chi diem tren ban do (bo luot "da nghe nhung khong tim thay diem").
     const visibleMapPoints = leakFilter.length
-        ? mapPoints.points.filter((point) => leakFilter.includes(getLeakBandKey(point.leakRate)))
-        : mapPoints.points;
+        ? mapPoints.mapPoints.filter((point) => leakFilter.includes(getLeakBandKey(point.leakRate)))
+        : mapPoints.mapPoints;
 
     const handleTogglePointLabels = (next) => {
         setShowPointLabels(next);
@@ -238,12 +239,8 @@ function AdminSummary() {
         }
     };
 
-    // Khu vuc cho su co: gop nhom logger co san voi nhom da dung o cac diem truoc do.
-    // Danh sach nhom su co luu tren server (them / sua / xoa trong form diem su co).
-    const incidentGroupNames = useMemo(() => [...new Set([
-        ...mapPoints.incidentGroups.map((item) => item.name),
-        ...mapPoints.groups,
-    ])].sort((a, b) => a.localeCompare(b, "vi")), [mapPoints.incidentGroups, mapPoints.groups]);
+    // Form diem su co mo o che do "diem" (bam ban do) hoac "luot nghe khong thay diem".
+    const [pointFormKind, setPointFormKind] = useState("point");
 
     useEffect(() => {
         if (showHotspots) mapPoints.loadHotspots();
@@ -251,7 +248,17 @@ function AdminSummary() {
 
     const handlePickLocation = (location) => {
         setDraftLocation(location);
+        setPointFormKind("point");
         setEditingPoint(null);
+        setPointFormOpen(true);
+        setAddPointMode(false);
+    };
+
+    // Luot nghe khong thay diem khong can toa do -> mo form ngay, khong chon tren ban do.
+    const handleAddNoFind = () => {
+        setDraftLocation(null);
+        setEditingPoint(null);
+        setPointFormKind("no_find");
         setPointFormOpen(true);
         setAddPointMode(false);
     };
@@ -806,14 +813,11 @@ function AdminSummary() {
                 point={editingPoint}
                 lat={draftLocation?.lat}
                 lng={draftLocation?.lng}
-                groups={mapPoints.incidentGroups}
-                types={mapPoints.types}
+                initialKind={pointFormKind}
+                typeCatalog={mapPoints.typeCatalog}
+                groupCatalog={mapPoints.groupCatalog}
+                methodCatalog={mapPoints.methodCatalog}
                 saving={mapPoints.saving}
-                creatingType={mapPoints.creatingType}
-                creatingGroup={mapPoints.creatingGroup}
-                onCreateGroup={mapPoints.createGroup}
-                onRenameGroup={mapPoints.renameGroup}
-                onDeleteGroup={mapPoints.deleteGroup}
                 onClose={() => {
                     setPointFormOpen(false);
                     setEditingPoint(null);
@@ -821,9 +825,6 @@ function AdminSummary() {
                 }}
                 onSubmit={handleSubmitPoint}
                 onDelete={handleDeletePoint}
-                onCreateType={mapPoints.createType}
-                onRenameType={mapPoints.renameType}
-                onDeleteType={mapPoints.deleteType}
                 onCoordinateChange={handleCoordinateChange}
                 onUploadImages={handleUploadImages}
                 onDeleteImage={handleDeleteImage}
@@ -834,7 +835,7 @@ function AdminSummary() {
                 <IncidentReportPanel
                     open={reportPanelOpen}
                     user={user.user}
-                    groups={incidentGroupNames}
+                    groups={mapPoints.areaNames}
                     types={mapPoints.types}
                     onClose={() => setReportPanelOpen(false)}
                 />
@@ -1111,6 +1112,7 @@ function AdminSummary() {
                     timeFilter={mapPoints.timeFilter}
                     onTimeFilter={mapPoints.setTimeFilter}
                     timeLabel={mapPoints.timeLabel}
+                    onAddNoFind={handleAddNoFind}
                 />
             </div>
             {showModal ? <ModalData info={weatherData} dateData={dateData} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}

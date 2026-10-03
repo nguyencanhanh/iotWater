@@ -19,6 +19,7 @@ import aiRouter from './routes/ai.js'
 import mapPointRouter from './routes/mapPoint.js'
 import incidentTypeRouter from './routes/incidentType.js'
 import incidentGroupRouter from './routes/incidentGroup.js'
+import incidentMethodRouter from './routes/incidentMethod.js'
 import monitorRouter from './routes/monitor.js'
 import { startMonitor } from './services/monitor/index.js'
 import connectToDatabase from './db/db.js'
@@ -96,6 +97,7 @@ app.use('/api/ai', aiRouter)
 app.use('/api/map-points', mapPointRouter)
 app.use('/api/incident-types', incidentTypeRouter)
 app.use('/api/incident-groups', incidentGroupRouter)
+app.use('/api/incident-methods', incidentMethodRouter)
 app.use('/api/monitor', monitorRouter)
 
 // Chi nghe tren localhost. nginx da proxy /api/ nen web khong anh huong,

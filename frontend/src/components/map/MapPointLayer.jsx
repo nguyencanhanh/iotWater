@@ -36,14 +36,19 @@ const PointPopup = ({ point, canEdit, onEdit, imageUrl }) => {
           </span>
           {point.typeName && (
             <span className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-600">
-              {point.typeName}
+              {point.typeGroupName ? `${point.typeGroupName} › ` : ""}{point.typeName}
             </span>
           )}
         </div>
 
         <h4 className="!m-0 text-sm font-black text-slate-900">{point.title}</h4>
 
-        {point.group && <div className="mt-1 text-xs font-semibold text-slate-500">Khu vực: {point.group}</div>}
+        {(point.areaName || point.group) && (
+          <div className="mt-1 text-xs font-semibold text-slate-500">
+            Khu vực: {point.areaName || point.group}{point.routeName ? ` › ${point.routeName}` : ""}
+          </div>
+        )}
+        {point.methodName && <div className="text-xs text-slate-500">Phát hiện bằng: {point.methodName}</div>}
 
         <div className="mt-1 text-xs text-slate-500">Phát hiện: {formatPointDateTime(point.occurredAt)}</div>
         {point.status === "resolved" ? (

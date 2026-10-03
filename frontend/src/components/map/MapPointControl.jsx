@@ -7,6 +7,7 @@ import {
   FaEye,
   FaEyeSlash,
   FaFire,
+  FaHeadphones,
   FaPlus,
   FaSyncAlt,
   FaTimes,
@@ -53,6 +54,7 @@ const MapPointControl = ({
   timeFilter = { mode: "thisMonth", month: "" },
   onTimeFilter = () => {},
   timeLabel = "",
+  onAddNoFind = () => {},
 }) => {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -202,6 +204,22 @@ const MapPointControl = ({
             </button>
           )}
 
+          {canEdit && (
+            <button
+              type="button"
+              onClick={onAddNoFind}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800 hover:bg-amber-100"
+              title="Tuyến đã nghe nhưng không tìm thấy điểm (không hiện trên bản đồ, tính vào bản tin)"
+            >
+              <FaHeadphones /> Lượt nghe không thấy điểm
+            </button>
+          )}
+          {Number(stats.noFind) > 0 && (
+            <div className="mt-1 text-center text-[11px] font-semibold text-slate-500">
+              {stats.noFind} lượt nghe không thấy điểm trong khoảng này (xem ở Tra cứu &amp; báo cáo)
+            </div>
+          )}
+
           {addMode && (
             <div className="mt-2 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-2 text-xs font-bold text-teal-800">
               Bấm vào vị trí trên bản đồ để đặt điểm.
@@ -271,8 +289,14 @@ const MapPointControl = ({
                   className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold outline-none focus:border-teal-500"
                 >
                   <option value="all">Tất cả</option>
-                  {types.map((item) => (
-                    <option key={item._id} value={item._id}>{item.name}</option>
+                  {/* Chon nhom bac 1 = loc ca nhom; chon loai bac 2 = chi loai do. */}
+                  {types.filter((item) => !item.parentId).map((group) => (
+                    <optgroup key={group._id} label={group.name}>
+                      <option value={group._id}>Cả nhóm: {group.name}</option>
+                      {types.filter((item) => String(item.parentId) === String(group._id)).map((item) => (
+                        <option key={item._id} value={item._id}>{item.name}</option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>

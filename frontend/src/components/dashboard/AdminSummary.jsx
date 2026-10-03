@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect, useMemo, useState, useRef } from "react";
-import { LABEL_TILE_URL, SATELLITE_TILE_URL, TILE_SUBDOMAINS } from "../map/tileUrls";
+import { LABEL_TILE_URL, MAP_MAX_ZOOM, SATELLITE_TILE_URL, TILE_MAX_NATIVE_ZOOM, TILE_SUBDOMAINS } from "../map/tileUrls";
 import { MapContainer, TileLayer, Marker, Tooltip, GeoJSON, CircleMarker, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "../map/leafletIconFix";
@@ -743,15 +743,19 @@ function AdminSummary() {
         <div className="relative h-full min-h-[420px] w-full overflow-hidden">
             {/* Bản đồ ở lớp dưới */}
             <div className="absolute inset-0 z-0">
-                <MapContainer center={mapCenter} zoom={15} className="h-full w-full" zoomControl={false}>
+                <MapContainer center={mapCenter} zoom={15} maxZoom={MAP_MAX_ZOOM} className="h-full w-full" zoomControl={false}>
                     <MapZoomTracker onZoomChange={setMapZoom} />
                     <TileLayer
                         url={SATELLITE_TILE_URL}
                         subdomains={TILE_SUBDOMAINS}
+                        maxZoom={MAP_MAX_ZOOM}
+                        maxNativeZoom={TILE_MAX_NATIVE_ZOOM}
                     />
                     <TileLayer
                         url={LABEL_TILE_URL}
                         subdomains={TILE_SUBDOMAINS}
+                        maxZoom={MAP_MAX_ZOOM}
+                        maxNativeZoom={TILE_MAX_NATIVE_ZOOM}
                     />
                     {/* ✅ HIỂN THỊ ĐƯỜNG ỐNG */}
                     {pipeLayer && (

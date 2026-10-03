@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { LABEL_TILE_URL, SATELLITE_TILE_URL, TILE_SUBDOMAINS } from "./tileUrls";
+import { LABEL_TILE_URL, MAP_MAX_ZOOM, SATELLITE_TILE_URL, TILE_MAX_NATIVE_ZOOM, TILE_SUBDOMAINS } from "./tileUrls";
 import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "./leafletIconFix";
@@ -158,15 +158,20 @@ const MapPicker = ({
           <MapContainer
             center={position || initial || DEFAULT_CENTER}
             zoom={position || initial ? 17 : DEFAULT_ZOOM}
+            maxZoom={MAP_MAX_ZOOM}
             className="h-full w-full"
           >
             <TileLayer
               url={SATELLITE_TILE_URL}
               subdomains={TILE_SUBDOMAINS}
+                        maxZoom={MAP_MAX_ZOOM}
+                        maxNativeZoom={TILE_MAX_NATIVE_ZOOM}
             />
             <TileLayer
               url={LABEL_TILE_URL}
               subdomains={TILE_SUBDOMAINS}
+                        maxZoom={MAP_MAX_ZOOM}
+                        maxNativeZoom={TILE_MAX_NATIVE_ZOOM}
             />
             <ClickCatcher onPick={setPosition} />
             <Recenter position={recenterTo} />

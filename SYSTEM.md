@@ -411,9 +411,20 @@ Form diem (`frontend/src/components/map/MapPointForm.jsx`) theo yeu cau van hanh
 
 Ban tin (`services/incidentBulletin.js`, GET /api/map-points/bulletin), theo khu vuc bac 1:
 - luot = cap (tuyen, ngay theo gio VN), gom ca luot no_find; tuyen = so tuyen khac nhau.
-- tong khach hang = cong THEO TUNG LUOT (moi luot lay max so KH da nghe trong ngay do).
+- tong khach hang = cong THEO TUNG TUYEN, moi tuyen tinh 1 lan trong ky (so cua buoi nghe gan
+  nhat; trong 1 buoi lay max). Chu du an chot 10/2026: tuyen 120 KH nghe 3 buoi van la 120.
 - nguyen nhan ro ri: so diem + % theo loai bac 1; luu luong = tong uoc tinh tu bac muc do
   (l/h -> m3/h, x24 = m3/ngay), so voi thang truoc (hoac ky truoc cung do dai).
+
+## Vung / duong ong ve tay tren ban do (10/2026)
+
+`MapShape` (server/models/MapShape.js, API /api/map-shapes): kind "zone" (da giac, to mo theo
+`opacity`) hoac "pipe" (duong gap khuc, `diameter` DN -> do day net, xem `shapeMeta.js`).
+Ve bang `MapShapeLayer.jsx` (tu viet, khong dung leaflet-draw): bam ban do them diem, keo cham
+de chinh, bam cham de xoa. Tang ve: vung o pane 350 (duoi lop ong/dong ho co san 400 de khong
+che cho bam cua chung), ong ve tay pane 450; popup ep ve "popupPane" (neu khong se bi vung de).
+Lop ong / dong ho co san: lop net that `interactive: false`, chi lop "hit" rong 40px nhan bam
+(truoc day bam dung len net ong khong mo duoc thong tin).
 
 ## Giam sat AI 24/7 (`server/services/monitor/`)
 

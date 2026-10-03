@@ -16,6 +16,7 @@ const URL_MAP_POINTS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/
 const URL_INCIDENT_TYPES = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-types')
 const URL_INCIDENT_GROUPS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-groups')
 const URL_INCIDENT_METHODS = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/incident-methods')
+const URL_MAP_SHAPES = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/map-shapes')
 const URL_MONITOR = import.meta.env.VITE_URL_AUTH.replace('/api/auth', '/api/monitor')
 
 const axiosConfig = (token) => ({
@@ -709,3 +710,10 @@ export const monitorLoggersGet = (token, user) => axios.get(`${URL_MONITOR}/logg
 export const monitorLoggerModePut = (token, id, body) => axios.put(`${URL_MONITOR}/loggers/${id}`, body, axiosConfig(token));
 export const monitorSettingsPut = (token, body) => axios.put(`${URL_MONITOR}/settings`, body, axiosConfig(token));
 export const monitorTestTelegramPost = (token, body) => axios.post(`${URL_MONITOR}/test-telegram`, body, axiosConfig(token));
+
+/* ------------------------------ Vung / duong ong ve tren ban do ------------------------------ */
+
+export const mapShapesGet = (token, user) => axios.get(`${URL_MAP_SHAPES}?user=${encodeURIComponent(user)}`, axiosConfig(token));
+export const mapShapeCreatePost = (token, body) => axios.post(URL_MAP_SHAPES, body, axiosConfig(token));
+export const mapShapeUpdatePut = (token, id, body) => axios.put(`${URL_MAP_SHAPES}/${id}`, body, axiosConfig(token));
+export const mapShapeDelete = (token, id, user) => axios.delete(`${URL_MAP_SHAPES}/${id}?user=${encodeURIComponent(user)}`, axiosConfig(token));

@@ -144,6 +144,8 @@ const MapPointLayer = ({
   showHotspots = false,
   showLabels = false,
   addMode = false,
+  // Dang ve vung / duong ong: diem khong nhan bam de moi cu bam deu thanh diem ve.
+  locked = false,
   canEdit = false,
   onPickLocation,
   onEdit,
@@ -154,10 +156,10 @@ const MapPointLayer = ({
 
     {showHotspots && hotspots.map((hotspot, index) => (
       <Marker
-        key={`hotspot-${index}-${addMode}`}
+        key={`hotspot-${index}-${addMode}-${locked}`}
         position={[hotspot.lat, hotspot.lng]}
         icon={createHotspotIcon(hotspot.count)}
-        interactive={!addMode}
+        interactive={!addMode && !locked}
         zIndexOffset={-500}
       >
         <Popup>
@@ -179,10 +181,10 @@ const MapPointLayer = ({
 
     {showPoints && points.map((point) => (
       <Marker
-        key={`${point._id}-${addMode}`}
+        key={`${point._id}-${addMode}-${locked}`}
         position={[point.lat, point.lng]}
         icon={createPointIcon(point)}
-        interactive={!addMode}
+        interactive={!addMode && !locked}
         zIndexOffset={500}
       >
         {showLabels && <PointLabel point={point} />}

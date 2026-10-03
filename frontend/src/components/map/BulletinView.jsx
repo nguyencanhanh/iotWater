@@ -155,7 +155,8 @@ const BulletinView = ({ data, periodText }) => {
         <pre className="whitespace-pre-wrap break-words p-4 pr-28 font-sans text-sm leading-6 text-slate-800">{text}</pre>
       </div>
       <div className="text-xs font-semibold text-slate-500">
-        Lượt = mỗi tuyến được nghe trong một ngày (gồm cả lượt không tìm thấy điểm). Khách hàng cộng theo từng lượt.
+        Lượt = mỗi tuyến được nghe trong một ngày (gồm cả lượt không tìm thấy điểm). Tổng khách hàng: mỗi tuyến
+        chỉ tính 1 lần trong kỳ (số của buổi nghe gần nhất), dù nghe lại nhiều buổi.
         Lưu lượng là số ước tính từ bậc &quot;Mức độ&quot; của từng điểm, không phải số đo.
       </div>
     </div>

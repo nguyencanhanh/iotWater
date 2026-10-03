@@ -6,8 +6,9 @@ import { estimateLeakRate, getLeakBucketLabel } from "./leakRate.js";
 //   (*1) luot / tuyen da nghe: tuyen = so tuyen bac 2 khac nhau; luot = so cap (tuyen, ngay)
 //        - ca diem ro ri lan luot "da nghe nhung khong tim thay diem" deu tinh.
 //   (*2) so diem ro ri phat hien trong ky.
-//   (*3) tong khach hang = cong theo TUNG LUOT; moi luot lay so khach hang da nghe nguoi
-//        tong hop nhap (0 = lay so khach hang cua tuyen luc do).
+//   (*3) tong khach hang = cong theo TUNG TUYEN, moi tuyen chi tinh 1 lan trong ky du nghe
+//        lai nhieu buoi (vd tuyen 120 KH nghe 3 buoi van la 120, khong phai 360). Lay so cua
+//        buoi nghe gan nhat. So moi buoi = so KH da nghe nguoi tong hop nhap (0 = so KH cua tuyen).
 // Nguyen nhan ro ri: so diem + % theo loai bac 1. Luu luong: tong uoc tinh tu bac muc do.
 
 const TZ = "Asia/Ho_Chi_Minh";
@@ -50,6 +51,13 @@ export const previousPeriod = (from, to) => {
   }
   const span = to.getTime() - from.getTime();
   return { from: new Date(from.getTime() - span - 1), to: new Date(from.getTime() - 1), label: "kỳ trước" };
+};
+
+// Moi tuyen tinh 1 lan: so khach hang cua buoi nghe gan nhat trong ky (visits da sap theo ngay).
+const routeCustomersTotal = (visits) => {
+  const latest = new Map();
+  visits.forEach((visit) => latest.set(String(visit.routeId), visit.customers));
+  return [...latest.values()].reduce((sum, value) => sum + value, 0);
 };
 
 export const buildBulletin = async ({ user, filter, from, to }) => {
@@ -124,7 +132,7 @@ export const buildBulletin = async ({ user, filter, from, to }) => {
         routes: new Set(visits.map((visit) => String(visit.routeId))).size,
         visits: visits.length,
         points: area.points,
-        customers: visits.reduce((sum, visit) => sum + visit.customers, 0),
+        customers: routeCustomersTotal(visits),
         lines: visits.map((visit) => ({
           day: visit.day,
           dayLabel: visit.dayLabel,

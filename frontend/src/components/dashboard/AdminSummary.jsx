@@ -11,6 +11,9 @@ import { mapPointImageUrl, sensorListGet, getGroup, warningHistoryTodayGet, home
 import ModalData from "../chart/Modal";
 import MapPointLayer from "../map/MapPointLayer";
 import MapPointControl from "../map/MapPointControl";
+import MapShapeLayer from "../map/MapShapeLayer";
+import MapDrawControl, { DrawToolbar, ShapeForm } from "../map/MapDrawControl";
+import useMapShapes from "../map/useMapShapes";
 import MapPointForm from "../map/MapPointForm";
 import useMapPoints from "../map/useMapPoints";
 import { getLeakBandKey } from "../map/leakRate";
@@ -215,6 +218,72 @@ function AdminSummary() {
     const topicWarning = "khca/warning"
 
     const canEditMapPoints = user?.role !== "trial";
+
+    // Vung / duong ong nguoi dung tu ve.
+    const mapShapes = useMapShapes({ user: user.user, canEdit: canEditMapPoints });
+    const readFlag = (key) => {
+        try {
+            return localStorage.getItem(key) !== "0";
+        } catch {
+            return true;
+        }
+    };
+    const [showZones, setShowZones] = useState(() => readFlag("iot.showZones"));
+    const [showPipes, setShowPipes] = useState(() => readFlag("iot.showDrawnPipes"));
+    const [drawing, setDrawing] = useState(null);
+    const [shapeDraft, setShapeDraft] = useState(null);
+    const [focusShape, setFocusShape] = useState(null);
+    // Dang them diem su co hoac dang ve: cac lop khac tam khong nhan bam.
+    const mapBusy = addPointMode || Boolean(drawing);
+
+    const saveFlag = (key, setter) => (next) => {
+        setter(next);
+        try {
+            localStorage.setItem(key, next ? "1" : "0");
+        } catch {
+            // Khong luu duoc thi van bat/tat trong phien nay.
+        }
+    };
+
+    const startDraw = (kind) => {
+        setAddPointMode(false);
+        setShapeDraft(null);
+        if (kind === "pipe") setShowPipes(true); else setShowZones(true);
+        setDrawing({
+            kind,
+            points: [],
+            name: "",
+            note: "",
+            color: kind === "pipe" ? "#0ea5e9" : "#2563eb",
+            diameter: kind === "pipe" ? 110 : 0,
+            opacity: 0.25,
+        });
+    };
+    const updateDrawingPoints = (update) => setDrawing((prev) => (prev ? { ...prev, points: update(prev.points) } : prev));
+    const finishDrawing = () => {
+        const { points, editing, base, ...rest } = drawing;
+        setShapeDraft({ ...(base || rest), ...rest, coordinates: points });
+        setDrawing(null);
+        mapShapes.setError("");
+    };
+    const cancelDrawing = () => {
+        // Dang sua hinh co san thi quay lai form voi hinh cu.
+        if (drawing?.base) setShapeDraft(drawing.base);
+        setDrawing(null);
+    };
+    const redrawShape = () => {
+        setDrawing({ ...shapeDraft, points: shapeDraft.coordinates, editing: true, base: shapeDraft });
+        setShapeDraft(null);
+    };
+    const saveShape = async () => {
+        const { _id, kind, name, note, color, diameter, opacity, coordinates } = shapeDraft;
+        const saved = await mapShapes.save({ kind, name, note, color, diameter, opacity, coordinates }, _id ? { _id } : null);
+        if (saved) setShapeDraft(null);
+    };
+    const deleteShape = async (shape) => {
+        if (!window.confirm(`Xoá ${shape.kind === "pipe" ? "đường ống" : "vùng"} "${shape.name || ""}"?`)) return;
+        if (await mapShapes.remove(shape)) setShapeDraft(null);
+    };
     const mapPoints = useMapPoints({ user: user.user, canEdit: canEditMapPoints });
     // Chi diem tren ban do (bo luot "da nghe nhung khong tim thay diem").
     const visibleMapPoints = leakFilter.length
@@ -658,14 +727,14 @@ function AdminSummary() {
                         <>
                             {/* Lớp phụ để bắt sự kiện click, nhưng không hiển thị gì */}
                             <GeoJSON
-                                key={`pipe-hit-${addPointMode}`}
+                                key={`pipe-hit-${mapBusy}`}
                                 data={pipeLayer}
                                 style={() => ({
                                     color: "#ffffff",
                                     weight: 40,
                                     opacity: 0, // Vô hình
                                     // Khi đang thêm điểm, lớp bắt click này phải nhường click cho bản đồ.
-                                    interactive: !addPointMode,
+                                    interactive: !mapBusy,
                                 })}
                                 onEachFeature={(feature, layer) => {
                                     const name = feature.properties?.name || "Không tên";
@@ -676,13 +745,14 @@ function AdminSummary() {
 
                             {/* Lớp chính để hiển thị đường ống thật sự */}
                             <GeoJSON
-                                key={`pipe-line-${addPointMode}`}
+                                key={`pipe-line-${mapBusy}`}
                                 data={pipeLayer}
                                 style={(feature) => ({
                                     color: feature.properties?.stroke || "#0000FF",
                                     weight: feature.properties?.["stroke-width"] || 2,
                                     opacity: feature.properties?.["stroke-opacity"] || 1,
-                                    interactive: !addPointMode,
+                                    // Lop net that khong nhan bam: de bam dung len ong van toi lop "hit" ben duoi (co popup).
+                                    interactive: false,
                                 })}
                             />
                         </>
@@ -691,13 +761,13 @@ function AdminSummary() {
                         <>
                             {/* Lớp phụ để bắt click, vô hình nhưng rộng */}
                             <GeoJSON
-                                key={`meter-hit-${addPointMode}`}
+                                key={`meter-hit-${mapBusy}`}
                                 data={metersLayer}
                                 style={() => ({
                                     color: "#ffffff",       // Màu trắng để dễ phân biệt (nhưng opacity = 0)
                                     weight: 40,             // Rộng hơn để dễ click
                                     opacity: 0,             // Vô hình
-                                    interactive: !addPointMode,
+                                    interactive: !mapBusy,
                                 })}
                                 onEachFeature={(feature, layer) => {
                                     if (feature.properties?.name || feature.properties?.description) {
@@ -710,13 +780,14 @@ function AdminSummary() {
 
                             {/* Lớp chính hiển thị thật sự */}
                             <GeoJSON
-                                key={`meter-line-${addPointMode}`}
+                                key={`meter-line-${mapBusy}`}
                                 data={metersLayer}
                                 style={(feature) => ({
                                     color: feature.properties?.stroke || "#0000FF", // fallback màu xanh dương
                                     weight: feature.properties?.["stroke-width"] || 2,
                                     opacity: feature.properties?.["stroke-opacity"] || 1,
-                                    interactive: !addPointMode,
+                                    // Lop net that khong nhan bam: de bam dung len ong van toi lop "hit" ben duoi (co popup).
+                                    interactive: false,
                                 })}
                             />
                         </>
@@ -753,8 +824,8 @@ function AdminSummary() {
                                         level={warningLevel}
                                     />
                                     <Marker position={[point.lat, point.lng]}
-                                        key={`sensor-${point.id}-${addPointMode}`}
-                                        interactive={!addPointMode}
+                                        key={`sensor-${point.id}-${mapBusy}`}
+                                        interactive={!mapBusy}
                                         eventHandlers={{
                                             click: () => handleMarkerClick(point)
                                         }}
@@ -795,16 +866,56 @@ function AdminSummary() {
                         showHotspots={showHotspots}
                         showLabels={showPointLabels && showMarkerTooltipAtCurrentZoom}
                         addMode={addPointMode}
+                        locked={Boolean(drawing)}
                         canEdit={canEditMapPoints}
                         onPickLocation={handlePickLocation}
                         onEdit={handleEditPoint}
                         imageUrl={mapPointImageUrl}
+                    />
+                    <MapShapeLayer
+                        shapes={mapShapes.shapes}
+                        showZones={showZones}
+                        showPipes={showPipes}
+                        drawing={drawing}
+                        editingId={drawing?._id || shapeDraft?._id || null}
+                        preview={shapeDraft}
+                        busy={addPointMode}
+                        canEdit={canEditMapPoints}
+                        focus={focusShape}
+                        onAddVertex={(point) => updateDrawingPoints((points) => [...points, point])}
+                        onMoveVertex={(index, point) => updateDrawingPoints((points) => points.map((item, i) => (i === index ? point : item)))}
+                        onRemoveVertex={(index) => updateDrawingPoints((points) => points.filter((_, i) => i !== index))}
+                        onEdit={(shape) => { setShapeDraft({ ...shape }); mapShapes.setError(""); }}
+                        onDelete={deleteShape}
                     />
                 </MapContainer>
             </div>
 
             {addPointMode && (
                 <div className="pointer-events-none absolute inset-0 z-[5] ring-4 ring-inset ring-teal-400/70" />
+            )}
+            {drawing && (
+                <>
+                    <div className="pointer-events-none absolute inset-0 z-[5] ring-4 ring-inset ring-indigo-400/70" />
+                    <DrawToolbar
+                        drawing={drawing}
+                        onUndo={() => updateDrawingPoints((points) => points.slice(0, -1))}
+                        onFinish={finishDrawing}
+                        onCancel={cancelDrawing}
+                    />
+                </>
+            )}
+            {shapeDraft && (
+                <ShapeForm
+                    draft={shapeDraft}
+                    saving={mapShapes.saving}
+                    error={mapShapes.error}
+                    onChange={(patch) => setShapeDraft((prev) => ({ ...prev, ...patch }))}
+                    onSave={saveShape}
+                    onRedraw={redrawShape}
+                    onDelete={() => deleteShape(shapeDraft)}
+                    onCancel={() => setShapeDraft(null)}
+                />
             )}
 
 
@@ -1096,7 +1207,11 @@ function AdminSummary() {
                     showHotspots={showHotspots}
                     onToggleHotspots={setShowHotspots}
                     addMode={addPointMode}
-                    onToggleAddMode={setAddPointMode}
+                    onToggleAddMode={(next) => {
+                        // Them diem su co thi thoi ve vung / ong (2 che do cung bat ban do).
+                        if (next) setDrawing(null);
+                        setAddPointMode(next);
+                    }}
                     typeFilter={mapPoints.typeFilter}
                     onTypeFilter={mapPoints.setTypeFilter}
                     statusFilter={mapPoints.statusFilter}
@@ -1113,6 +1228,17 @@ function AdminSummary() {
                     onTimeFilter={mapPoints.setTimeFilter}
                     timeLabel={mapPoints.timeLabel}
                     onAddNoFind={handleAddNoFind}
+                />
+                <MapDrawControl
+                    shapes={mapShapes.shapes}
+                    canEdit={canEditMapPoints}
+                    showZones={showZones}
+                    showPipes={showPipes}
+                    onToggleZones={saveFlag("iot.showZones", setShowZones)}
+                    onTogglePipes={saveFlag("iot.showDrawnPipes", setShowPipes)}
+                    onStartDraw={startDraw}
+                    onFocus={(shape) => setFocusShape({ ...shape })}
+                    drawingKind={drawing?.kind || ""}
                 />
             </div>
             {showModal ? <ModalData info={weatherData} dateData={dateData} isOpen={showModal} handleCancel={() => setShowModal(false)} /> : null}
